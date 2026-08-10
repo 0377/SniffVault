@@ -12,6 +12,8 @@ pub enum EngineError {
     NotFound(String),
     #[error("invalid argument: {0}")]
     InvalidArg(String),
+    #[error("http error: {0}")]
+    Http(#[from] reqwest::Error),
     #[error("{0}")]
     Message(String),
 }
