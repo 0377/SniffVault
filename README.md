@@ -1,5 +1,7 @@
 # video_sniffing
 
+[![CI](https://github.com/0377/SniffVault/actions/workflows/ci.yml/badge.svg)](https://github.com/0377/SniffVault/actions/workflows/ci.yml)
+
 开源个人离线视频库：在应用内解析/嗅探视频资源，缓存到本地播放。支持 Android、iOS、Windows、macOS、Android TV（自编译安装）。
 
 ## 使用责任
@@ -11,6 +13,20 @@
 - `engine/` — Rust 核心（片库、任务、后续下载/解析/LAN）
 - `app/` — Flutter UI（后续计划）
 - `platforms/` — 极少原生胶水（后续计划）
+
+## 持续集成
+
+合并到 `main` 前须通过 GitHub Actions：**fmt**（ubuntu）、**test + clippy**（Linux / macOS / Windows 三平台）。
+
+本地可运行与 CI 相同检查：
+
+```bash
+cargo fmt --manifest-path engine/Cargo.toml --all -- --check
+cargo test --manifest-path engine/Cargo.toml
+cargo clippy --manifest-path engine/Cargo.toml --all-targets --all-features -- -D warnings
+```
+
+发版：推送 `v*` tag（如 `v0.1.0`）触发 Release workflow（`.github/workflows/release.yml`），质量检查通过后自动创建 GitHub Release。
 
 ## 构建引擎
 
