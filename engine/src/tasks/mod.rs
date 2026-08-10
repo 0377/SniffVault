@@ -1,3 +1,3 @@
-mod schema;
+pub(crate) mod schema;
 mod store;
 pub use store::TaskStore;

@@ -1,5 +1,6 @@
 use crate::error::EngineError;
 use crate::library::schema::LIBRARY_SCHEMA;
+use crate::tasks::schema::DB_PRAGMAS;
 use crate::types::{LibraryEpisode, LibraryItem, LibraryItemKind};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
@@ -14,7 +15,7 @@ impl LibraryStore {
             std::fs::create_dir_all(parent)?;
         }
         let conn = Connection::open(db_path)?;
-        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        conn.execute_batch(DB_PRAGMAS)?;
         conn.execute_batch(LIBRARY_SCHEMA)?;
         Ok(Self { conn })
     }

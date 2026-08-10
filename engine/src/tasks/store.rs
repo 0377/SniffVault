@@ -1,9 +1,28 @@
+use crate::download::checkpoint::Checkpoint;
 use crate::error::EngineError;
-use crate::tasks::schema::TASK_SCHEMA;
+use crate::tasks::schema::{DB_PRAGMAS, TASK_MIGRATION_V2, TASK_SCHEMA, TASK_SCHEMA_VERSION};
 use crate::types::{DownloadTask, TaskStatus};
 use rusqlite::{params, Connection};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+const V1_COLUMNS: &[&str] = &[
+    "id",
+    "parent_id",
+    "season",
+    "title",
+    "source_url",
+    "quality_label",
+    "status",
+    "progress_bytes",
+    "total_bytes",
+    "error_message",
+    "output_path",
+    "library_item_id",
+    "episode_index",
+    "created_at_ms",
+    "updated_at_ms",
+];
 
 pub struct TaskStore {
     conn: Connection,
@@ -15,8 +34,52 @@ impl TaskStore {
             std::fs::create_dir_all(parent)?;
         }
         let conn = Connection::open(db_path)?;
+        conn.execute_batch(DB_PRAGMAS)?;
         conn.execute_batch(TASK_SCHEMA)?;
+        Self::migrate(&conn)?;
         Ok(Self { conn })
+    }
+
+    fn migrate(conn: &Connection) -> Result<(), EngineError> {
+        let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        if version > TASK_SCHEMA_VERSION {
+            return Err(EngineError::Message(format!(
+                "unsupported tasks.db schema version {version}, expected <= {TASK_SCHEMA_VERSION}"
+            )));
+        }
+        if version < TASK_SCHEMA_VERSION {
+            if version == 0 {
+                Self::ensure_v1_columns(conn)?;
+            }
+            let tx = conn.unchecked_transaction()?;
+            if let Err(e) = tx.execute_batch(TASK_MIGRATION_V2) {
+                let msg = e.to_string();
+                if !msg.contains("duplicate column name") {
+                    return Err(EngineError::Db(e));
+                }
+            }
+            tx.execute(&format!("PRAGMA user_version = {TASK_SCHEMA_VERSION}"), [])?;
+            tx.commit()?;
+        }
+        Ok(())
+    }
+
+    fn ensure_v1_columns(conn: &Connection) -> Result<(), EngineError> {
+        let mut stmt = conn.prepare("PRAGMA table_info(download_tasks)")?;
+        let mut columns: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<Result<Vec<_>, _>>()?;
+        columns.sort();
+        let mut expected: Vec<&str> = V1_COLUMNS.to_vec();
+        expected.sort();
+        if columns.len() != expected.len()
+            || columns.iter().zip(expected.iter()).any(|(a, b)| a != *b)
+        {
+            return Err(EngineError::Message(
+                "download_tasks column set does not match schema version 1".into(),
+            ));
+        }
+        Ok(())
     }
 
     fn status_to_str(s: TaskStatus) -> &'static str {
@@ -133,9 +196,7 @@ impl TaskStore {
                 Self::row_to_task,
             )
             .map_err(|e| match e {
-                rusqlite::Error::QueryReturnedNoRows => {
-                    EngineError::NotFound(format!("task {id}"))
-                }
+                rusqlite::Error::QueryReturnedNoRows => EngineError::NotFound(format!("task {id}")),
                 other => EngineError::Db(other),
             })
     }
@@ -220,5 +281,78 @@ impl TaskStore {
             |row| row.get::<_, i64>(0).map(|v| v as u32),
         )?;
         Ok((done, total))
+    }
+
+    pub fn save_checkpoint(
+        &mut self,
+        id: &str,
+        checkpoint: &Checkpoint,
+    ) -> Result<(), EngineError> {
+        let json = serde_json::to_string(checkpoint)?;
+        let n = self.conn.execute(
+            "UPDATE download_tasks SET checkpoint_json=?1, updated_at_ms=?2 WHERE id=?3",
+            params![json, Self::now_ms(), id],
+        )?;
+        if n == 0 {
+            return Err(EngineError::NotFound(format!("task {id}")));
+        }
+        Ok(())
+    }
+
+    pub fn load_checkpoint(&self, id: &str) -> Result<Option<Checkpoint>, EngineError> {
+        let json: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT checkpoint_json FROM download_tasks WHERE id=?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => EngineError::NotFound(format!("task {id}")),
+                other => EngineError::Db(other),
+            })?;
+        match json {
+            Some(raw) => Ok(Some(serde_json::from_str(&raw)?)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn clear_checkpoint(&mut self, id: &str) -> Result<(), EngineError> {
+        let n = self.conn.execute(
+            "UPDATE download_tasks SET checkpoint_json=NULL, updated_at_ms=?1 WHERE id=?2",
+            params![Self::now_ms(), id],
+        )?;
+        if n == 0 {
+            return Err(EngineError::NotFound(format!("task {id}")));
+        }
+        Ok(())
+    }
+
+    pub fn update_progress_and_checkpoint(
+        &mut self,
+        id: &str,
+        progress_bytes: u64,
+        total_bytes: Option<u64>,
+        checkpoint: &Checkpoint,
+    ) -> Result<(), EngineError> {
+        let json = serde_json::to_string(checkpoint)?;
+        let tx = self.conn.unchecked_transaction()?;
+        let n = tx.execute(
+            r#"UPDATE download_tasks
+               SET progress_bytes=?1, total_bytes=?2, checkpoint_json=?3, updated_at_ms=?4
+               WHERE id=?5"#,
+            params![
+                progress_bytes as i64,
+                total_bytes.map(|v| v as i64),
+                json,
+                Self::now_ms(),
+                id,
+            ],
+        )?;
+        if n == 0 {
+            return Err(EngineError::NotFound(format!("task {id}")));
+        }
+        tx.commit()?;
+        Ok(())
     }
 }

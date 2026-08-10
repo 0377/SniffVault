@@ -1,3 +1,4 @@
+pub(crate) mod download;
 pub mod engine;
 pub mod error;
 pub mod library;
