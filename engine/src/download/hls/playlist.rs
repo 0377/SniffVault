@@ -1,4 +1,5 @@
 use crate::error::EngineError;
+use crate::types::Quality;
 use url::Url;
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -66,6 +67,41 @@ pub fn select_media_playlist_url(
     };
 
     resolve_url(base_url, &selected.uri)
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn list_master_variants(
+    master_body: &str,
+    base_url: &str,
+) -> Result<Vec<(String, Quality)>, EngineError> {
+    let variants = parse_master_variants(master_body)?;
+    if variants.is_empty() {
+        return Err(EngineError::InvalidArg(
+            "not a master playlist: no variants found".into(),
+        ));
+    }
+
+    variants
+        .into_iter()
+        .map(|variant| {
+            let url = resolve_url(base_url, &variant.uri)?;
+            let (width, height) = match variant.resolution.as_deref() {
+                Some(resolution) => resolution_dimensions(resolution),
+                None => (None, None),
+            };
+            let label = variant_quality_label(
+                variant.resolution.as_deref(),
+                variant.name.as_deref(),
+            );
+            let quality = Quality {
+                label,
+                width,
+                height,
+                bandwidth: Some(variant.bandwidth),
+            };
+            Ok((url, quality))
+        })
+        .collect()
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -246,6 +282,26 @@ fn resolution_height(resolution: &str) -> Option<u32> {
     height.parse().ok()
 }
 
+fn resolution_dimensions(resolution: &str) -> (Option<u32>, Option<u32>) {
+    match resolution.split_once('x') {
+        Some((width, height)) => (width.parse().ok(), height.parse().ok()),
+        None => (None, None),
+    }
+}
+
+fn variant_quality_label(resolution: Option<&str>, name: Option<&str>) -> String {
+    if let Some(name) = name {
+        return name.to_string();
+    }
+    if let Some(resolution) = resolution {
+        if let Some(height) = resolution_height(resolution) {
+            return format!("{height}p");
+        }
+        return resolution.to_string();
+    }
+    "unknown".to_string()
+}
+
 pub(crate) fn resolve_url(base_url: &str, reference: &str) -> Result<String, EngineError> {
     let base = Url::parse(base_url)
         .map_err(|err| EngineError::InvalidArg(format!("invalid base URL: {err}")))?;
@@ -264,6 +320,20 @@ mod tests {
 
     fn read_fixture(name: &str) -> String {
         std::fs::read_to_string(fixtures_dir().join(name)).unwrap()
+    }
+
+    #[test]
+    fn list_master_variants_returns_qualities() {
+        let master = read_fixture("master.m3u8");
+        let base = "http://127.0.0.1/hls/master.m3u8";
+        let variants = list_master_variants(&master, base).unwrap();
+        assert_eq!(variants.len(), 2);
+        assert!(variants
+            .iter()
+            .any(|(url, q)| url.ends_with("720p.m3u8") && q.label == "720p"));
+        assert!(variants
+            .iter()
+            .any(|(url, q)| url.ends_with("1080p.m3u8") && q.label == "1080p"));
     }
 
     #[test]
