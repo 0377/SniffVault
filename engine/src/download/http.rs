@@ -1,4 +1,4 @@
-use reqwest::{Client, Response};
+use reqwest::{Client, Response, StatusCode};
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
@@ -8,6 +8,13 @@ use crate::error::EngineError;
 const MAX_ATTEMPTS: u32 = 4;
 #[cfg_attr(not(test), allow(dead_code))]
 const RETRY_DELAY: Duration = Duration::from_millis(50);
+
+pub(crate) const MAX_PAGE_BYTES: usize = 8 * 1024 * 1024;
+
+pub(crate) struct PageFetchOptions {
+    pub cookies: Option<String>,
+    pub referer: Option<String>,
+}
 
 #[derive(Clone)]
 #[cfg_attr(not(test), allow(dead_code))]
@@ -19,7 +26,9 @@ pub(crate) struct HttpClient {
 #[cfg_attr(not(test), allow(dead_code))]
 impl HttpClient {
     pub fn new(user_agent: Option<&str>) -> Result<Self, EngineError> {
-        let mut builder = Client::builder().timeout(Duration::from_secs(30));
+        let mut builder = Client::builder()
+            .timeout(Duration::from_secs(30))
+            .redirect(reqwest::redirect::Policy::limited(10));
         if let Some(ua) = user_agent {
             builder = builder.user_agent(ua);
         }
@@ -40,6 +49,31 @@ impl HttpClient {
             .execute_with_retry(|| self.client.get(url).send())
             .await?;
         Ok(response.text().await?)
+    }
+
+    pub async fn get_page_text(
+        &self,
+        url: &str,
+        opts: &PageFetchOptions,
+    ) -> Result<(StatusCode, String), EngineError> {
+        let mut request = self.client.get(url);
+        if let Some(cookies) = &opts.cookies {
+            request = request.header(reqwest::header::COOKIE, cookies);
+        }
+        if let Some(referer) = &opts.referer {
+            request = request.header(reqwest::header::REFERER, referer);
+        }
+        let response = request.send().await?;
+        let status = response.status();
+        let bytes = response.bytes().await?;
+        if bytes.len() > MAX_PAGE_BYTES {
+            return Err(EngineError::InvalidArg(
+                "page body exceeds 8MB limit".into(),
+            ));
+        }
+        let text = String::from_utf8(bytes.to_vec())
+            .map_err(|_| EngineError::InvalidArg("page body is not valid utf-8".into()))?;
+        Ok((status, text))
     }
 
     pub async fn get_bytes(&self, url: &str) -> Result<Vec<u8>, EngineError> {
@@ -373,5 +407,75 @@ mod tests {
 
         assert!(matches!(err, EngineError::Message(_)));
         assert_eq!(counter.0.load(Ordering::SeqCst), 0);
+    }
+
+    async fn auth_handler(headers: HeaderMap) -> impl IntoResponse {
+        if headers
+            .get("cookie")
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v.contains("sid=ok"))
+        {
+            return (StatusCode::OK, "authenticated-body");
+        }
+        (StatusCode::FORBIDDEN, "forbidden")
+    }
+
+    #[tokio::test]
+    async fn get_page_text_sends_cookie_and_returns_status() {
+        let (base_url, _guard) =
+            spawn_server(Router::new().route("/auth", get(auth_handler))).await;
+        let client = HttpClient::new(None).unwrap();
+        let (status, body) = client
+            .get_page_text(
+                &format!("{base_url}/auth"),
+                &PageFetchOptions {
+                    cookies: Some("sid=ok".into()),
+                    referer: None,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, "authenticated-body");
+    }
+
+    #[tokio::test]
+    async fn get_page_text_without_cookie_gets_forbidden() {
+        let (base_url, _guard) =
+            spawn_server(Router::new().route("/auth", get(auth_handler))).await;
+        let client = HttpClient::new(None).unwrap();
+        let (status, _) = client
+            .get_page_text(
+                &format!("{base_url}/auth"),
+                &PageFetchOptions {
+                    cookies: None,
+                    referer: None,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    async fn huge_body_handler() -> impl IntoResponse {
+        (StatusCode::OK, vec![0u8; MAX_PAGE_BYTES + 1])
+    }
+
+    #[tokio::test]
+    async fn get_page_text_rejects_body_over_8mb() {
+        let (base_url, _guard) =
+            spawn_server(Router::new().route("/huge", get(huge_body_handler))).await;
+        let client = HttpClient::new(None).unwrap();
+        let err = client
+            .get_page_text(
+                &format!("{base_url}/huge"),
+                &PageFetchOptions {
+                    cookies: None,
+                    referer: None,
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, EngineError::InvalidArg(_)));
     }
 }
