@@ -32,3 +32,7 @@ Thumbs.db
 # 本地数据与缓存
 *.db
 *.log
+
+# Vendor ffmpeg 二进制（通过 engine/scripts/fetch_ffmpeg.sh 获取）
+engine/vendor/ffmpeg/**/*
+!engine/vendor/ffmpeg/README.md
