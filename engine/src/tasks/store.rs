@@ -355,4 +355,111 @@ impl TaskStore {
         tx.commit()?;
         Ok(())
     }
+
+    pub fn list_runnable_tasks(&self, limit: usize) -> Result<Vec<DownloadTask>, EngineError> {
+        let mut stmt = self.conn.prepare(
+            r#"SELECT id, parent_id, season, title, source_url, quality_label, status,
+                      progress_bytes, total_bytes, error_message, output_path,
+                      library_item_id, episode_index, created_at_ms, updated_at_ms
+               FROM download_tasks
+               WHERE status='queued'
+                 AND source_url != ''
+                 AND (parent_id IS NOT NULL OR episode_index IS NULL)
+               ORDER BY created_at_ms ASC
+               LIMIT ?1"#,
+        )?;
+        let rows = stmt.query_map(params![limit as i64], Self::row_to_task)?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    pub fn set_task_status(
+        &self,
+        id: &str,
+        status: TaskStatus,
+        error_message: Option<&str>,
+    ) -> Result<(), EngineError> {
+        let n = self.conn.execute(
+            r#"UPDATE download_tasks
+               SET status=?1, error_message=?2, updated_at_ms=?3
+               WHERE id=?4"#,
+            params![
+                Self::status_to_str(status),
+                error_message,
+                Self::now_ms(),
+                id,
+            ],
+        )?;
+        if n == 0 {
+            return Err(EngineError::NotFound(format!("task {id}")));
+        }
+        Ok(())
+    }
+
+    pub fn set_output_path(&self, id: &str, path: &str) -> Result<(), EngineError> {
+        let n = self.conn.execute(
+            r#"UPDATE download_tasks SET output_path=?1, updated_at_ms=?2 WHERE id=?3"#,
+            params![path, Self::now_ms(), id],
+        )?;
+        if n == 0 {
+            return Err(EngineError::NotFound(format!("task {id}")));
+        }
+        Ok(())
+    }
+
+    pub fn set_library_item_id(&self, id: &str, library_item_id: &str) -> Result<(), EngineError> {
+        let n = self.conn.execute(
+            r#"UPDATE download_tasks SET library_item_id=?1, updated_at_ms=?2 WHERE id=?3"#,
+            params![library_item_id, Self::now_ms(), id],
+        )?;
+        if n == 0 {
+            return Err(EngineError::NotFound(format!("task {id}")));
+        }
+        Ok(())
+    }
+
+    pub fn sync_parent_status(&self, parent_id: &str) -> Result<(), EngineError> {
+        let children = self.list_children(parent_id)?;
+        if children.is_empty() {
+            return Ok(());
+        }
+
+        let has_running = children.iter().any(|t| t.status == TaskStatus::Running);
+        let has_queued = children.iter().any(|t| t.status == TaskStatus::Queued);
+        let all_completed = children.iter().all(|t| t.status == TaskStatus::Completed);
+        let all_terminal = children.iter().all(|t| {
+            matches!(
+                t.status,
+                TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Cancelled
+            )
+        });
+        let any_failed = children.iter().any(|t| t.status == TaskStatus::Failed);
+
+        let parent_status = if has_running {
+            TaskStatus::Running
+        } else if all_completed {
+            TaskStatus::Completed
+        } else if all_terminal && any_failed {
+            TaskStatus::Failed
+        } else if has_queued {
+            TaskStatus::Queued
+        } else {
+            TaskStatus::Running
+        };
+
+        self.set_task_status(parent_id, parent_status, None)?;
+        Ok(())
+    }
+
+    pub fn count_by_status(&self, status: TaskStatus) -> Result<u32, EngineError> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM download_tasks WHERE status=?1",
+            params![Self::status_to_str(status)],
+            |row| row.get(0),
+        )?;
+        Ok(count as u32)
+    }
 }

@@ -1,6 +1,7 @@
 pub(crate) mod download;
 pub mod engine;
 pub mod error;
+pub mod ingest;
 pub mod library;
 pub mod settings;
 pub mod tasks;
@@ -13,7 +14,11 @@ pub use types::*;
 #[doc(hidden)]
 pub mod test_api {
     pub use crate::download::checkpoint::{Checkpoint, CheckpointBody};
+    pub use crate::download::ffmpeg::{BundledFfmpegLocator, FfmpegLocator};
     pub use crate::download::mp4::{download_mp4, Mp4Context};
+    pub use crate::download::worker::{run_worker, DownloadCommand, WorkerConfig};
+    pub use crate::library::LibraryStore;
+    pub use crate::tasks::TaskStore;
 
     pub async fn download_mp4_with_new_client(
         url: &str,
