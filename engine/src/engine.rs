@@ -17,9 +17,24 @@ pub struct Engine {
     tasks: TaskStore,
 }
 
+fn absolute_data_dir(path: &Path) -> Result<PathBuf, EngineError> {
+    if path.is_absolute() {
+        if path.exists() {
+            return Ok(path.canonicalize()?);
+        }
+        return Ok(path.to_path_buf());
+    }
+    let abs = std::env::current_dir()?.join(path);
+    if abs.exists() {
+        Ok(abs.canonicalize()?)
+    } else {
+        Ok(abs)
+    }
+}
+
 impl Engine {
     pub fn open(data_dir: impl AsRef<Path>) -> Result<Self, EngineError> {
-        let data_dir = data_dir.as_ref().to_path_buf();
+        let data_dir = absolute_data_dir(data_dir.as_ref())?;
         let settings_path = data_dir.join("settings.json");
         let settings = settings::load_or_default(&settings_path)?;
         std::fs::create_dir_all(data_dir.join(&settings.media_dir))?;
@@ -67,14 +82,7 @@ impl Engine {
     }
 
     pub fn save_settings(&mut self, settings: EngineSettings) -> Result<(), EngineError> {
-        if settings.media_dir.contains("..")
-            || settings.media_dir.contains('/')
-            || settings.media_dir.contains('\\')
-        {
-            return Err(EngineError::InvalidArg(
-                "media_dir must be a single relative directory name".into(),
-            ));
-        }
+        settings::validate_media_dir(&settings.media_dir)?;
         std::fs::create_dir_all(self.data_dir.join(&settings.media_dir))?;
         settings::save(&self.settings_path, &settings)?;
         self.settings = settings;

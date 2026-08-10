@@ -101,9 +101,56 @@ fn register_rejects_path_outside_media_dir() {
 }
 
 #[test]
+fn open_rejects_invalid_media_dir_in_settings() {
+    let dir = tempdir().unwrap();
+    std::fs::create_dir_all(dir.path()).unwrap();
+    let settings_path = dir.path().join("settings.json");
+    std::fs::write(
+        &settings_path,
+        r#"{"device_name":"test","media_dir":"../outside","max_concurrency":2,"default_quality_label":"highest"}"#,
+    )
+    .unwrap();
+
+    let err = Engine::open(dir.path()).err().unwrap();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("media_dir") || msg.contains("relative directory"),
+        "{msg}"
+    );
+}
+
+#[test]
+fn open_rejects_empty_media_dir_in_settings() {
+    let dir = tempdir().unwrap();
+    std::fs::create_dir_all(dir.path()).unwrap();
+    let settings_path = dir.path().join("settings.json");
+    std::fs::write(
+        &settings_path,
+        r#"{"device_name":"test","media_dir":"","max_concurrency":2,"default_quality_label":"highest"}"#,
+    )
+    .unwrap();
+
+    let err = Engine::open(dir.path()).err().unwrap();
+    let msg = err.to_string();
+    assert!(msg.contains("empty") || msg.contains("media_dir"), "{msg}");
+}
+
+#[test]
+fn save_settings_rejects_empty_media_dir() {
+    let dir = tempdir().unwrap();
+    let mut engine = Engine::open(dir.path()).unwrap();
+    let mut s = engine.settings();
+    s.media_dir = String::new();
+    let err = engine.save_settings(s).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("empty") || msg.contains("media_dir"), "{msg}");
+}
+
+#[test]
 fn settings_roundtrip_and_media_dir() {
     let dir = tempdir().unwrap();
     let mut engine = Engine::open(dir.path()).unwrap();
+    assert!(engine.media_dir().is_absolute());
     assert!(engine.media_dir().ends_with("media"));
     let mut s = engine.settings();
     s.device_name = "LivingRoom".into();
