@@ -5,7 +5,10 @@ use crate::ingest;
 use crate::library::LibraryStore;
 use crate::settings;
 use crate::tasks::TaskStore;
-use crate::types::{DownloadTask, EngineSettings, LibraryEpisode, LibraryItem, TaskStatus};
+use crate::types::{
+    DownloadTask, EngineSettings, LibraryEpisode, LibraryItem, Quality, ResolveOptions,
+    ResolveOutcome, ResourceCandidate, SniffEvent, TaskStatus,
+};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
@@ -73,6 +76,36 @@ impl Engine {
         settings::save(&self.settings_path, &settings)?;
         self.settings = settings;
         Ok(())
+    }
+
+    pub async fn resolve_url(
+        &self,
+        url: &str,
+        opts: ResolveOptions,
+    ) -> Result<ResolveOutcome, EngineError> {
+        let http = crate::download::http::HttpClient::new(
+            self.settings.user_agent.as_deref(),
+        )?;
+        crate::resolve::resolve_url(&http, url, opts).await
+    }
+
+    pub async fn resolve_qualities(
+        &self,
+        media_url: &str,
+        opts: ResolveOptions,
+    ) -> Result<Vec<Quality>, EngineError> {
+        let http = crate::download::http::HttpClient::new(
+            self.settings.user_agent.as_deref(),
+        )?;
+        crate::resolve::resolve_qualities(&http, media_url, opts).await
+    }
+
+    pub fn sniff_urls(
+        &self,
+        events: &[SniffEvent],
+        page_url: Option<&str>,
+    ) -> Vec<ResourceCandidate> {
+        crate::sniff::sniff_urls(events, page_url)
     }
 
     pub fn enqueue_episodes(
