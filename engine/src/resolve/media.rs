@@ -37,9 +37,12 @@ pub(crate) fn candidates_from_m3u8_body(
     if let Ok(variants) = list_master_variants(body, base_url) {
         if variants.len() == 1 {
             let (url, quality) = variants[0].clone();
-            return Ok(ResolveMediaResult::Single(
-                make_candidate(url, MediaKind::Hls, Some(quality), page_url),
-            ));
+            return Ok(ResolveMediaResult::Single(make_candidate(
+                url,
+                MediaKind::Hls,
+                Some(quality),
+                page_url,
+            )));
         }
         let candidates = variants
             .into_iter()
@@ -60,7 +63,7 @@ pub(crate) fn candidates_from_m3u8_body(
     Err(EngineError::InvalidArg("unrecognized m3u8 playlist".into()))
 }
 
-fn make_candidate(
+pub(crate) fn make_candidate(
     url: String,
     kind: MediaKind,
     quality: Option<Quality>,
@@ -87,12 +90,8 @@ mod tests {
                 .join("tests/fixtures/hls/media.m3u8"),
         )
         .unwrap();
-        let result = candidates_from_m3u8_body(
-            &body,
-            "http://127.0.0.1/hls/media.m3u8",
-            None,
-        )
-        .unwrap();
+        let result =
+            candidates_from_m3u8_body(&body, "http://127.0.0.1/hls/media.m3u8", None).unwrap();
         assert!(matches!(result, ResolveMediaResult::Single(_)));
     }
 }
