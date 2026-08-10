@@ -73,8 +73,15 @@ mod tests {
     #[test]
     fn bundled_path_format() {
         let path = BundledFfmpegLocator::candidate_path();
-        let binary = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
-        let expected_suffix = format!("vendor/ffmpeg/{platform}/{binary}", platform = platform_dir_name());
+        let binary = if cfg!(windows) {
+            "ffmpeg.exe"
+        } else {
+            "ffmpeg"
+        };
+        let expected_suffix = format!(
+            "vendor/ffmpeg/{platform}/{binary}",
+            platform = platform_dir_name()
+        );
         assert!(
             path.to_string_lossy().ends_with(&expected_suffix),
             "expected path ending with {expected_suffix}, got {}",

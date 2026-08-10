@@ -429,6 +429,7 @@ impl TaskStore {
 
         let has_running = children.iter().any(|t| t.status == TaskStatus::Running);
         let has_queued = children.iter().any(|t| t.status == TaskStatus::Queued);
+        let has_paused = children.iter().any(|t| t.status == TaskStatus::Paused);
         let all_completed = children.iter().all(|t| t.status == TaskStatus::Completed);
         let all_terminal = children.iter().all(|t| {
             matches!(
@@ -446,6 +447,8 @@ impl TaskStore {
             TaskStatus::Failed
         } else if has_queued {
             TaskStatus::Queued
+        } else if has_paused {
+            TaskStatus::Paused
         } else {
             TaskStatus::Running
         };

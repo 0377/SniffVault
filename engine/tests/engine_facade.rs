@@ -171,14 +171,7 @@ fn set_episode_position_persists_after_reopen() {
     std::fs::write(&media, b"fake").unwrap();
 
     let (item, ep) = engine
-        .register_completed_episode(
-            "示意剧",
-            Some(1),
-            1,
-            "第1集",
-            media.to_str().unwrap(),
-            None,
-        )
+        .register_completed_episode("示意剧", Some(1), 1, "第1集", media.to_str().unwrap(), None)
         .unwrap();
     engine.set_episode_position(&ep.id, 42_000).unwrap();
     drop(engine);

@@ -1,5 +1,5 @@
-use crate::download::http::HttpClient;
 use crate::download::hls::playlist::{resolve_url, KeyTag, MediaPlaylist, SegmentEntry};
+use crate::download::http::HttpClient;
 use crate::error::EngineError;
 use aes::cipher::{block_padding::NoPadding, BlockDecryptMut, KeyIvInit};
 use aes::Aes128;
@@ -32,7 +32,11 @@ pub fn decrypt_aes128_ts(
     Ok(buf)
 }
 
-pub fn segment_iv(key: &KeyTag, media_sequence: u32, segment_index: usize) -> Result<[u8; 16], EngineError> {
+pub fn segment_iv(
+    key: &KeyTag,
+    media_sequence: u32,
+    segment_index: usize,
+) -> Result<[u8; 16], EngineError> {
     if let Some(iv_hex) = &key.iv_hex {
         return parse_iv_hex(iv_hex);
     }

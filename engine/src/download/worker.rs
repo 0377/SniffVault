@@ -9,7 +9,7 @@ use crate::ingest;
 use crate::library::LibraryStore;
 use crate::tasks::TaskStore;
 use crate::types::{DownloadTask, TaskStatus};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -49,6 +49,8 @@ pub async fn run_worker(config: WorkerConfig, cmd_rx: mpsc::Receiver<DownloadCom
     let active = Arc::new(AtomicUsize::new(0));
     let task_cancels: Arc<tokio::sync::Mutex<HashMap<String, CancellationToken>>> =
         Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+    let pending_resumes: Arc<tokio::sync::Mutex<HashSet<String>>> =
+        Arc::new(tokio::sync::Mutex::new(HashSet::new()));
     let mut shutdown_ack: Option<mpsc::Sender<()>> = None;
     let mut stopping = false;
 
@@ -56,18 +58,26 @@ pub async fn run_worker(config: WorkerConfig, cmd_rx: mpsc::Receiver<DownloadCom
         while let Ok(cmd) = cmd_rx.try_recv() {
             match cmd {
                 DownloadCommand::Pause { task_id } => {
-                    if let Some(token) = task_cancels.lock().await.remove(&task_id) {
-                        token.cancel();
-                    }
                     let tasks_path = config.data_dir.join("tasks.db");
                     if let Ok(store) = TaskStore::open(&tasks_path) {
-                        let _ = store.set_task_status(&task_id, TaskStatus::Paused, None);
+                        if let Ok(task) = store.get(&task_id) {
+                            if task.status == TaskStatus::Running {
+                                let _ = store.set_task_status(&task_id, TaskStatus::Paused, None);
+                                if let Some(token) = task_cancels.lock().await.remove(&task_id) {
+                                    token.cancel();
+                                }
+                            }
+                        }
                     }
                 }
                 DownloadCommand::Resume { task_id } => {
-                    let tasks_path = config.data_dir.join("tasks.db");
-                    if let Ok(store) = TaskStore::open(&tasks_path) {
-                        let _ = store.set_task_status(&task_id, TaskStatus::Queued, None);
+                    if task_cancels.lock().await.contains_key(&task_id) {
+                        pending_resumes.lock().await.insert(task_id);
+                    } else {
+                        let tasks_path = config.data_dir.join("tasks.db");
+                        if let Ok(store) = TaskStore::open(&tasks_path) {
+                            let _ = store.set_task_status(&task_id, TaskStatus::Queued, None);
+                        }
                     }
                 }
                 DownloadCommand::Cancel { task_id } => {
@@ -124,6 +134,9 @@ pub async fn run_worker(config: WorkerConfig, cmd_rx: mpsc::Receiver<DownloadCom
                 if let Ok(runnable) = sched.pick_next(&store, active.load(Ordering::SeqCst), slots)
                 {
                     for task in runnable {
+                        if task_cancels.lock().await.contains_key(&task.id) {
+                            continue;
+                        }
                         let token = CancellationToken::new();
                         task_cancels
                             .lock()
@@ -144,10 +157,19 @@ pub async fn run_worker(config: WorkerConfig, cmd_rx: mpsc::Receiver<DownloadCom
                         let scheduler_ref = scheduler.clone();
                         let active_ref = active.clone();
                         let cancels_ref = task_cancels.clone();
+                        let resumes_ref = pending_resumes.clone();
 
                         tokio::spawn(async move {
                             let outcome = run_one_task(&cfg, &task, token).await;
-                            handle_outcome(&cfg, &task, outcome, scheduler_ref, cancels_ref).await;
+                            handle_outcome(
+                                &cfg,
+                                &task,
+                                outcome,
+                                scheduler_ref,
+                                cancels_ref,
+                                resumes_ref,
+                            )
+                            .await;
                             active_ref.fetch_sub(1, Ordering::SeqCst);
                         });
                     }
@@ -167,22 +189,31 @@ async fn handle_outcome(
     outcome: TaskRunOutcome,
     scheduler: Arc<tokio::sync::Mutex<Scheduler>>,
     task_cancels: Arc<tokio::sync::Mutex<HashMap<String, CancellationToken>>>,
+    pending_resumes: Arc<tokio::sync::Mutex<HashSet<String>>>,
 ) {
-    task_cancels.lock().await.remove(&task.id);
-
     let tasks_path = config.data_dir.join("tasks.db");
     let store = match TaskStore::open(&tasks_path) {
         Ok(s) => s,
-        Err(_) => return,
+        Err(_) => {
+            task_cancels.lock().await.remove(&task.id);
+            return;
+        }
     };
 
     match outcome {
         TaskRunOutcome::Success => {}
         TaskRunOutcome::Cancelled => {
             if let Ok(current) = store.get(&task.id) {
-                if current.status == TaskStatus::Paused {
-                    let _ = save_interrupt_checkpoint(config, task);
-                    return;
+                match current.status {
+                    TaskStatus::Cancelled => {
+                        cleanup_temp_dir(&config.media_dir, &task.id);
+                        return;
+                    }
+                    TaskStatus::Paused | TaskStatus::Queued => {
+                        let _ = save_interrupt_checkpoint(config, task);
+                        return;
+                    }
+                    _ => {}
                 }
             }
             let _ = store.set_task_status(&task.id, TaskStatus::Cancelled, None);
@@ -200,6 +231,11 @@ async fn handle_outcome(
 
     if let Some(parent_id) = &task.parent_id {
         let _ = store.sync_parent_status(parent_id);
+    }
+
+    task_cancels.lock().await.remove(&task.id);
+    if pending_resumes.lock().await.remove(&task.id) {
+        let _ = store.set_task_status(&task.id, TaskStatus::Queued, None);
     }
 }
 
@@ -277,6 +313,18 @@ async fn run_one_task(
 
     match download_result {
         Ok((final_path, _bytes)) => {
+            let current = match tasks.get(&task.id) {
+                Ok(t) => t,
+                Err(e) => return TaskRunOutcome::Failed(e),
+            };
+            if current.status == TaskStatus::Paused {
+                let _ = save_interrupt_checkpoint(config, task);
+                return TaskRunOutcome::Cancelled;
+            }
+            if current.status != TaskStatus::Running {
+                return TaskRunOutcome::Cancelled;
+            }
+
             let ingest_result = if let Some(parent_id) = &task.parent_id {
                 let parent = match tasks.get(parent_id) {
                     Ok(p) => p,
@@ -341,7 +389,7 @@ fn save_interrupt_checkpoint_from_store(
     store: &TaskStore,
 ) -> Result<(), EngineError> {
     let current = store.get(&task.id)?;
-    if current.status != TaskStatus::Paused {
+    if !matches!(current.status, TaskStatus::Paused | TaskStatus::Queued) {
         return Ok(());
     }
     save_interrupt_checkpoint(config, task)
@@ -444,6 +492,10 @@ fn cleanup_temp_dir(media_dir: &Path, task_id: &str) {
     }
 }
 
+pub(crate) fn cleanup_download_temp(media_dir: &Path, task_id: &str) {
+    cleanup_temp_dir(media_dir, task_id);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -453,6 +505,21 @@ mod tests {
         assert_eq!(sanitize_filename("Hello World!"), "Hello_World_");
         let long = "a".repeat(200);
         assert_eq!(sanitize_filename(&long).len(), 120);
+    }
+
+    #[test]
+    fn classify_error_maps_storage_full_and_cancelled() {
+        let disk_full = EngineError::Io(io::Error::new(io::ErrorKind::StorageFull, "full"));
+        assert!(matches!(
+            classify_error(disk_full),
+            TaskRunOutcome::DiskFull
+        ));
+
+        let cancelled = EngineError::Message("download cancelled".into());
+        assert!(matches!(
+            classify_error(cancelled),
+            TaskRunOutcome::Cancelled
+        ));
     }
 
     #[test]

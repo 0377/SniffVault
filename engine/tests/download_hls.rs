@@ -54,10 +54,9 @@ async fn hls_master_highest() {
     let (addr, _guard) = fixture_server::serve_dir(fixtures_hls_dir()).await;
     let url = format!("http://{addr}/master.m3u8");
 
-    let final_path =
-        download_hls_with_new_client(&url, &temp, &output, Some("highest"), None)
-            .await
-            .unwrap();
+    let final_path = download_hls_with_new_client(&url, &temp, &output, Some("highest"), None)
+        .await
+        .unwrap();
 
     assert!(final_path.exists());
     assert!(output_contains_ftyp(&final_path));

@@ -9,9 +9,7 @@ pub fn validate_media_dir(name: &str) -> Result<(), EngineError> {
         ));
     }
     if name == "." {
-        return Err(EngineError::InvalidArg(
-            "media_dir must not be '.'".into(),
-        ));
+        return Err(EngineError::InvalidArg("media_dir must not be '.'".into()));
     }
     if Path::new(name).is_absolute() {
         return Err(EngineError::InvalidArg(

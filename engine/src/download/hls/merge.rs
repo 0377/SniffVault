@@ -11,9 +11,7 @@ pub fn write_concat_list(segment_paths: &[PathBuf], list_path: &Path) -> Result<
 
     let mut lines = String::new();
     for path in segment_paths {
-        let escaped = path
-            .to_string_lossy()
-            .replace('\'', "'\\''");
+        let escaped = path.to_string_lossy().replace('\'', "'\\''");
         lines.push_str("file '");
         lines.push_str(&escaped);
         lines.push_str("'\n");

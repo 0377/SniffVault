@@ -3,7 +3,7 @@ mod support;
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
-use support::engine_download::large_mp4_fixture_bytes as build_large_mp4;
+use support::engine_download::interruptible_mp4_fixture_bytes as build_interruptible_mp4;
 use support::fixture_server;
 use tempfile::tempdir;
 use uuid::Uuid;
@@ -14,7 +14,13 @@ use video_sniffing_engine::{DownloadTask, TaskStatus};
 
 fn large_mp4_fixture_bytes() -> Vec<u8> {
     let sample = std::fs::read(fixture_server::fixtures_dir().join("sample.mp4")).unwrap();
-    build_large_mp4(&sample)
+    build_interruptible_mp4(&sample)
+}
+
+fn serve_throttled_fixture(
+    fixture_dir: std::path::PathBuf,
+) -> impl std::future::Future<Output = (std::net::SocketAddr, fixture_server::ServerGuard)> {
+    fixture_server::serve_dir_throttled(fixture_dir, 8_192, Duration::from_millis(5))
 }
 
 fn fixtures_hls_dir() -> std::path::PathBuf {
@@ -249,7 +255,7 @@ async fn worker_cancel_cleans_temp_dir() {
     let store = TaskStore::open(&data_dir.join("tasks.db")).unwrap();
     let now = 1i64;
     let task_id = Uuid::new_v4().to_string();
-    let (addr, _guard) = fixture_server::serve_dir(fixture_dir).await;
+    let (addr, _guard) = serve_throttled_fixture(fixture_dir).await;
     let url = format!("http://{addr}/large.mp4");
 
     store
@@ -286,6 +292,8 @@ async fn worker_cancel_cleans_temp_dir() {
             Duration::from_secs(10),
         )
         .await;
+    } else {
+        panic!("download finished before cancel could be tested");
     }
     stop_worker(&cmd_tx, worker);
 
@@ -305,7 +313,7 @@ async fn worker_pause_preserves_temp_dir() {
     let store = TaskStore::open(&data_dir.join("tasks.db")).unwrap();
     let now = 1i64;
     let task_id = Uuid::new_v4().to_string();
-    let (addr, _guard) = fixture_server::serve_dir(fixture_dir).await;
+    let (addr, _guard) = serve_throttled_fixture(fixture_dir).await;
     let url = format!("http://{addr}/large.mp4");
 
     store
@@ -342,12 +350,14 @@ async fn worker_pause_preserves_temp_dir() {
             Duration::from_secs(10),
         )
         .await;
+
+        let temp = data_dir.join("media").join(".dl").join(&task_id);
+        assert!(temp.exists(), "paused task should keep temp dir for resume");
+    } else {
+        panic!("download finished before pause could be tested");
     }
     stop_worker(&cmd_tx, worker);
 
     let task = store.get(&task_id).unwrap();
-    if task.status == TaskStatus::Paused {
-        let temp = data_dir.join("media").join(".dl").join(&task_id);
-        assert!(temp.exists(), "paused task should keep temp dir for resume");
-    }
+    assert_eq!(task.status, TaskStatus::Paused);
 }

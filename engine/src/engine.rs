@@ -221,21 +221,24 @@ impl Engine {
         } else {
             self.tasks
                 .set_task_status(task_id, TaskStatus::Cancelled, None)?;
+            crate::download::worker::cleanup_download_temp(&self.media_dir(), task_id);
         }
         Ok(())
     }
 
-    /// 阻塞直到无 Running 任务或超时（集成测试专用）。
+    /// 阻塞直到无 Running/Queued 任务或超时（集成测试专用）。
     #[doc(hidden)]
     pub fn drain_downloads_for_test(&self, timeout: Duration) -> Result<(), EngineError> {
         let started = std::time::Instant::now();
         loop {
-            if self.tasks.count_by_status(TaskStatus::Running)? == 0 {
+            let running = self.tasks.count_by_status(TaskStatus::Running)?;
+            let queued = self.tasks.count_by_status(TaskStatus::Queued)?;
+            if running == 0 && queued == 0 {
                 return Ok(());
             }
             if started.elapsed() > timeout {
                 return Err(EngineError::Message(
-                    "drain_downloads_for_test timed out waiting for running tasks".into(),
+                    "drain_downloads_for_test timed out waiting for downloads to finish".into(),
                 ));
             }
             std::thread::sleep(Duration::from_millis(50));

@@ -4,12 +4,12 @@ pub(crate) mod segments;
 
 use crate::download::checkpoint::{Checkpoint, CheckpointBody};
 use crate::download::ffmpeg::{BundledFfmpegLocator, FfmpegLocator};
-use crate::download::http::HttpClient;
 use crate::download::hls::merge::merge_segments_to_mp4;
 use crate::download::hls::playlist::{
     parse_media_playlist, select_media_playlist_url, MediaPlaylist,
 };
 use crate::download::hls::segments::download_segments;
+use crate::download::http::HttpClient;
 use crate::error::EngineError;
 use std::path::{Path, PathBuf};
 

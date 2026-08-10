@@ -2,8 +2,8 @@ mod support;
 
 use std::time::Duration;
 use support::engine_download::{
-    large_mp4_fixture_bytes, output_contains_ftyp, task_by_title, wait_for_any_running_or_progress,
-    wait_for_task, EngineFixture,
+    interruptible_mp4_fixture_bytes, large_mp4_fixture_bytes, output_contains_ftyp, task_by_title,
+    wait_for_any_running_or_progress, wait_for_task, EngineFixture,
 };
 use support::fixture_server;
 use video_sniffing_engine::test_api::TaskStore;
@@ -319,11 +319,12 @@ fn pause_and_cancel() {
         let sample = std::fs::read(fixture_server::fixtures_dir().join("sample.mp4")).unwrap();
         std::fs::write(
             fixture_dir.join("large.mp4"),
-            large_mp4_fixture_bytes(&sample),
+            interruptible_mp4_fixture_bytes(&sample),
         )
         .unwrap();
 
-        let (addr, _guard) = fixture_server::serve_dir(fixture_dir).await;
+        let (addr, _guard) =
+            fixture_server::serve_dir_throttled(fixture_dir, 8_192, Duration::from_millis(5)).await;
         let url = format!("http://{addr}/large.mp4");
 
         // Pause path: interrupt mid-download, resume, complete.
@@ -345,7 +346,12 @@ fn pause_and_cancel() {
             let temp = fx.media_dir().join(".dl").join(&pause_task_id);
             assert!(temp.exists(), "paused task should keep temp dir");
 
-            fx.engine.resume_task(&pause_task_id).unwrap();
+            fx.engine
+                .drain_downloads_for_test(Duration::from_secs(5))
+                .unwrap();
+            // worker 收尾完成后再恢复：stop 后 start 会将 Paused 重回 Queued（与 resume_task 等效）
+            fx.engine.stop_downloads().unwrap();
+            fx.engine.start_downloads().unwrap();
             wait_for_task(
                 &fx.engine,
                 &pause_task_id,
@@ -353,6 +359,8 @@ fn pause_and_cancel() {
                 Duration::from_secs(60),
             )
             .await;
+        } else {
+            panic!("download finished before pause could be tested");
         }
 
         // Cancel path: start another download and cancel it.
@@ -371,6 +379,8 @@ fn pause_and_cancel() {
 
             let temp = fx.media_dir().join(".dl").join(&cancel_task_id);
             assert!(!temp.exists(), "cancelled task should remove temp dir");
+        } else {
+            panic!("download finished before cancel could be tested");
         }
 
         fx.engine.stop_downloads().unwrap();

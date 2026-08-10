@@ -103,6 +103,26 @@ fn sync_parent_status_aggregates_children() {
 }
 
 #[test]
+fn sync_parent_status_when_all_children_paused() {
+    let dir = tempdir().unwrap();
+    let store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();
+
+    store
+        .upsert(&sample("parent", None, TaskStatus::Running))
+        .unwrap();
+    store
+        .upsert(&sample("c1", Some("parent"), TaskStatus::Paused))
+        .unwrap();
+    store
+        .upsert(&sample("c2", Some("parent"), TaskStatus::Paused))
+        .unwrap();
+
+    store.sync_parent_status("parent").unwrap();
+    let parent = store.get("parent").unwrap();
+    assert_eq!(parent.status, TaskStatus::Paused);
+}
+
+#[test]
 fn parent_child_progress_counts_completed() {
     let dir = tempdir().unwrap();
     let store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();

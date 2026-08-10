@@ -31,6 +31,11 @@ runs:
       shell: bash
       run: cargo fmt --manifest-path engine/Cargo.toml --all -- --check
 
+    - name: Fetch bundled ffmpeg for HLS tests
+      if: inputs.run-test == 'true'
+      shell: bash
+      run: bash engine/scripts/fetch_ffmpeg.sh
+
     - name: cargo test
       if: inputs.run-test == 'true'
       shell: bash
