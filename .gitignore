@@ -1,5 +1,3 @@
-docs/
-
 # Rust
 target/
 **/*.rs.bk

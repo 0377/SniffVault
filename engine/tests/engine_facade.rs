@@ -147,6 +147,62 @@ fn save_settings_rejects_empty_media_dir() {
 }
 
 #[test]
+fn register_completed_single_creates_single_item() {
+    let dir = tempdir().unwrap();
+    let mut engine = Engine::open(dir.path()).unwrap();
+    let media = engine.media_dir().join("movie.mp4");
+    std::fs::create_dir_all(media.parent().unwrap()).unwrap();
+    std::fs::write(&media, b"fake").unwrap();
+
+    let (item, ep) = engine
+        .register_completed_single("单片", media.to_str().unwrap(), Some("https://ex/m.mp4"))
+        .unwrap();
+    assert_eq!(item.title, "单片");
+    assert_eq!(ep.index, 1);
+    assert_eq!(engine.list_library().unwrap().len(), 1);
+}
+
+#[test]
+fn set_episode_position_persists_after_reopen() {
+    let dir = tempdir().unwrap();
+    let mut engine = Engine::open(dir.path()).unwrap();
+    let media = engine.media_dir().join("ep1.mp4");
+    std::fs::create_dir_all(media.parent().unwrap()).unwrap();
+    std::fs::write(&media, b"fake").unwrap();
+
+    let (item, ep) = engine
+        .register_completed_episode(
+            "示意剧",
+            Some(1),
+            1,
+            "第1集",
+            media.to_str().unwrap(),
+            None,
+        )
+        .unwrap();
+    engine.set_episode_position(&ep.id, 42_000).unwrap();
+    drop(engine);
+
+    let engine2 = Engine::open(dir.path()).unwrap();
+    let eps = engine2.list_episodes(&item.id).unwrap();
+    assert_eq!(eps[0].position_ms, 42_000);
+}
+
+#[test]
+fn open_rejects_dot_media_dir_in_settings() {
+    let dir = tempdir().unwrap();
+    std::fs::create_dir_all(dir.path()).unwrap();
+    std::fs::write(
+        dir.path().join("settings.json"),
+        r#"{"device_name":"test","media_dir":".","max_concurrency":2,"default_quality_label":"highest"}"#,
+    )
+    .unwrap();
+    let err = Engine::open(dir.path()).err().unwrap();
+    let msg = err.to_string();
+    assert!(msg.contains("'.'") || msg.contains("media_dir"), "{msg}");
+}
+
+#[test]
 fn settings_roundtrip_and_media_dir() {
     let dir = tempdir().unwrap();
     let mut engine = Engine::open(dir.path()).unwrap();

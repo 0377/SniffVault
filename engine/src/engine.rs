@@ -158,6 +158,14 @@ impl Engine {
         self.library.list_episodes(item_id)
     }
 
+    pub fn set_episode_position(
+        &self,
+        episode_id: &str,
+        position_ms: i64,
+    ) -> Result<(), EngineError> {
+        self.library.set_position(episode_id, position_ms)
+    }
+
     pub fn register_completed_episode(
         &mut self,
         series_title: &str,
