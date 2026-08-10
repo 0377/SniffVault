@@ -1,4 +1,4 @@
-use std::collections::{HashSet};
+use std::collections::HashSet;
 use std::sync::OnceLock;
 
 use regex::Regex;
@@ -40,11 +40,7 @@ pub fn extract_episode_list(
 
     for caps in link_re().captures_iter(html) {
         let href = caps.get(1)?.as_str();
-        let text = caps
-            .get(2)
-            .map(|m| m.as_str())
-            .unwrap_or_default()
-            .trim();
+        let text = caps.get(2).map(|m| m.as_str()).unwrap_or_default().trim();
 
         if is_blacklisted_href(href) {
             continue;
@@ -55,8 +51,12 @@ pub fn extract_episode_list(
             continue;
         }
 
-        let resolved = resolve_href(href, &base)?;
-        let canonical = canonical_url(&resolved)?;
+        let Some(resolved) = resolve_href(href, &base) else {
+            continue;
+        };
+        let Some(canonical) = canonical_url(&resolved) else {
+            continue;
+        };
         if !seen_urls.insert(canonical) {
             continue;
         }
@@ -125,9 +125,7 @@ fn is_blacklisted_href(href: &str) -> bool {
     }
 
     let path = if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
-        Url::parse(trimmed)
-            .ok()
-            .map(|url| url.path().to_string())
+        Url::parse(trimmed).ok().map(|url| url.path().to_string())
     } else {
         Some(trimmed.to_string())
     };
@@ -192,8 +190,8 @@ mod tests {
     #[test]
     fn extract_episode_list_from_fixture_shape() {
         let html = include_str!("../../tests/fixtures/html/series_page.html");
-        let list = extract_episode_list(html, "http://127.0.0.1/series", "测试剧")
-            .expect("episode list");
+        let list =
+            extract_episode_list(html, "http://127.0.0.1/series", "测试剧").expect("episode list");
         assert_eq!(list.title, "测试剧");
         assert_eq!(list.season, None);
         assert_eq!(list.episodes.len(), 3);
@@ -224,11 +222,25 @@ mod tests {
         <a href="/login">第2集</a>
         <a href="/ep/3">第3集</a>
         "#;
-        let list = extract_episode_list(html, "http://example.com/", "剧")
-            .expect("episode list");
+        let list = extract_episode_list(html, "http://example.com/", "剧").expect("episode list");
         assert_eq!(list.episodes.len(), 2);
         assert_eq!(list.episodes[0].index, 1);
         assert_eq!(list.episodes[1].index, 3);
+    }
+
+    #[test]
+    fn extract_episode_list_skips_unresolvable_links() {
+        let html = r#"
+        <a href="/ep/1">第1集</a>
+        <a href="/ep/2">第2集</a>
+        <a href="http://[invalid">第4集</a>
+        <a href="/ep/3">第3集</a>
+        "#;
+        let list = extract_episode_list(html, "http://example.com/", "剧").expect("episode list");
+        assert_eq!(list.episodes.len(), 3);
+        assert_eq!(list.episodes[0].index, 1);
+        assert_eq!(list.episodes[1].index, 2);
+        assert_eq!(list.episodes[2].index, 3);
     }
 
     #[test]
