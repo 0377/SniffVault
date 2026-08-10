@@ -34,6 +34,8 @@ cargo clippy --manifest-path engine/Cargo.toml --all-targets --all-features -- -
 cd engine && cargo test
 ```
 
+解析与嗅探（Plan 3）：`Engine::resolve_url`、`resolve_qualities`、`sniff_urls`。
+
 ### 测试依赖 ffmpeg
 
 HLS 合并相关集成测试需要本机可用的 `ffmpeg`。在 `engine/` 目录执行：
