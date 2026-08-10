@@ -1,3 +1,5 @@
+use crate::download::runtime::{worker_config, DownloadRuntime};
+use crate::download::worker::DownloadCommand;
 use crate::error::EngineError;
 use crate::ingest;
 use crate::library::LibraryStore;
@@ -5,7 +7,7 @@ use crate::settings;
 use crate::tasks::TaskStore;
 use crate::types::{DownloadTask, EngineSettings, LibraryEpisode, LibraryItem, TaskStatus};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
 pub struct Engine {
@@ -14,6 +16,7 @@ pub struct Engine {
     settings_path: PathBuf,
     library: LibraryStore,
     tasks: TaskStore,
+    download: Option<DownloadRuntime>,
 }
 
 fn absolute_data_dir(path: &Path) -> Result<PathBuf, EngineError> {
@@ -45,6 +48,7 @@ impl Engine {
             settings_path,
             library,
             tasks,
+            download: None,
         })
     }
 
@@ -124,6 +128,118 @@ impl Engine {
             child_ids.push(id);
         }
         Ok((parent_id, child_ids))
+    }
+
+    pub fn enqueue_single(
+        &mut self,
+        title: &str,
+        url: &str,
+        quality_label: Option<&str>,
+    ) -> Result<String, EngineError> {
+        if url.is_empty() {
+            return Err(EngineError::InvalidArg("url must not be empty".into()));
+        }
+        let now = Self::now_ms();
+        let id = Uuid::new_v4().to_string();
+        self.tasks.upsert(&DownloadTask {
+            id: id.clone(),
+            parent_id: None,
+            season: None,
+            title: title.to_string(),
+            source_url: url.to_string(),
+            quality_label: quality_label.map(|s| s.to_string()),
+            status: TaskStatus::Queued,
+            progress_bytes: 0,
+            total_bytes: None,
+            error_message: None,
+            output_path: None,
+            library_item_id: None,
+            episode_index: None,
+            created_at_ms: now,
+            updated_at_ms: now,
+        })?;
+        Ok(id)
+    }
+
+    pub fn start_downloads(&mut self) -> Result<(), EngineError> {
+        if self.download.is_some() {
+            return Err(EngineError::InvalidArg("downloads already running".into()));
+        }
+        for task in self.tasks.list_all()? {
+            if task.status == TaskStatus::Paused {
+                self.tasks
+                    .set_task_status(&task.id, TaskStatus::Queued, None)?;
+            }
+        }
+        let config = worker_config(
+            self.data_dir.clone(),
+            self.media_dir(),
+            self.settings.max_concurrency,
+            self.settings.user_agent.clone(),
+            self.settings.default_quality_label.clone(),
+        );
+        self.download = Some(DownloadRuntime::spawn(config));
+        Ok(())
+    }
+
+    pub fn stop_downloads(&mut self) -> Result<(), EngineError> {
+        if let Some(runtime) = self.download.take() {
+            runtime.stop_and_join()?;
+        }
+        Ok(())
+    }
+
+    pub fn pause_task(&mut self, task_id: &str) -> Result<(), EngineError> {
+        if let Some(runtime) = &self.download {
+            runtime.send_command(DownloadCommand::Pause {
+                task_id: task_id.to_string(),
+            })?;
+        } else {
+            self.tasks
+                .set_task_status(task_id, TaskStatus::Paused, None)?;
+        }
+        Ok(())
+    }
+
+    pub fn resume_task(&mut self, task_id: &str) -> Result<(), EngineError> {
+        if let Some(runtime) = &self.download {
+            runtime.send_command(DownloadCommand::Resume {
+                task_id: task_id.to_string(),
+            })?;
+        } else {
+            self.tasks
+                .set_task_status(task_id, TaskStatus::Queued, None)?;
+        }
+        Ok(())
+    }
+
+    pub fn cancel_task(&mut self, task_id: &str) -> Result<(), EngineError> {
+        if let Some(runtime) = &self.download {
+            runtime.send_command(DownloadCommand::Cancel {
+                task_id: task_id.to_string(),
+            })?;
+        } else {
+            self.tasks
+                .set_task_status(task_id, TaskStatus::Cancelled, None)?;
+        }
+        Ok(())
+    }
+
+    /// 阻塞直到无 Running 任务或超时（集成测试专用）。
+    #[doc(hidden)]
+    pub fn drain_downloads_for_test(&self, timeout: Duration) -> Result<(), EngineError> {
+        let started = std::time::Instant::now();
+        loop {
+            if self.tasks.count_by_status(TaskStatus::Running)? == 0 {
+                return Ok(());
+            }
+            if started.elapsed() > timeout {
+                return Err(EngineError::Message(
+                    "drain_downloads_for_test timed out waiting for running tasks".into(),
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
     }
 
     pub fn list_tasks(&self) -> Result<Vec<DownloadTask>, EngineError> {

@@ -1,7 +1,8 @@
+use crate::download::checkpoint::{Checkpoint, CheckpointBody};
 use crate::download::ffmpeg::FfmpegLocator;
 use crate::download::hls::{download_hls_to_mp4, HlsContext};
 use crate::download::http::HttpClient;
-use crate::download::mp4::{download_mp4, Mp4Context};
+use crate::download::mp4::{download_mp4, mp4_part_path, Mp4Context};
 use crate::download::scheduler::Scheduler;
 use crate::error::EngineError;
 use crate::ingest;
@@ -12,9 +13,9 @@ use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 pub struct WorkerConfig {
@@ -30,7 +31,7 @@ pub enum DownloadCommand {
     Pause { task_id: String },
     Resume { task_id: String },
     Cancel { task_id: String },
-    Stop { ack: oneshot::Sender<()> },
+    Stop { ack: mpsc::Sender<()> },
 }
 
 enum TaskRunOutcome {
@@ -40,7 +41,7 @@ enum TaskRunOutcome {
     DiskFull,
 }
 
-pub async fn run_worker(config: WorkerConfig, mut cmd_rx: mpsc::Receiver<DownloadCommand>) {
+pub async fn run_worker(config: WorkerConfig, cmd_rx: mpsc::Receiver<DownloadCommand>) {
     let config = Arc::new(config);
     let scheduler = Arc::new(tokio::sync::Mutex::new(Scheduler::new(
         config.max_concurrency,
@@ -48,7 +49,7 @@ pub async fn run_worker(config: WorkerConfig, mut cmd_rx: mpsc::Receiver<Downloa
     let active = Arc::new(AtomicUsize::new(0));
     let task_cancels: Arc<tokio::sync::Mutex<HashMap<String, CancellationToken>>> =
         Arc::new(tokio::sync::Mutex::new(HashMap::new()));
-    let mut shutdown_ack: Option<oneshot::Sender<()>> = None;
+    let mut shutdown_ack: Option<mpsc::Sender<()>> = None;
     let mut stopping = false;
 
     loop {
@@ -84,6 +85,17 @@ pub async fn run_worker(config: WorkerConfig, mut cmd_rx: mpsc::Receiver<Downloa
                 DownloadCommand::Stop { ack } => {
                     stopping = true;
                     shutdown_ack = Some(ack);
+                    let tasks_path = config.data_dir.join("tasks.db");
+                    if let Ok(store) = TaskStore::open(&tasks_path) {
+                        if let Ok(all) = store.list_all() {
+                            for task in all {
+                                if task.status == TaskStatus::Running {
+                                    let _ =
+                                        store.set_task_status(&task.id, TaskStatus::Paused, None);
+                                }
+                            }
+                        }
+                    }
                     let tokens: Vec<CancellationToken> =
                         task_cancels.lock().await.drain().map(|(_, t)| t).collect();
                     for token in tokens {
@@ -167,6 +179,12 @@ async fn handle_outcome(
     match outcome {
         TaskRunOutcome::Success => {}
         TaskRunOutcome::Cancelled => {
+            if let Ok(current) = store.get(&task.id) {
+                if current.status == TaskStatus::Paused {
+                    let _ = save_interrupt_checkpoint(config, task);
+                    return;
+                }
+            }
             let _ = store.set_task_status(&task.id, TaskStatus::Cancelled, None);
             cleanup_temp_dir(&config.media_dir, &task.id);
         }
@@ -253,6 +271,7 @@ async fn run_one_task(
     };
 
     if cancel.is_cancelled() {
+        let _ = save_interrupt_checkpoint_from_store(config, task, &tasks);
         return TaskRunOutcome::Cancelled;
     }
 
@@ -305,8 +324,61 @@ async fn run_one_task(
                 Err(e) => TaskRunOutcome::Failed(e),
             }
         }
-        Err(e) => classify_error(e),
+        Err(e) => {
+            if cancel.is_cancelled() {
+                let _ = save_interrupt_checkpoint_from_store(config, task, &tasks);
+                TaskRunOutcome::Cancelled
+            } else {
+                classify_error(e)
+            }
+        }
     }
+}
+
+fn save_interrupt_checkpoint_from_store(
+    config: &WorkerConfig,
+    task: &DownloadTask,
+    store: &TaskStore,
+) -> Result<(), EngineError> {
+    let current = store.get(&task.id)?;
+    if current.status != TaskStatus::Paused {
+        return Ok(());
+    }
+    save_interrupt_checkpoint(config, task)
+}
+
+fn save_interrupt_checkpoint(
+    config: &WorkerConfig,
+    task: &DownloadTask,
+) -> Result<(), EngineError> {
+    if is_hls_url(&task.source_url) {
+        return Ok(());
+    }
+
+    let temp_dir = config.media_dir.join(".dl").join(&task.id);
+    let output_path = config.media_dir.join(output_filename(task));
+    let part = mp4_part_path(&temp_dir, &output_path);
+    if !part.is_file() {
+        return Ok(());
+    }
+
+    let bytes_done = std::fs::metadata(&part)?.len();
+    if bytes_done == 0 {
+        return Ok(());
+    }
+
+    let checkpoint = Checkpoint {
+        version: 1,
+        body: CheckpointBody::Mp4 {
+            temp_dir: temp_dir.to_string_lossy().into_owned(),
+            part_path: part.to_string_lossy().into_owned(),
+            bytes_done,
+        },
+    };
+    let mut store = TaskStore::open(&config.data_dir.join("tasks.db"))?;
+    store.save_checkpoint(&task.id, &checkpoint)?;
+    store.update_progress(&task.id, bytes_done, None, TaskStatus::Paused)?;
+    Ok(())
 }
 
 fn classify_error(err: EngineError) -> TaskRunOutcome {

@@ -12,6 +12,10 @@ pub struct Mp4Context<'a> {
     pub temp_dir: &'a Path,
 }
 
+pub(crate) fn mp4_part_path(temp_dir: &Path, output_mp4: &Path) -> PathBuf {
+    part_path(temp_dir, output_mp4)
+}
+
 fn part_path(temp_dir: &Path, output_mp4: &Path) -> PathBuf {
     let name = output_mp4
         .file_name()
