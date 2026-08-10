@@ -1,0 +1,42 @@
+name: Rust check
+description: Run optional fmt, test, and clippy for video_sniffing engine
+
+inputs:
+  run-fmt:
+    description: Run cargo fmt --check
+    required: false
+    default: "false"
+  run-test:
+    description: Run cargo test
+    required: false
+    default: "true"
+  run-clippy:
+    description: Run cargo clippy with -D warnings
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo registry and target
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: engine
+
+    - name: cargo fmt --check
+      if: inputs.run-fmt == 'true'
+      shell: bash
+      run: cargo fmt --manifest-path engine/Cargo.toml --all -- --check
+
+    - name: cargo test
+      if: inputs.run-test == 'true'
+      shell: bash
+      run: cargo test --manifest-path engine/Cargo.toml
+
+    - name: cargo clippy
+      if: inputs.run-clippy == 'true'
+      shell: bash
+      run: cargo clippy --manifest-path engine/Cargo.toml --all-targets --all-features -- -D warnings
