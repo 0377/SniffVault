@@ -34,6 +34,16 @@ cargo clippy --manifest-path engine/Cargo.toml --all-targets --all-features -- -
 cd engine && cargo test
 ```
 
+### 测试依赖 ffmpeg
+
+HLS 合并相关集成测试需要本机可用的 `ffmpeg`。在 `engine/` 目录执行：
+
+```bash
+./scripts/fetch_ffmpeg.sh
+```
+
+脚本会将当前平台的 `ffmpeg` 复制到 `engine/vendor/ffmpeg/{os}-{arch}/`（例如 macOS Apple Silicon 为 `macos-aarch64/ffmpeg`）。详见 [`engine/vendor/ffmpeg/README.md`](engine/vendor/ffmpeg/README.md)。
+
 ## 许可证
 
 本项目采用 [Apache License 2.0](LICENSE) 开源。
