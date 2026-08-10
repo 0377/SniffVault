@@ -15,8 +15,8 @@ vendor/ffmpeg/
 
 | 平台 | 目录 |
 |------|------|
-| macOS Apple Silicon | `darwin-arm64/` |
-| macOS Intel | `darwin-x86_64/` |
+| macOS Apple Silicon | `macos-aarch64/` |
+| macOS Intel | `macos-x86_64/` |
 | Linux x86_64 | `linux-x86_64/` |
 | Linux aarch64 | `linux-aarch64/` |
 | Windows x86_64 | `windows-x86_64/` |
@@ -43,7 +43,9 @@ vendor/ffmpeg/
 ## 验证
 
 ```bash
-test -x vendor/ffmpeg/$(uname -s | tr '[:upper:]' '[:lower:]' | sed 's/darwin/darwin/;s/linux/linux/')-$(uname -m | sed 's/x86_64/x86_64/;s/aarch64/aarch64/')/ffmpeg
+os="$(uname -s | tr '[:upper:]' '[:lower:]')"; [[ "${os}" == darwin ]] && os=macos
+arch="$(uname -m)"; [[ "${arch}" == arm64 ]] && arch=aarch64
+test -x "vendor/ffmpeg/${os}-${arch}/ffmpeg"
 ```
 
 或直接运行测试（Task 6 起需要真实 ffmpeg）：

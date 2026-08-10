@@ -7,6 +7,9 @@ ENGINE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 VENDOR_ROOT="${ENGINE_ROOT}/vendor/ffmpeg"
 
 os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+case "${os}" in
+  darwin) os="macos" ;;
+esac
 arch="$(uname -m)"
 case "${arch}" in
   x86_64) arch="x86_64" ;;
@@ -20,7 +23,7 @@ esac
 target_dir="${VENDOR_ROOT}/${os}-${arch}"
 mkdir -p "${target_dir}"
 
-if [[ "${os}" == "darwin" || "${os}" == "linux" ]]; then
+if [[ "${os}" == "macos" || "${os}" == "linux" ]]; then
   dest="${target_dir}/ffmpeg"
 else
   dest="${target_dir}/ffmpeg.exe"
@@ -31,7 +34,7 @@ resolve_ffmpeg() {
     command -v ffmpeg
     return 0
   fi
-  if [[ "${os}" == "darwin" ]] && command -v brew >/dev/null 2>&1; then
+  if [[ "${os}" == "macos" ]] && command -v brew >/dev/null 2>&1; then
     local prefix
     prefix="$(brew --prefix ffmpeg 2>/dev/null || true)"
     if [[ -n "${prefix}" && -x "${prefix}/bin/ffmpeg" ]]; then

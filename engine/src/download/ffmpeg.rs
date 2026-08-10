@@ -9,13 +9,19 @@ pub trait FfmpegLocator: Send + Sync {
 #[cfg_attr(not(test), allow(dead_code))]
 pub struct BundledFfmpegLocator;
 
+/// Vendor 目录名，与 `scripts/fetch_ffmpeg.sh` 中 `{os}-{arch}` 一致。
+///
+/// `uname -s` 在 macOS 上为 `darwin`，此处统一为 Rust `std::env::consts::OS` 的 `macos`。
+pub fn platform_dir_name() -> String {
+    format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH)
+}
+
 #[cfg_attr(not(test), allow(dead_code))]
 impl BundledFfmpegLocator {
     pub fn candidate_path() -> PathBuf {
-        let target = format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH);
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("vendor/ffmpeg")
-            .join(target)
+            .join(platform_dir_name())
             .join(if cfg!(windows) {
                 "ffmpeg.exe"
             } else {
@@ -67,6 +73,12 @@ mod tests {
     #[test]
     fn bundled_path_format() {
         let path = BundledFfmpegLocator::candidate_path();
-        assert!(path.to_string_lossy().contains("vendor/ffmpeg"));
+        let binary = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
+        let expected_suffix = format!("vendor/ffmpeg/{platform}/{binary}", platform = platform_dir_name());
+        assert!(
+            path.to_string_lossy().ends_with(&expected_suffix),
+            "expected path ending with {expected_suffix}, got {}",
+            path.display()
+        );
     }
 }
