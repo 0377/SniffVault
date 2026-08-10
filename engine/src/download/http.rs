@@ -95,6 +95,21 @@ impl HttpClient {
             .await
     }
 
+    pub(crate) async fn get_stream_range(
+        &self,
+        url: &str,
+        start: u64,
+    ) -> Result<Response, EngineError> {
+        let range_value = format!("bytes={start}-");
+        self.execute_with_retry(|| {
+            self.client
+                .get(url)
+                .header(reqwest::header::RANGE, range_value.clone())
+                .send()
+        })
+        .await
+    }
+
     async fn execute_with_retry<F, Fut>(&self, mut send: F) -> Result<Response, EngineError>
     where
         F: FnMut() -> Fut,
