@@ -52,13 +52,14 @@ pub fn select_media_playlist_url(
             .expect("variants non-empty"),
         Some(label) => variants
             .into_iter()
-            .find(|v| {
+            .filter(|v| {
                 quality_matches_label(
                     v.resolution.as_deref().unwrap_or(""),
                     v.name.as_deref(),
                     label,
                 )
             })
+            .max_by_key(|v| v.bandwidth)
             .ok_or_else(|| {
                 EngineError::Message(format!("no variant matches quality label '{label}'"))
             })?,
@@ -322,5 +323,40 @@ segment0.m4s
         assert!(quality_matches_label("1280x720", Some("1080p"), "1080p"));
         assert!(quality_matches_label("1920x1080", None, "1080p"));
         assert!(!quality_matches_label("1280x720", None, "1080p"));
+    }
+
+    #[test]
+    fn selects_highest_bandwidth_among_matching_quality_label() {
+        let master = r#"#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1920x1080
+1080p-low.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080
+1080p-high.m3u8
+"#;
+        let base = "http://127.0.0.1/hls/master.m3u8";
+
+        let url = select_media_playlist_url(master, base, Some("1080p")).unwrap();
+        assert_eq!(url, "http://127.0.0.1/hls/1080p-high.m3u8");
+    }
+
+    #[test]
+    fn parse_media_playlist_parses_ext_x_key() {
+        let body = r#"#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-MEDIA-SEQUENCE:0
+#EXT-X-KEY:METHOD=AES-128,URI="https://example.com/key",IV=0x0123456789ABCDEF0123456789ABCDEF
+#EXTINF:2.0,
+segments/seg0.ts
+#EXT-X-ENDLIST
+"#;
+
+        let playlist = parse_media_playlist(body, "http://127.0.0.1/hls/media.m3u8").unwrap();
+        let encryption = playlist.encryption.expect("encryption should be parsed");
+        assert_eq!(encryption.method, "AES-128");
+        assert_eq!(encryption.uri, "https://example.com/key");
+        assert_eq!(
+            encryption.iv_hex,
+            Some("0x0123456789ABCDEF0123456789ABCDEF".to_string())
+        );
     }
 }
