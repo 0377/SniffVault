@@ -1,0 +1,224 @@
+use crate::error::EngineError;
+use crate::tasks::schema::TASK_SCHEMA;
+use crate::types::{DownloadTask, TaskStatus};
+use rusqlite::{params, Connection};
+use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+pub struct TaskStore {
+    conn: Connection,
+}
+
+impl TaskStore {
+    pub fn open(db_path: &Path) -> Result<Self, EngineError> {
+        if let Some(parent) = db_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let conn = Connection::open(db_path)?;
+        conn.execute_batch(TASK_SCHEMA)?;
+        Ok(Self { conn })
+    }
+
+    fn status_to_str(s: TaskStatus) -> &'static str {
+        match s {
+            TaskStatus::Queued => "queued",
+            TaskStatus::Running => "running",
+            TaskStatus::Paused => "paused",
+            TaskStatus::Completed => "completed",
+            TaskStatus::Failed => "failed",
+            TaskStatus::Cancelled => "cancelled",
+        }
+    }
+
+    fn status_from_str(s: &str) -> Result<TaskStatus, EngineError> {
+        match s {
+            "queued" => Ok(TaskStatus::Queued),
+            "running" => Ok(TaskStatus::Running),
+            "paused" => Ok(TaskStatus::Paused),
+            "completed" => Ok(TaskStatus::Completed),
+            "failed" => Ok(TaskStatus::Failed),
+            "cancelled" => Ok(TaskStatus::Cancelled),
+            other => Err(EngineError::InvalidArg(format!("unknown status: {other}"))),
+        }
+    }
+
+    fn now_ms() -> i64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64
+    }
+
+    fn row_to_task(row: &rusqlite::Row<'_>) -> Result<DownloadTask, rusqlite::Error> {
+        let status_raw: String = row.get(6)?;
+        let status = TaskStore::status_from_str(&status_raw).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(
+                6,
+                rusqlite::types::Type::Text,
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    e.to_string(),
+                )),
+            )
+        })?;
+        Ok(DownloadTask {
+            id: row.get(0)?,
+            parent_id: row.get(1)?,
+            season: row.get::<_, Option<i64>>(2)?.map(|v| v as u32),
+            title: row.get(3)?,
+            source_url: row.get(4)?,
+            quality_label: row.get(5)?,
+            status,
+            progress_bytes: row.get::<_, i64>(7)? as u64,
+            total_bytes: row.get::<_, Option<i64>>(8)?.map(|v| v as u64),
+            error_message: row.get(9)?,
+            output_path: row.get(10)?,
+            library_item_id: row.get(11)?,
+            episode_index: row.get::<_, Option<i64>>(12)?.map(|v| v as u32),
+            created_at_ms: row.get(13)?,
+            updated_at_ms: row.get(14)?,
+        })
+    }
+
+    pub fn upsert(&self, task: &DownloadTask) -> Result<(), EngineError> {
+        self.conn.execute(
+            r#"INSERT INTO download_tasks (
+                 id, parent_id, season, title, source_url, quality_label, status,
+                 progress_bytes, total_bytes, error_message, output_path,
+                 library_item_id, episode_index, created_at_ms, updated_at_ms
+               ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)
+               ON CONFLICT(id) DO UPDATE SET
+                 parent_id=excluded.parent_id,
+                 season=excluded.season,
+                 title=excluded.title,
+                 source_url=excluded.source_url,
+                 quality_label=excluded.quality_label,
+                 status=excluded.status,
+                 progress_bytes=excluded.progress_bytes,
+                 total_bytes=excluded.total_bytes,
+                 error_message=excluded.error_message,
+                 output_path=excluded.output_path,
+                 library_item_id=excluded.library_item_id,
+                 episode_index=excluded.episode_index,
+                 updated_at_ms=excluded.updated_at_ms"#,
+            params![
+                task.id,
+                task.parent_id,
+                task.season.map(|v| v as i64),
+                task.title,
+                task.source_url,
+                task.quality_label,
+                Self::status_to_str(task.status),
+                task.progress_bytes as i64,
+                task.total_bytes.map(|v| v as i64),
+                task.error_message,
+                task.output_path,
+                task.library_item_id,
+                task.episode_index.map(|v| v as i64),
+                task.created_at_ms,
+                task.updated_at_ms,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn get(&self, id: &str) -> Result<DownloadTask, EngineError> {
+        self.conn
+            .query_row(
+                r#"SELECT id, parent_id, season, title, source_url, quality_label, status,
+                          progress_bytes, total_bytes, error_message, output_path,
+                          library_item_id, episode_index, created_at_ms, updated_at_ms
+                   FROM download_tasks WHERE id=?1"#,
+                params![id],
+                Self::row_to_task,
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    EngineError::NotFound(format!("task {id}"))
+                }
+                other => EngineError::Db(other),
+            })
+    }
+
+    pub fn list_all(&self) -> Result<Vec<DownloadTask>, EngineError> {
+        let mut stmt = self.conn.prepare(
+            r#"SELECT id, parent_id, season, title, source_url, quality_label, status,
+                      progress_bytes, total_bytes, error_message, output_path,
+                      library_item_id, episode_index, created_at_ms, updated_at_ms
+               FROM download_tasks ORDER BY created_at_ms DESC"#,
+        )?;
+        let rows = stmt.query_map([], Self::row_to_task)?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    pub fn list_children(&self, parent_id: &str) -> Result<Vec<DownloadTask>, EngineError> {
+        let mut stmt = self.conn.prepare(
+            r#"SELECT id, parent_id, season, title, source_url, quality_label, status,
+                      progress_bytes, total_bytes, error_message, output_path,
+                      library_item_id, episode_index, created_at_ms, updated_at_ms
+               FROM download_tasks WHERE parent_id=?1 ORDER BY episode_index ASC"#,
+        )?;
+        let rows = stmt.query_map(params![parent_id], Self::row_to_task)?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    pub fn update_progress(
+        &self,
+        id: &str,
+        progress_bytes: u64,
+        total_bytes: Option<u64>,
+        status: TaskStatus,
+    ) -> Result<(), EngineError> {
+        let n = self.conn.execute(
+            r#"UPDATE download_tasks
+               SET progress_bytes=?1, total_bytes=?2, status=?3, updated_at_ms=?4
+               WHERE id=?5"#,
+            params![
+                progress_bytes as i64,
+                total_bytes.map(|v| v as i64),
+                Self::status_to_str(status),
+                Self::now_ms(),
+                id,
+            ],
+        )?;
+        if n == 0 {
+            return Err(EngineError::NotFound(format!("task {id}")));
+        }
+        Ok(())
+    }
+
+    pub fn mark_failed(&self, id: &str, message: &str) -> Result<(), EngineError> {
+        let n = self.conn.execute(
+            r#"UPDATE download_tasks
+               SET status='failed', error_message=?1, updated_at_ms=?2
+               WHERE id=?3"#,
+            params![message, Self::now_ms(), id],
+        )?;
+        if n == 0 {
+            return Err(EngineError::NotFound(format!("task {id}")));
+        }
+        Ok(())
+    }
+
+    pub fn parent_progress(&self, parent_id: &str) -> Result<(u32, u32), EngineError> {
+        let total: u32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM download_tasks WHERE parent_id=?1",
+            params![parent_id],
+            |row| row.get::<_, i64>(0).map(|v| v as u32),
+        )?;
+        let done: u32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM download_tasks WHERE parent_id=?1 AND status='completed'",
+            params![parent_id],
+            |row| row.get::<_, i64>(0).map(|v| v as u32),
+        )?;
+        Ok((done, total))
+    }
+}
