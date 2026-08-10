@@ -16,6 +16,7 @@ url = "2"
 aes = "0.8"
 cbc = { version = "0.1", features = ["alloc"] }
 hex = "0.4"
+regex = "1"
 
 [dev-dependencies]
 axum = "0.7"
