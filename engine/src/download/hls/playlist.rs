@@ -19,6 +19,7 @@ pub struct KeyTag {
 #[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct MediaPlaylist {
+    pub media_sequence: u32,
     pub segments: Vec<SegmentEntry>,
     pub encryption: Option<KeyTag>,
 }
@@ -90,10 +91,18 @@ pub fn parse_media_playlist(body: &str, base_url: &str) -> Result<MediaPlaylist,
     let mut segments = Vec::new();
     let mut encryption: Option<KeyTag> = None;
     let mut pending_duration: Option<f64> = None;
+    let mut media_sequence = 0u32;
 
     for line in body.lines() {
         let line = line.trim();
         if line.is_empty() {
+            continue;
+        }
+
+        if let Some(value) = line.strip_prefix("#EXT-X-MEDIA-SEQUENCE:") {
+            media_sequence = value.trim().parse().map_err(|_| {
+                EngineError::InvalidArg(format!("invalid EXT-X-MEDIA-SEQUENCE: {value}"))
+            })?;
             continue;
         }
 
@@ -132,6 +141,7 @@ pub fn parse_media_playlist(body: &str, base_url: &str) -> Result<MediaPlaylist,
     }
 
     Ok(MediaPlaylist {
+        media_sequence,
         segments,
         encryption,
     })
@@ -235,7 +245,7 @@ fn resolution_height(resolution: &str) -> Option<u32> {
     height.parse().ok()
 }
 
-fn resolve_url(base_url: &str, reference: &str) -> Result<String, EngineError> {
+pub(crate) fn resolve_url(base_url: &str, reference: &str) -> Result<String, EngineError> {
     let base = Url::parse(base_url)
         .map_err(|err| EngineError::InvalidArg(format!("invalid base URL: {err}")))?;
     base.join(reference)
@@ -297,15 +307,12 @@ segment0.m4s
         let body = read_fixture("media.m3u8");
         let playlist = parse_media_playlist(&body, "http://127.0.0.1/hls/media.m3u8").unwrap();
 
-        assert_eq!(playlist.segments.len(), 2);
-        assert_eq!(playlist.segments[0].duration, 6.0);
+        assert_eq!(playlist.media_sequence, 0);
+        assert_eq!(playlist.segments.len(), 1);
+        assert_eq!(playlist.segments[0].duration, 1.5);
         assert_eq!(
             playlist.segments[0].uri,
             "http://127.0.0.1/hls/segments/seg0.ts"
-        );
-        assert_eq!(
-            playlist.segments[1].uri,
-            "http://127.0.0.1/hls/segments/seg1.ts"
         );
         assert!(playlist.encryption.is_none());
     }

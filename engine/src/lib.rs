@@ -28,4 +28,23 @@ pub mod test_api {
         };
         download_mp4(&ctx, url, output_mp4, checkpoint).await
     }
+
+    pub async fn download_hls_with_new_client(
+        url: &str,
+        temp_dir: &std::path::Path,
+        output_mp4: &std::path::Path,
+        quality_label: Option<&str>,
+        checkpoint: Option<Checkpoint>,
+    ) -> Result<std::path::PathBuf, crate::EngineError> {
+        let http = crate::download::http::HttpClient::new(None)?;
+        crate::download::hls::download_hls_to_mp4_with_bundled_ffmpeg(
+            &http,
+            temp_dir,
+            url,
+            output_mp4,
+            quality_label,
+            checkpoint,
+        )
+        .await
+    }
 }
