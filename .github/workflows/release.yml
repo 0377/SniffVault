@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/rust-check
+        with:
+          run-fmt: "true"
+          run-test: "false"
+          run-clippy: "false"
+
+  test-clippy:
+    name: test-clippy (${{ matrix.os }})
+    needs: fmt
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/rust-check
+        with:
+          run-fmt: "false"
+          run-test: "true"
+          run-clippy: "true"
+
+  publish:
+    name: publish
+    needs: test-clippy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        shell: bash
+        run: |
+          CURRENT_TAG="${{ github.ref_name }}"
+          PREV_TAG=$(git tag -l 'v*' --sort=-v:refname | awk -v cur="$CURRENT_TAG" '
+            $0 == cur { found=1; next }
+            found { print; exit }
+          ')
+          if [ -z "$PREV_TAG" ]; then
+            BODY=$(git log --pretty=format:'- %h %s')
+          else
+            BODY=$(git log "${PREV_TAG}..HEAD" --pretty=format:'- %h %s')
+          fi
+          {
+            echo "body<<EOF"
+            echo "$BODY"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body: ${{ steps.changelog.outputs.body }}
+          generate_release_notes: false
