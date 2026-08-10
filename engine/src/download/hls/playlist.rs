@@ -89,10 +89,8 @@ pub(crate) fn list_master_variants(
                 Some(resolution) => resolution_dimensions(resolution),
                 None => (None, None),
             };
-            let label = variant_quality_label(
-                variant.resolution.as_deref(),
-                variant.name.as_deref(),
-            );
+            let label =
+                variant_quality_label(variant.resolution.as_deref(), variant.name.as_deref());
             let quality = Quality {
                 label,
                 width,

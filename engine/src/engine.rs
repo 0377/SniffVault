@@ -83,9 +83,7 @@ impl Engine {
         url: &str,
         opts: ResolveOptions,
     ) -> Result<ResolveOutcome, EngineError> {
-        let http = crate::download::http::HttpClient::new(
-            self.settings.user_agent.as_deref(),
-        )?;
+        let http = crate::download::http::HttpClient::new(self.settings.user_agent.as_deref())?;
         crate::resolve::resolve_url(&http, url, opts).await
     }
 
@@ -94,9 +92,7 @@ impl Engine {
         media_url: &str,
         opts: ResolveOptions,
     ) -> Result<Vec<Quality>, EngineError> {
-        let http = crate::download::http::HttpClient::new(
-            self.settings.user_agent.as_deref(),
-        )?;
+        let http = crate::download::http::HttpClient::new(self.settings.user_agent.as_deref())?;
         crate::resolve::resolve_qualities(&http, media_url, opts).await
     }
 

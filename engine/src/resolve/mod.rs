@@ -12,10 +12,10 @@ use crate::types::{MediaKind, Quality, ResolveOptions, ResolveOutcome};
 
 use html::{extract_episode_list, scan_media_urls};
 use media::{
-    classify_entry_url, candidates_from_m3u8_body, make_candidate, EntryKind, ResolveMediaResult,
+    candidates_from_m3u8_body, classify_entry_url, make_candidate, EntryKind, ResolveMediaResult,
 };
 
-pub async fn resolve_url(
+pub(crate) async fn resolve_url(
     http: &HttpClient,
     url: &str,
     opts: ResolveOptions,
@@ -26,9 +26,12 @@ pub async fn resolve_url(
 
     match classify_entry_url(url) {
         EntryKind::DirectMp4 => {
-            return Ok(ResolveOutcome::Single(
-                make_candidate(url.to_string(), MediaKind::Mp4, None, page_url_ref),
-            ));
+            return Ok(ResolveOutcome::Single(make_candidate(
+                url.to_string(),
+                MediaKind::Mp4,
+                None,
+                page_url_ref,
+            )));
         }
         EntryKind::M3u8 => {
             let (status, body) = fetch::fetch_playlist_or_page(http, url, &opts).await?;
@@ -76,7 +79,7 @@ pub async fn resolve_url(
     }
 }
 
-pub async fn resolve_qualities(
+pub(crate) async fn resolve_qualities(
     http: &HttpClient,
     media_url: &str,
     opts: ResolveOptions,
