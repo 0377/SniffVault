@@ -1,6 +1,6 @@
 use crate::download::checkpoint::{Checkpoint, CheckpointBody};
 use crate::download::ffmpeg::FfmpegLocator;
-use crate::download::hls::{download_hls_to_mp4, HlsContext};
+use crate::download::hls::{download_hls_to_mp4, HlsContext, HlsDownloadState};
 use crate::download::http::HttpClient;
 use crate::download::mp4::{download_mp4, mp4_part_path, Mp4Context};
 use crate::download::scheduler::Scheduler;
@@ -17,6 +17,19 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
+
+type HlsStateCell = Arc<tokio::sync::Mutex<HlsDownloadState>>;
+type HlsStatesMap = Arc<tokio::sync::Mutex<HashMap<String, HlsStateCell>>>;
+type TaskCancelsMap = Arc<tokio::sync::Mutex<HashMap<String, CancellationToken>>>;
+type PendingResumes = Arc<tokio::sync::Mutex<HashSet<String>>>;
+type InFlightTasks = Arc<tokio::sync::Mutex<HashSet<String>>>;
+
+struct WorkerHandles {
+    task_cancels: TaskCancelsMap,
+    pending_resumes: PendingResumes,
+    in_flight: InFlightTasks,
+    hls_states: HlsStatesMap,
+}
 
 pub struct WorkerConfig {
     pub data_dir: PathBuf,
@@ -47,10 +60,10 @@ pub async fn run_worker(config: WorkerConfig, cmd_rx: mpsc::Receiver<DownloadCom
         config.max_concurrency,
     )));
     let active = Arc::new(AtomicUsize::new(0));
-    let task_cancels: Arc<tokio::sync::Mutex<HashMap<String, CancellationToken>>> =
-        Arc::new(tokio::sync::Mutex::new(HashMap::new()));
-    let pending_resumes: Arc<tokio::sync::Mutex<HashSet<String>>> =
-        Arc::new(tokio::sync::Mutex::new(HashSet::new()));
+    let task_cancels: TaskCancelsMap = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+    let pending_resumes: PendingResumes = Arc::new(tokio::sync::Mutex::new(HashSet::new()));
+    let in_flight: InFlightTasks = Arc::new(tokio::sync::Mutex::new(HashSet::new()));
+    let hls_states: HlsStatesMap = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
     let mut shutdown_ack: Option<mpsc::Sender<()>> = None;
     let mut stopping = false;
 
@@ -63,7 +76,7 @@ pub async fn run_worker(config: WorkerConfig, cmd_rx: mpsc::Receiver<DownloadCom
                         if let Ok(task) = store.get(&task_id) {
                             if task.status == TaskStatus::Running {
                                 let _ = store.set_task_status(&task_id, TaskStatus::Paused, None);
-                                if let Some(token) = task_cancels.lock().await.remove(&task_id) {
+                                if let Some(token) = task_cancels.lock().await.get(&task_id) {
                                     token.cancel();
                                 }
                             }
@@ -71,7 +84,7 @@ pub async fn run_worker(config: WorkerConfig, cmd_rx: mpsc::Receiver<DownloadCom
                     }
                 }
                 DownloadCommand::Resume { task_id } => {
-                    if task_cancels.lock().await.contains_key(&task_id) {
+                    if in_flight.lock().await.contains(&task_id) {
                         pending_resumes.lock().await.insert(task_id);
                     } else {
                         let tasks_path = config.data_dir.join("tasks.db");
@@ -134,9 +147,10 @@ pub async fn run_worker(config: WorkerConfig, cmd_rx: mpsc::Receiver<DownloadCom
                 if let Ok(runnable) = sched.pick_next(&store, active.load(Ordering::SeqCst), slots)
                 {
                     for task in runnable {
-                        if task_cancels.lock().await.contains_key(&task.id) {
+                        if in_flight.lock().await.contains(&task.id) {
                             continue;
                         }
+                        in_flight.lock().await.insert(task.id.clone());
                         let token = CancellationToken::new();
                         task_cancels
                             .lock()
@@ -146,6 +160,7 @@ pub async fn run_worker(config: WorkerConfig, cmd_rx: mpsc::Receiver<DownloadCom
                         if let Err(e) = store.set_task_status(&task.id, TaskStatus::Running, None) {
                             tracing_log(&format!("set running failed: {e}"));
                             task_cancels.lock().await.remove(&task.id);
+                            in_flight.lock().await.remove(&task.id);
                             continue;
                         }
                         if let Some(parent_id) = &task.parent_id {
@@ -156,20 +171,17 @@ pub async fn run_worker(config: WorkerConfig, cmd_rx: mpsc::Receiver<DownloadCom
                         let cfg = config.clone();
                         let scheduler_ref = scheduler.clone();
                         let active_ref = active.clone();
-                        let cancels_ref = task_cancels.clone();
-                        let resumes_ref = pending_resumes.clone();
+                        let handles = WorkerHandles {
+                            task_cancels: task_cancels.clone(),
+                            pending_resumes: pending_resumes.clone(),
+                            in_flight: in_flight.clone(),
+                            hls_states: hls_states.clone(),
+                        };
 
                         tokio::spawn(async move {
-                            let outcome = run_one_task(&cfg, &task, token).await;
-                            handle_outcome(
-                                &cfg,
-                                &task,
-                                outcome,
-                                scheduler_ref,
-                                cancels_ref,
-                                resumes_ref,
-                            )
-                            .await;
+                            let outcome =
+                                run_one_task(&cfg, &task, token, handles.hls_states.clone()).await;
+                            handle_outcome(&cfg, &task, outcome, scheduler_ref, handles).await;
                             active_ref.fetch_sub(1, Ordering::SeqCst);
                         });
                     }
@@ -188,54 +200,61 @@ async fn handle_outcome(
     task: &DownloadTask,
     outcome: TaskRunOutcome,
     scheduler: Arc<tokio::sync::Mutex<Scheduler>>,
-    task_cancels: Arc<tokio::sync::Mutex<HashMap<String, CancellationToken>>>,
-    pending_resumes: Arc<tokio::sync::Mutex<HashSet<String>>>,
+    handles: WorkerHandles,
 ) {
     let tasks_path = config.data_dir.join("tasks.db");
-    let store = match TaskStore::open(&tasks_path) {
-        Ok(s) => s,
-        Err(_) => {
-            task_cancels.lock().await.remove(&task.id);
-            return;
-        }
-    };
+    let mut save_checkpoint = false;
 
-    match outcome {
-        TaskRunOutcome::Success => {}
-        TaskRunOutcome::Cancelled => {
-            if let Ok(current) = store.get(&task.id) {
-                match current.status {
-                    TaskStatus::Cancelled => {
-                        cleanup_temp_dir(&config.media_dir, &task.id);
-                        return;
+    if let Ok(store) = TaskStore::open(&tasks_path) {
+        match outcome {
+            TaskRunOutcome::Success => {}
+            TaskRunOutcome::Cancelled => {
+                if let Ok(current) = store.get(&task.id) {
+                    match current.status {
+                        TaskStatus::Cancelled => {
+                            cleanup_temp_dir(&config.media_dir, &task.id);
+                        }
+                        TaskStatus::Paused | TaskStatus::Queued => {
+                            save_checkpoint = true;
+                        }
+                        _ => {
+                            let _ = store.set_task_status(&task.id, TaskStatus::Cancelled, None);
+                            cleanup_temp_dir(&config.media_dir, &task.id);
+                        }
                     }
-                    TaskStatus::Paused | TaskStatus::Queued => {
-                        let _ = save_interrupt_checkpoint(config, task);
-                        return;
-                    }
-                    _ => {}
                 }
             }
-            let _ = store.set_task_status(&task.id, TaskStatus::Cancelled, None);
-            cleanup_temp_dir(&config.media_dir, &task.id);
+            TaskRunOutcome::DiskFull => {
+                scheduler.lock().await.pause_globally();
+                let _ = store.set_task_status(&task.id, TaskStatus::Paused, None);
+            }
+            TaskRunOutcome::Failed(err) => {
+                let msg = err.to_string();
+                let _ = store.mark_failed(&task.id, &msg);
+            }
         }
-        TaskRunOutcome::DiskFull => {
-            scheduler.lock().await.pause_globally();
-            let _ = store.set_task_status(&task.id, TaskStatus::Paused, None);
-        }
-        TaskRunOutcome::Failed(err) => {
-            let msg = err.to_string();
-            let _ = store.mark_failed(&task.id, &msg);
+
+        if let Some(parent_id) = &task.parent_id {
+            let _ = store.sync_parent_status(parent_id);
         }
     }
 
-    if let Some(parent_id) = &task.parent_id {
-        let _ = store.sync_parent_status(parent_id);
+    if save_checkpoint {
+        let _ = save_interrupt_checkpoint(config, task, &handles.hls_states).await;
     }
 
-    task_cancels.lock().await.remove(&task.id);
-    if pending_resumes.lock().await.remove(&task.id) {
-        let _ = store.set_task_status(&task.id, TaskStatus::Queued, None);
+    finish_task_handles(&config.data_dir, &task.id, &handles).await;
+}
+
+async fn finish_task_handles(data_dir: &Path, task_id: &str, handles: &WorkerHandles) {
+    handles.task_cancels.lock().await.remove(task_id);
+    handles.in_flight.lock().await.remove(task_id);
+    handles.hls_states.lock().await.remove(task_id);
+    if handles.pending_resumes.lock().await.remove(task_id) {
+        let tasks_path = data_dir.join("tasks.db");
+        if let Ok(store) = TaskStore::open(&tasks_path) {
+            let _ = store.set_task_status(task_id, TaskStatus::Queued, None);
+        }
     }
 }
 
@@ -243,6 +262,7 @@ async fn run_one_task(
     config: &WorkerConfig,
     task: &DownloadTask,
     cancel: CancellationToken,
+    hls_states: HlsStatesMap,
 ) -> TaskRunOutcome {
     if cancel.is_cancelled() {
         return TaskRunOutcome::Cancelled;
@@ -290,14 +310,26 @@ async fn run_one_task(
             Ok(p) => p,
             Err(e) => return TaskRunOutcome::Failed(e),
         };
+        let hls_state = Arc::new(tokio::sync::Mutex::new(HlsDownloadState::default()));
+        hls_states
+            .lock()
+            .await
+            .insert(task.id.clone(), hls_state.clone());
         let ctx = HlsContext {
             http: &http,
             temp_dir: &temp_dir,
             ffmpeg: &ffmpeg,
         };
-        download_hls_to_mp4(&ctx, &task.source_url, &output_path, quality, checkpoint)
-            .await
-            .map(|p| (p, 0u64))
+        download_hls_to_mp4(
+            &ctx,
+            &task.source_url,
+            &output_path,
+            quality,
+            checkpoint,
+            Some(hls_state),
+        )
+        .await
+        .map(|p| (p, 0u64))
     } else {
         let ctx = Mp4Context {
             http: &http,
@@ -307,7 +339,7 @@ async fn run_one_task(
     };
 
     if cancel.is_cancelled() {
-        let _ = save_interrupt_checkpoint_from_store(config, task, &tasks);
+        let _ = save_interrupt_checkpoint_if_paused(config, task, &hls_states).await;
         return TaskRunOutcome::Cancelled;
     }
 
@@ -318,7 +350,7 @@ async fn run_one_task(
                 Err(e) => return TaskRunOutcome::Failed(e),
             };
             if current.status == TaskStatus::Paused {
-                let _ = save_interrupt_checkpoint(config, task);
+                let _ = save_interrupt_checkpoint(config, task, &hls_states).await;
                 return TaskRunOutcome::Cancelled;
             }
             if current.status != TaskStatus::Running {
@@ -354,16 +386,7 @@ async fn run_one_task(
             match ingest_result {
                 Ok((item, _episode)) => {
                     let path_str = final_path.to_string_lossy().into_owned();
-                    if let Err(e) = tasks.set_output_path(&task.id, &path_str) {
-                        return TaskRunOutcome::Failed(e);
-                    }
-                    if let Err(e) = tasks.set_library_item_id(&task.id, &item.id) {
-                        return TaskRunOutcome::Failed(e);
-                    }
-                    if let Err(e) = tasks.set_task_status(&task.id, TaskStatus::Completed, None) {
-                        return TaskRunOutcome::Failed(e);
-                    }
-                    if let Err(e) = tasks.clear_checkpoint(&task.id) {
+                    if let Err(e) = tasks.complete_download(&task.id, &path_str, &item.id) {
                         return TaskRunOutcome::Failed(e);
                     }
                     cleanup_temp_dir(&config.media_dir, &task.id);
@@ -374,7 +397,7 @@ async fn run_one_task(
         }
         Err(e) => {
             if cancel.is_cancelled() {
-                let _ = save_interrupt_checkpoint_from_store(config, task, &tasks);
+                let _ = save_interrupt_checkpoint_if_paused(config, task, &hls_states).await;
                 TaskRunOutcome::Cancelled
             } else {
                 classify_error(e)
@@ -383,23 +406,39 @@ async fn run_one_task(
     }
 }
 
-fn save_interrupt_checkpoint_from_store(
+async fn save_interrupt_checkpoint_if_paused(
     config: &WorkerConfig,
     task: &DownloadTask,
-    store: &TaskStore,
+    hls_states: &HlsStatesMap,
 ) -> Result<(), EngineError> {
-    let current = store.get(&task.id)?;
-    if !matches!(current.status, TaskStatus::Paused | TaskStatus::Queued) {
-        return Ok(());
+    let tasks_path = config.data_dir.join("tasks.db");
+    let should_save = TaskStore::open(&tasks_path)?
+        .get(&task.id)
+        .map(|t| matches!(t.status, TaskStatus::Paused | TaskStatus::Queued))
+        .unwrap_or(false);
+    if should_save {
+        save_interrupt_checkpoint(config, task, hls_states).await?;
     }
-    save_interrupt_checkpoint(config, task)
+    Ok(())
 }
 
-fn save_interrupt_checkpoint(
+async fn save_interrupt_checkpoint(
     config: &WorkerConfig,
     task: &DownloadTask,
+    hls_states: &HlsStatesMap,
 ) -> Result<(), EngineError> {
+    let mut store = TaskStore::open(&config.data_dir.join("tasks.db"))?;
+
     if is_hls_url(&task.source_url) {
+        let state = hls_states.lock().await.get(&task.id).cloned();
+        if let Some(state) = state {
+            let snapshot = state.lock().await;
+            if let Some(checkpoint) = snapshot.to_checkpoint() {
+                let progress = snapshot.segments_done.len() as u64;
+                store.save_checkpoint(&task.id, &checkpoint)?;
+                store.update_progress(&task.id, progress, None, TaskStatus::Paused)?;
+            }
+        }
         return Ok(());
     }
 
@@ -423,7 +462,6 @@ fn save_interrupt_checkpoint(
             bytes_done,
         },
     };
-    let mut store = TaskStore::open(&config.data_dir.join("tasks.db"))?;
     store.save_checkpoint(&task.id, &checkpoint)?;
     store.update_progress(&task.id, bytes_done, None, TaskStatus::Paused)?;
     Ok(())

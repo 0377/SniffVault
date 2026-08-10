@@ -87,29 +87,13 @@ impl Engine {
         }
         let now = Self::now_ms();
         let parent_id = Uuid::new_v4().to_string();
-        self.tasks.upsert(&DownloadTask {
-            id: parent_id.clone(),
-            parent_id: None,
-            season,
-            title: list_title.to_string(),
-            source_url: String::new(),
-            quality_label: quality_label.map(|s| s.to_string()),
-            status: TaskStatus::Queued,
-            progress_bytes: 0,
-            total_bytes: None,
-            error_message: None,
-            output_path: None,
-            library_item_id: None,
-            episode_index: None,
-            created_at_ms: now,
-            updated_at_ms: now,
-        })?;
-
         let mut child_ids = Vec::new();
+        let mut child_tasks = Vec::new();
         for (index, title, url) in episodes {
             let id = Uuid::new_v4().to_string();
-            self.tasks.upsert(&DownloadTask {
-                id: id.clone(),
+            child_ids.push(id.clone());
+            child_tasks.push(DownloadTask {
+                id,
                 parent_id: Some(parent_id.clone()),
                 season,
                 title: title.clone(),
@@ -124,9 +108,28 @@ impl Engine {
                 episode_index: Some(*index),
                 created_at_ms: now,
                 updated_at_ms: now,
-            })?;
-            child_ids.push(id);
+            });
         }
+        self.tasks.upsert_parent_with_children(
+            &DownloadTask {
+                id: parent_id.clone(),
+                parent_id: None,
+                season,
+                title: list_title.to_string(),
+                source_url: String::new(),
+                quality_label: quality_label.map(|s| s.to_string()),
+                status: TaskStatus::Queued,
+                progress_bytes: 0,
+                total_bytes: None,
+                error_message: None,
+                output_path: None,
+                library_item_id: None,
+                episode_index: None,
+                created_at_ms: now,
+                updated_at_ms: now,
+            },
+            &child_tasks,
+        )?;
         Ok((parent_id, child_ids))
     }
 
@@ -299,5 +302,11 @@ impl Engine {
             file_path,
             source_url,
         )
+    }
+}
+
+impl Drop for Engine {
+    fn drop(&mut self) {
+        let _ = self.stop_downloads();
     }
 }

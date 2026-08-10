@@ -123,6 +123,23 @@ fn sync_parent_status_when_all_children_paused() {
 }
 
 #[test]
+fn upsert_parent_with_children_is_atomic() {
+    let dir = tempdir().unwrap();
+    let store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();
+
+    let parent = sample("parent", None, TaskStatus::Queued);
+    let child1 = sample("c1", Some("parent"), TaskStatus::Queued);
+    let child2 = sample("c2", Some("parent"), TaskStatus::Queued);
+
+    store
+        .upsert_parent_with_children(&parent, &[child1, child2])
+        .unwrap();
+
+    assert_eq!(store.list_children("parent").unwrap().len(), 2);
+    assert!(store.get("parent").is_ok());
+}
+
+#[test]
 fn parent_child_progress_counts_completed() {
     let dir = tempdir().unwrap();
     let store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();

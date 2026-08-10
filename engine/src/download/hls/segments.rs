@@ -1,12 +1,15 @@
 use crate::download::hls::playlist::{resolve_url, KeyTag, MediaPlaylist, SegmentEntry};
+use crate::download::hls::HlsDownloadState;
 use crate::download::http::HttpClient;
 use crate::error::EngineError;
 use aes::cipher::{block_padding::NoPadding, BlockDecryptMut, KeyIvInit};
 use aes::Aes128;
 use cbc::Decryptor;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
+use tokio::sync::Mutex;
 
 type Aes128CbcDec = Decryptor<Aes128>;
 
@@ -123,6 +126,7 @@ pub async fn download_segments(
     temp_dir: &Path,
     skip_indices: &[u32],
     existing_paths: &[PathBuf],
+    progress: Option<Arc<Mutex<HlsDownloadState>>>,
 ) -> Result<Vec<PathBuf>, EngineError> {
     fs::create_dir_all(temp_dir).await?;
 
@@ -150,7 +154,17 @@ pub async fn download_segments(
             index,
         )
         .await?;
-        paths.push(dest);
+        paths.push(dest.clone());
+        if let Some(state) = &progress {
+            let mut s = state.lock().await;
+            if !s.segments_done.contains(&index_u32) {
+                s.segments_done.push(index_u32);
+            }
+            let path_str = dest.to_string_lossy().into_owned();
+            if !s.segment_paths.iter().any(|p| p == &path_str) {
+                s.segment_paths.push(path_str);
+            }
+        }
     }
 
     Ok(paths)

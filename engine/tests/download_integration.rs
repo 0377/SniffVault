@@ -349,9 +349,7 @@ fn pause_and_cancel() {
             fx.engine
                 .drain_downloads_for_test(Duration::from_secs(5))
                 .unwrap();
-            // worker 收尾完成后再恢复：stop 后 start 会将 Paused 重回 Queued（与 resume_task 等效）
-            fx.engine.stop_downloads().unwrap();
-            fx.engine.start_downloads().unwrap();
+            fx.engine.resume_task(&pause_task_id).unwrap();
             wait_for_task(
                 &fx.engine,
                 &pause_task_id,

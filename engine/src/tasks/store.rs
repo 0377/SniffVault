@@ -144,7 +144,11 @@ impl TaskStore {
     }
 
     pub fn upsert(&self, task: &DownloadTask) -> Result<(), EngineError> {
-        self.conn.execute(
+        Self::upsert_conn(&self.conn, task)
+    }
+
+    fn upsert_conn(conn: &Connection, task: &DownloadTask) -> Result<(), EngineError> {
+        conn.execute(
             r#"INSERT INTO download_tasks (
                  id, parent_id, season, title, source_url, quality_label, status,
                  progress_bytes, total_bytes, error_message, output_path,
@@ -182,6 +186,45 @@ impl TaskStore {
                 task.updated_at_ms,
             ],
         )?;
+        Ok(())
+    }
+
+    pub fn upsert_parent_with_children(
+        &self,
+        parent: &DownloadTask,
+        children: &[DownloadTask],
+    ) -> Result<(), EngineError> {
+        let tx = self.conn.unchecked_transaction()?;
+        Self::upsert_conn(&tx, parent)?;
+        for child in children {
+            Self::upsert_conn(&tx, child)?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn complete_download(
+        &mut self,
+        id: &str,
+        output_path: &str,
+        library_item_id: &str,
+    ) -> Result<(), EngineError> {
+        let tx = self.conn.unchecked_transaction()?;
+        let n = tx.execute(
+            r#"UPDATE download_tasks
+               SET output_path=?1,
+                   library_item_id=?2,
+                   status='completed',
+                   error_message=NULL,
+                   checkpoint_json=NULL,
+                   updated_at_ms=?3
+               WHERE id=?4"#,
+            params![output_path, library_item_id, Self::now_ms(), id],
+        )?;
+        if n == 0 {
+            return Err(EngineError::NotFound(format!("task {id}")));
+        }
+        tx.commit()?;
         Ok(())
     }
 
