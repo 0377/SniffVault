@@ -4,6 +4,7 @@ pub mod error;
 pub mod ingest;
 pub mod library;
 pub mod settings;
+pub mod sniff;
 pub mod tasks;
 pub mod types;
 
