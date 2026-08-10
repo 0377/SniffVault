@@ -1,0 +1,36 @@
+docs/
+
+# Rust
+target/
+**/*.rs.bk
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+*.iml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 环境与密钥
+.env
+.env.*
+*.pem
+*.key
+
+# 本地数据与缓存
+*.db
+*.log
