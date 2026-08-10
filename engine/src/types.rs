@@ -124,3 +124,35 @@ impl Default for EngineSettings {
         }
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SniffInitiator {
+    Navigation,
+    SubResource,
+    Media,
+    Other,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SniffEvent {
+    pub url: String,
+    pub page_url: Option<String>,
+    pub initiator: SniffInitiator,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ResolveOptions {
+    pub cookies: Option<String>,
+    pub referer: Option<String>,
+    pub page_url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResolveOutcome {
+    Single(ResourceCandidate),
+    Candidates(Vec<ResourceCandidate>),
+    EpisodeList(EpisodeList),
+    NeedsBrowser { reason: String },
+}

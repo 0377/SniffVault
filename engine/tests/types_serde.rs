@@ -1,6 +1,6 @@
 use video_sniffing_engine::{
     DownloadTask, Episode, EpisodeList, LibraryItem, LibraryItemKind, MediaKind, Quality,
-    ResourceCandidate, TaskStatus,
+    ResolveOptions, ResolveOutcome, ResourceCandidate, SniffEvent, SniffInitiator, TaskStatus,
 };
 
 #[test]
@@ -64,4 +64,31 @@ fn episode_list_and_task_status_defaults() {
         created_at_ms: 0,
         updated_at_ms: 0,
     };
+}
+
+#[test]
+fn resolve_outcome_and_sniff_event_roundtrip_json() {
+    let event = SniffEvent {
+        url: "http://x/v.m3u8".into(),
+        page_url: Some("http://x/page".into()),
+        initiator: SniffInitiator::SubResource,
+    };
+    let json = serde_json::to_string(&event).unwrap();
+    let back: SniffEvent = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, event);
+
+    let opts = ResolveOptions {
+        cookies: Some("sid=abc".into()),
+        referer: Some("http://x/page".into()),
+        page_url: Some("http://x/page".into()),
+    };
+    let json = serde_json::to_string(&opts).unwrap();
+    let back: ResolveOptions = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, opts);
+
+    let outcome = ResolveOutcome::NeedsBrowser {
+        reason: "auth_required".into(),
+    };
+    let json = serde_json::to_string(&outcome).unwrap();
+    assert!(json.contains("needs_browser"));
 }
