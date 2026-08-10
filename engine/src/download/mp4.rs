@@ -1,6 +1,7 @@
 use crate::download::checkpoint::{Checkpoint, CheckpointBody};
 use crate::download::http::HttpClient;
 use crate::error::EngineError;
+use reqwest::StatusCode;
 use std::path::{Path, PathBuf};
 use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
@@ -52,8 +53,21 @@ pub async fn download_mp4(
 
     if start > 0 && !supports_range {
         start = 0;
-        if part.exists() {
+        if tokio::fs::try_exists(&part).await? {
             tokio::fs::remove_file(&part).await?;
+        }
+    }
+
+    if start > 0 {
+        let part_ok = tokio::fs::metadata(&part)
+            .await
+            .map(|meta| meta.len() == start)
+            .unwrap_or(false);
+        if !part_ok {
+            start = 0;
+            if tokio::fs::try_exists(&part).await? {
+                tokio::fs::remove_file(&part).await?;
+            }
         }
     }
 
@@ -66,7 +80,14 @@ pub async fn download_mp4(
         .await?;
 
     let response = if start > 0 && supports_range {
-        ctx.http.get_stream_range(url, start).await?
+        let response = ctx.http.get_stream_range(url, start).await?;
+        if response.status() != StatusCode::PARTIAL_CONTENT {
+            return Err(EngineError::Message(format!(
+                "expected 206 Partial Content for range resume at byte {start}, got {}",
+                response.status()
+            )));
+        }
+        response
     } else {
         ctx.http.get_stream(url).await?
     };
