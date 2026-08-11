@@ -68,6 +68,20 @@ HLS 合并相关集成测试需要本机可用的 `ffmpeg`。在 `engine/` 目�
 
 脚本会将当前平台的 `ffmpeg` 复制到 `engine/vendor/ffmpeg/{os}-{arch}/`（例如 macOS Apple Silicon 为 `macos-aarch64/ffmpeg`）。详见 [`engine/vendor/ffmpeg/README.md`](engine/vendor/ffmpeg/README.md)。
 
+## 应用 UI（Plan 5）
+
+主流程：启动应用 →「添加」粘贴 URL → 解析并入队 →「任务」查看进度 →「片库」播放已缓存内容。
+
+```bash
+cd app
+flutter pub get
+flutter run -d macos   # 或 android / ios / windows
+flutter test
+flutter test integration_test/ui_test.dart -d macos
+```
+
+规格见 `docs/superpowers/specs/2026-08-11-app-ui-player-design.md`。
+
 ## 许可证
 
 本项目采用 [Apache License 2.0](LICENSE) 开源。
