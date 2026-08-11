@@ -54,7 +54,7 @@ where
     }
 }
 
-fn parse_c_str(ptr: *const c_char, name: &str) -> Result<String, EngineError> {
+pub(crate) fn parse_c_str(ptr: *const c_char, name: &str) -> Result<String, EngineError> {
     if ptr.is_null() {
         return Err(EngineError::InvalidArg(format!("{name} is null")));
     }
@@ -64,14 +64,17 @@ fn parse_c_str(ptr: *const c_char, name: &str) -> Result<String, EngineError> {
         .map_err(|_| EngineError::InvalidArg(format!("{name} is not valid UTF-8")))
 }
 
-fn parse_optional_c_str(ptr: *const c_char, name: &str) -> Result<Option<String>, EngineError> {
+pub(crate) fn parse_optional_c_str(
+    ptr: *const c_char,
+    name: &str,
+) -> Result<Option<String>, EngineError> {
     if ptr.is_null() {
         return Ok(None);
     }
     parse_c_str(ptr, name).map(Some)
 }
 
-fn parse_json_c_str<T: for<'de> Deserialize<'de>>(
+pub(crate) fn parse_json_c_str<T: for<'de> Deserialize<'de>>(
     ptr: *const c_char,
     name: &str,
 ) -> Result<T, EngineError> {

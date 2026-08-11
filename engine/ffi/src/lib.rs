@@ -1,8 +1,10 @@
+pub mod async_resolve;
 pub mod events;
 pub mod handle;
 pub mod json_api;
 pub mod sync_dispatch;
 
+pub use async_resolve::{engine_resolve_qualities_async, engine_resolve_url_async};
 pub use events::{engine_subscribe_task_events, engine_unsubscribe_task_events};
 pub use handle::{
     engine_destroy, engine_free_string, engine_last_error, engine_open, EngineHandle,
