@@ -471,8 +471,7 @@ async fn run_one_task(
                         Err(e) => return TaskRunOutcome::Failed(e),
                     };
                     if current.status == TaskStatus::Paused {
-                        let _ =
-                            save_interrupt_checkpoint(config, task, &hls_states).await;
+                        let _ = save_interrupt_checkpoint(config, task, &hls_states).await;
                         return TaskRunOutcome::Cancelled;
                     }
                     if current.status != TaskStatus::Running {
