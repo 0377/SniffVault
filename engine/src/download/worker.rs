@@ -221,9 +221,13 @@ pub async fn run_worker(config: WorkerConfig, cmd_rx: mpsc::Receiver<DownloadCom
                             .await
                             .insert(task.id.clone(), token.clone());
 
-                        if let Err(e) =
-                            worker_set_task_status(&store, &config, &task.id, TaskStatus::Running, None)
-                        {
+                        if let Err(e) = worker_set_task_status(
+                            &store,
+                            &config,
+                            &task.id,
+                            TaskStatus::Running,
+                            None,
+                        ) {
                             tracing_log(&format!("set running failed: {e}"));
                             task_cancels.lock().await.remove(&task.id);
                             in_flight.lock().await.remove(&task.id);
@@ -298,13 +302,7 @@ async fn handle_outcome(
             }
             TaskRunOutcome::DiskFull => {
                 scheduler.lock().await.pause_globally();
-                let _ = worker_set_task_status(
-                    &store,
-                    config,
-                    &task.id,
-                    TaskStatus::Paused,
-                    None,
-                );
+                let _ = worker_set_task_status(&store, config, &task.id, TaskStatus::Paused, None);
             }
             TaskRunOutcome::Failed(err) => {
                 let msg = err.to_string();
@@ -514,7 +512,14 @@ async fn save_interrupt_checkpoint(
             if let Some(checkpoint) = snapshot.to_checkpoint() {
                 let progress = snapshot.segments_done.len() as u64;
                 store.save_checkpoint(&task.id, &checkpoint)?;
-                worker_update_progress(&store, config, &task.id, progress, None, TaskStatus::Paused)?;
+                worker_update_progress(
+                    &store,
+                    config,
+                    &task.id,
+                    progress,
+                    None,
+                    TaskStatus::Paused,
+                )?;
             }
         }
         return Ok(());
