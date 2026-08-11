@@ -4,6 +4,7 @@ pub mod error;
 pub mod ingest;
 pub mod library;
 pub(crate) mod resolve;
+mod resolve_facade;
 pub(crate) mod settings;
 pub(crate) mod sniff;
 pub mod tasks;
@@ -11,6 +12,7 @@ pub mod types;
 
 pub use engine::Engine;
 pub use error::EngineError;
+pub use resolve_facade::{resolve_qualities_for_ffi, resolve_url_for_ffi};
 pub use types::*;
 
 #[doc(hidden)]
