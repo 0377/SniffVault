@@ -20,7 +20,7 @@ pub struct EngineHandle {
     pub event_forwarder: Option<JoinHandle<()>>,
 }
 
-fn rust_to_c_string(s: String) -> *mut c_char {
+pub(crate) fn rust_to_c_string(s: String) -> *mut c_char {
     CString::new(s)
         .unwrap_or_else(|_| CString::new("").expect("empty CString"))
         .into_raw()
@@ -50,7 +50,9 @@ pub unsafe extern "C" fn engine_open(data_dir: *const c_char) -> *mut EngineHand
     let path_str = match CStr::from_ptr(data_dir).to_str() {
         Ok(s) => s,
         Err(_) => {
-            set_last_open_error(EngineError::InvalidArg("data_dir is not valid UTF-8".into()));
+            set_last_open_error(EngineError::InvalidArg(
+                "data_dir is not valid UTF-8".into(),
+            ));
             return std::ptr::null_mut();
         }
     };

@@ -1,8 +1,13 @@
 pub mod handle;
 pub mod json_api;
+pub mod sync_dispatch;
 
 pub use handle::{
     engine_destroy, engine_free_string, engine_last_error, engine_open, EngineHandle,
+};
+pub use sync_dispatch::{
+    engine_list_episodes, engine_list_library, engine_save_settings, engine_set_episode_position,
+    engine_settings,
 };
 
 #[cfg(test)]
