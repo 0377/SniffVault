@@ -6,7 +6,7 @@ use url::Url;
 
 use crate::types::{Episode, EpisodeList};
 
-pub fn parse_episode_index(text: &str, href: &str) -> Option<u32> {
+pub(crate) fn parse_episode_index(text: &str, href: &str) -> Option<u32> {
     if let Some(caps) = ep_text_re().captures(text) {
         if let Some(index) = caps.get(1) {
             if let Ok(n) = index.as_str().parse::<u32>() {
@@ -28,7 +28,7 @@ pub fn parse_episode_index(text: &str, href: &str) -> Option<u32> {
     None
 }
 
-pub fn extract_episode_list(
+pub(crate) fn extract_episode_list(
     html: &str,
     base_url: &str,
     default_title: &str,
@@ -80,7 +80,7 @@ pub fn extract_episode_list(
     })
 }
 
-pub fn scan_media_urls(html: &str, base_url: &str) -> Vec<String> {
+pub(crate) fn scan_media_urls(html: &str, base_url: &str) -> Vec<String> {
     let base = match Url::parse(base_url) {
         Ok(url) => url,
         Err(_) => return Vec::new(),

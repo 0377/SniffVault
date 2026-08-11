@@ -220,3 +220,29 @@ async fn r8_resolve_qualities_labels() {
     assert!(labels.contains(&"720p"));
     assert!(labels.contains(&"1080p"));
 }
+
+#[tokio::test]
+async fn r9_not_found_page_returns_http_error() {
+    let dir = tempdir().unwrap();
+    let engine = Engine::open(dir.path()).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let handle = tokio::spawn(async move {
+        async fn not_found() -> StatusCode {
+            StatusCode::NOT_FOUND
+        }
+        axum::serve(listener, Router::new().route("/missing", get(not_found)))
+            .await
+            .unwrap();
+    });
+    let url = format!("http://{addr}/missing");
+    let err = engine
+        .resolve_url(&url, ResolveOptions::default())
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        video_sniffing_engine::EngineError::Message(_)
+    ));
+    handle.abort();
+}

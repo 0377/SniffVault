@@ -3,9 +3,9 @@ pub mod engine;
 pub mod error;
 pub mod ingest;
 pub mod library;
-pub mod resolve;
-pub mod settings;
-pub mod sniff;
+pub(crate) mod resolve;
+pub(crate) mod settings;
+pub(crate) mod sniff;
 pub mod tasks;
 pub mod types;
 

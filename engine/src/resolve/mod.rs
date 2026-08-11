@@ -1,5 +1,5 @@
-pub mod html;
-pub mod media;
+mod html;
+mod media;
 
 mod fetch;
 
@@ -40,6 +40,7 @@ pub(crate) async fn resolve_url(
                     reason: "auth_required".into(),
                 });
             }
+            ensure_fetch_success(status)?;
             let result = candidates_from_m3u8_body(&body, url, page_url_ref)?;
             return Ok(map_media_result(result));
         }
@@ -52,6 +53,7 @@ pub(crate) async fn resolve_url(
             reason: "auth_required".into(),
         });
     }
+    ensure_fetch_success(status)?;
 
     if let Some(episode_list) = extract_episode_list(&html, url, default_title) {
         return Ok(ResolveOutcome::EpisodeList(episode_list));
@@ -90,8 +92,9 @@ pub(crate) async fn resolve_qualities(
 
     let (status, body) = fetch::fetch_playlist_or_page(http, media_url, &opts).await?;
     if is_auth_required(status) {
-        return Err(EngineError::InvalidArg("auth required".into()));
+        return Err(EngineError::Message("auth_required".into()));
     }
+    ensure_fetch_success(status)?;
 
     let variants = list_master_variants(&body, media_url)?;
     Ok(variants.into_iter().map(|(_, quality)| quality).collect())
@@ -99,6 +102,18 @@ pub(crate) async fn resolve_qualities(
 
 fn is_auth_required(status: StatusCode) -> bool {
     status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN
+}
+
+fn http_status_error(status: StatusCode) -> EngineError {
+    EngineError::Message(format!("http error: status {}", status.as_u16()))
+}
+
+fn ensure_fetch_success(status: StatusCode) -> Result<(), EngineError> {
+    if is_auth_required(status) || status.is_success() {
+        Ok(())
+    } else {
+        Err(http_status_error(status))
+    }
 }
 
 fn map_media_result(result: ResolveMediaResult) -> ResolveOutcome {

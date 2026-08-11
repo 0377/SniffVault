@@ -56,24 +56,59 @@ impl HttpClient {
         url: &str,
         opts: &PageFetchOptions,
     ) -> Result<(StatusCode, String), EngineError> {
-        let mut request = self.client.get(url);
-        if let Some(cookies) = &opts.cookies {
-            request = request.header(reqwest::header::COOKIE, cookies);
+        let url = url.to_string();
+        let cookies = opts.cookies.clone();
+        let referer = opts.referer.clone();
+        let mut attempts = 0u32;
+        loop {
+            if self.cancel.is_cancelled() {
+                return Err(EngineError::Message("download cancelled".into()));
+            }
+
+            let mut request = self.client.get(&url);
+            if let Some(cookies) = &cookies {
+                request = request.header(reqwest::header::COOKIE, cookies);
+            }
+            if let Some(referer) = &referer {
+                request = request.header(reqwest::header::REFERER, referer);
+            }
+
+            match request.send().await {
+                Ok(response) => {
+                    let status = response.status();
+                    if status.is_server_error() {
+                        attempts += 1;
+                        if attempts >= MAX_ATTEMPTS {
+                            return Err(response.error_for_status().unwrap_err().into());
+                        }
+                        tokio::time::sleep(RETRY_DELAY).await;
+                        continue;
+                    }
+                    let bytes = response.bytes().await?;
+                    if bytes.len() > MAX_PAGE_BYTES {
+                        return Err(EngineError::InvalidArg(
+                            "page body exceeds 8MB limit".into(),
+                        ));
+                    }
+                    let text = String::from_utf8(bytes.to_vec()).map_err(|_| {
+                        EngineError::InvalidArg("page body is not valid utf-8".into())
+                    })?;
+                    return Ok((status, text));
+                }
+                Err(err) => {
+                    let engine_err = EngineError::from(err);
+                    if is_retryable(&engine_err) {
+                        attempts += 1;
+                        if attempts >= MAX_ATTEMPTS {
+                            return Err(engine_err);
+                        }
+                        tokio::time::sleep(RETRY_DELAY).await;
+                        continue;
+                    }
+                    return Err(engine_err);
+                }
+            }
         }
-        if let Some(referer) = &opts.referer {
-            request = request.header(reqwest::header::REFERER, referer);
-        }
-        let response = request.send().await?;
-        let status = response.status();
-        let bytes = response.bytes().await?;
-        if bytes.len() > MAX_PAGE_BYTES {
-            return Err(EngineError::InvalidArg(
-                "page body exceeds 8MB limit".into(),
-            ));
-        }
-        let text = String::from_utf8(bytes.to_vec())
-            .map_err(|_| EngineError::InvalidArg("page body is not valid utf-8".into()))?;
-        Ok((status, text))
     }
 
     pub async fn get_bytes(&self, url: &str) -> Result<Vec<u8>, EngineError> {
@@ -461,6 +496,40 @@ mod tests {
         (StatusCode::OK, vec![0u8; MAX_PAGE_BYTES + 1])
     }
 
+    async fn referer_handler(headers: HeaderMap) -> impl IntoResponse {
+        let referer = headers
+            .get("referer")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("none")
+            .to_string();
+        (StatusCode::OK, referer)
+    }
+
+    async fn page_flaky_handler(State(counter): State<HitCounter>) -> impl IntoResponse {
+        let attempt = counter.0.fetch_add(1, Ordering::SeqCst);
+        if attempt < 2 {
+            return (StatusCode::SERVICE_UNAVAILABLE, "retry me");
+        }
+        (StatusCode::OK, "page-recovered")
+    }
+
+    async fn redirect_chain_handler(uri: axum::http::Uri) -> axum::response::Response {
+        let depth = uri
+            .query()
+            .and_then(|q| q.strip_prefix("d="))
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(0);
+        if depth >= 12 {
+            return (StatusCode::OK, "done").into_response();
+        }
+        let next = depth + 1;
+        (
+            StatusCode::TEMPORARY_REDIRECT,
+            [(reqwest::header::LOCATION, format!("/chain?d={next}"))],
+        )
+            .into_response()
+    }
+
     #[tokio::test]
     async fn get_page_text_rejects_body_over_8mb() {
         let (base_url, _guard) =
@@ -477,5 +546,95 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err, EngineError::InvalidArg(_)));
+    }
+
+    #[tokio::test]
+    async fn get_page_text_sends_referer_header() {
+        let (base_url, _guard) =
+            spawn_server(Router::new().route("/referer", get(referer_handler))).await;
+        let client = HttpClient::new(None).unwrap();
+        let (status, body) = client
+            .get_page_text(
+                &format!("{base_url}/referer"),
+                &PageFetchOptions {
+                    cookies: None,
+                    referer: Some("http://ref.example/page".into()),
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, "http://ref.example/page");
+    }
+
+    #[tokio::test]
+    async fn get_page_text_retries_server_errors() {
+        let counter = HitCounter(Arc::new(AtomicUsize::new(0)));
+        let (base_url, _guard) = spawn_server(
+            Router::new()
+                .route("/page-flaky", get(page_flaky_handler))
+                .with_state(counter.clone()),
+        )
+        .await;
+        let client = HttpClient::new(None).unwrap();
+        let (status, body) = client
+            .get_page_text(
+                &format!("{base_url}/page-flaky"),
+                &PageFetchOptions {
+                    cookies: None,
+                    referer: None,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, "page-recovered");
+        assert_eq!(counter.0.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn get_page_text_rejects_redirect_chain_over_limit() {
+        let (base_url, _guard) =
+            spawn_server(Router::new().route("/chain", get(redirect_chain_handler))).await;
+        let client = HttpClient::new(None).unwrap();
+        let err = client
+            .get_page_text(
+                &format!("{base_url}/chain"),
+                &PageFetchOptions {
+                    cookies: None,
+                    referer: None,
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, EngineError::Http(_)));
+    }
+
+    #[tokio::test]
+    async fn get_page_text_cancellation_stops_fetch() {
+        let counter = HitCounter(Arc::new(AtomicUsize::new(0)));
+        let (base_url, _guard) = spawn_server(
+            Router::new()
+                .route("/page-flaky", get(page_flaky_handler))
+                .with_state(counter.clone()),
+        )
+        .await;
+        let token = CancellationToken::new();
+        let client = HttpClient::new(None)
+            .unwrap()
+            .with_cancellation(token.clone());
+        token.cancel();
+        let err = client
+            .get_page_text(
+                &format!("{base_url}/page-flaky"),
+                &PageFetchOptions {
+                    cookies: None,
+                    referer: None,
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, EngineError::Message(_)));
+        assert_eq!(counter.0.load(Ordering::SeqCst), 0);
     }
 }
