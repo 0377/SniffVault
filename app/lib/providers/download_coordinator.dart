@@ -19,6 +19,7 @@ class DownloadCoordinator {
   })  : _onInvalidateTasks = onInvalidateTasks,
         _onInvalidateLibrary = onInvalidateLibrary {
     _subscription = _repo.taskEvents.listen(_onEvent);
+    _startQueuedDownloadsIfNeeded();
   }
 
   factory DownloadCoordinator(Ref ref, EngineRepository repo) {
@@ -46,6 +47,15 @@ class DownloadCoordinator {
   final _Invalidate _onInvalidateLibrary;
   StreamSubscription<TaskEvent>? _subscription;
   var _workerActive = false;
+
+  void _startQueuedDownloadsIfNeeded() {
+    final hasQueued = _repo
+        .listTasks()
+        .any((task) => task.status == TaskStatus.queued);
+    if (hasQueued) {
+      ensureDownloads();
+    }
+  }
 
   void ensureDownloads() {
     if (_workerActive) {

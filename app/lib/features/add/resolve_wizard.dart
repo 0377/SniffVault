@@ -233,8 +233,7 @@ class _ResolveWizardState extends State<ResolveWizard> {
                   setState(() => _selectedQuality = quality),
             ),
         ],
-        if (selected != null &&
-            (selected.quality != null || selected.kind != MediaKind.hls)) ...[
+        if (selected != null) ...[
           const SizedBox(height: 16),
           TextField(
             key: const Key('resolve_title_field'),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_sniffing/features/tasks/widgets/parent_task_group.dart';
+import 'package:video_sniffing/providers/download_coordinator.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
 import 'package:video_sniffing/providers/tasks_provider.dart';
 
@@ -19,6 +20,7 @@ class TasksScreen extends ConsumerWidget {
     }
 
     final repo = ref.read(engineRepositoryProvider);
+    final coordinator = ref.read(downloadCoordinatorProvider);
 
     return Scaffold(
       body: ListView.builder(
@@ -33,7 +35,10 @@ class TasksScreen extends ConsumerWidget {
             parent: root,
             children: children,
             onPause: repo.pauseTask,
-            onResume: repo.resumeTask,
+            onResume: (taskId) {
+              repo.resumeTask(taskId);
+              coordinator.ensureDownloads();
+            },
             onCancel: repo.cancelTask,
           );
         },

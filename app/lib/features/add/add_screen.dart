@@ -59,14 +59,15 @@ class _AddScreenState extends ConsumerState<AddScreen> {
               resolveQualities: repo.resolveQualities,
               enqueueSingle: repo.enqueueSingle,
               enqueueEpisodes: repo.enqueueEpisodes,
-              onEnqueue: (wizardContext) async {
+              onEnqueue: (_) async {
                 ref.read(downloadCoordinatorProvider).ensureDownloads();
-                if (wizardContext.mounted) {
-                  ScaffoldMessenger.of(wizardContext).showSnackBar(
-                    const SnackBar(content: Text('已加入下载队列')),
-                  );
-                  wizardContext.go('/tasks');
-                }
+                if (!mounted) return;
+                Navigator.of(context).pop();
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('已加入下载队列')),
+                );
+                context.go('/tasks');
               },
             ),
           ),

@@ -2,12 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:video_sniffing/engine/models/library_episode.dart';
 import 'package:video_sniffing/features/player/player_controller.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
 import 'package:video_sniffing/providers/engine_repository.dart';
+import 'package:video_sniffing/providers/library_provider.dart';
 
 class PlayerScreen extends ConsumerStatefulWidget {
   const PlayerScreen({super.key, required this.episodeId});
@@ -103,10 +103,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final positionMs = _resolvedPositionMs(controller);
     controller.lastPositionMs = positionMs;
     _repo.setEpisodePosition(
-          widget.episodeId,
-          positionMs,
-        );
+      widget.episodeId,
+      positionMs,
+    );
     _positionPersisted = true;
+    ref.invalidate(libraryProvider);
   }
 
   void _handleBack() {
@@ -137,12 +138,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final controller = _playerController;
     if (controller != null) {
       if (!_positionPersisted) {
-        final positionMs = _resolvedPositionMs(controller);
-        controller.lastPositionMs = positionMs;
-        _repo.setEpisodePosition(
-              widget.episodeId,
-              positionMs,
-            );
+        _persistPosition();
       }
       unawaited(controller.dispose());
     }
