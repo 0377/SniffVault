@@ -35,8 +35,8 @@ vendor/ffmpeg/
 
 脚本行为：
 
-- **macOS**：优先从 Homebrew（`brew --prefix ffmpeg`）复制静态链接或 Cellar 中的 `ffmpeg`
-- **Linux**：优先使用 `PATH` 中的 `ffmpeg`；若无则提示从 [BtbN FFmpeg Builds](https://github.com/BtbN/FFmpeg-Builds/releases) 下载对应 `linux64` / `linuxarm64` 包并解压
+- **macOS**：优先从 `PATH` 或 Homebrew 复制；若无则尝试 `brew install ffmpeg`
+- **Linux / Windows**：优先使用 `PATH` 中的 `ffmpeg`；若无则从 [BtbN FFmpeg Builds](https://github.com/BtbN/FFmpeg-Builds/releases) 自动下载对应 `linux64` / `linuxarm64` / `win64` 包
 
 复制完成后会 `chmod +x`。
 
