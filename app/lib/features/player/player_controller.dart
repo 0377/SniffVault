@@ -1,10 +1,12 @@
+import 'dart:async';
+
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 class LocalPlayerController {
   LocalPlayerController(String filePath) : player = Player() {
     controller = VideoController(player);
-    player.open(Media(filePath));
+    unawaited(player.open(Media(filePath), play: true));
   }
 
   final Player player;

@@ -19,6 +19,7 @@ class LibraryScreen extends ConsumerWidget {
 
     return Scaffold(
       body: ListView.builder(
+        key: const Key('library_list'),
         itemCount: items.length,
         itemBuilder: (context, index) {
           final item = items[index];

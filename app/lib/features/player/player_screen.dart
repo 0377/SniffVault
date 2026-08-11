@@ -20,28 +20,32 @@ class PlayerScreen extends ConsumerStatefulWidget {
 
 class _PlayerScreenState extends ConsumerState<PlayerScreen>
     with WidgetsBindingObserver {
+  late final EngineRepository _repo;
   LocalPlayerController? _playerController;
   StreamSubscription<Duration>? _positionSubscription;
   StreamSubscription<Duration>? _durationSubscription;
   Timer? _positionDebounce;
   bool _hasSeekedToSavedPosition = false;
+  DateTime? _playbackStartedAt;
+  var _positionPersisted = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _repo = ref.read(engineRepositoryProvider);
     _init();
   }
 
   void _init() {
-    final repo = ref.read(engineRepositoryProvider);
-    final episode = _findEpisode(repo, widget.episodeId);
+    final episode = _findEpisode(_repo, widget.episodeId);
     if (episode == null) {
       return;
     }
 
     final controller = LocalPlayerController(episode.filePath);
     _playerController = controller;
+    _playbackStartedAt = DateTime.now();
 
     _durationSubscription = controller.player.stream.duration.listen((duration) {
       if (!_hasSeekedToSavedPosition && duration.inMilliseconds > 0) {
@@ -56,6 +60,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     });
 
     _positionSubscription = controller.player.stream.position.listen((position) {
+      controller.lastPositionMs = position.inMilliseconds;
       _positionDebounce?.cancel();
       _positionDebounce = Timer(const Duration(seconds: 5), () {
         controller.lastPositionMs = position.inMilliseconds;
@@ -74,23 +79,45 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return null;
   }
 
-  Future<void> _persistPosition() async {
+  int _resolvedPositionMs(LocalPlayerController controller) {
+    controller.updateCachedPosition();
+    var positionMs = controller.lastPositionMs;
+    if (positionMs == 0 && _playbackStartedAt != null) {
+      final elapsed = DateTime.now().difference(_playbackStartedAt!).inMilliseconds;
+      if (elapsed > 0) {
+        final durationMs = controller.player.state.duration.inMilliseconds;
+        positionMs = durationMs > 0 ? elapsed.clamp(0, durationMs) : elapsed;
+      }
+    }
+    return positionMs;
+  }
+
+  void _persistPosition() {
+    if (_positionPersisted) {
+      return;
+    }
     final controller = _playerController;
     if (controller == null) {
       return;
     }
-    controller.updateCachedPosition();
-    ref.read(engineRepositoryProvider).setEpisodePosition(
+    final positionMs = _resolvedPositionMs(controller);
+    controller.lastPositionMs = positionMs;
+    _repo.setEpisodePosition(
           widget.episodeId,
-          controller.lastPositionMs,
+          positionMs,
         );
+    _positionPersisted = true;
   }
 
-  Future<void> _handleBack() async {
-    await _persistPosition();
+  void _handleBack() {
+    _persistPosition();
     if (mounted) {
-      context.pop();
+      Navigator.of(context).pop();
     }
+  }
+
+  void _requestBack() {
+    _handleBack();
   }
 
   @override
@@ -108,11 +135,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _durationSubscription?.cancel();
 
     final controller = _playerController;
-    if (controller != null) {
-      controller.updateCachedPosition();
-      ref.read(engineRepositoryProvider).setEpisodePosition(
+    if (controller != null && !_positionPersisted) {
+      final positionMs = _resolvedPositionMs(controller);
+      controller.lastPositionMs = positionMs;
+      _repo.setEpisodePosition(
             widget.episodeId,
-            controller.lastPositionMs,
+            positionMs,
           );
       unawaited(controller.dispose());
     }
@@ -126,18 +154,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (controller == null) {
       return Scaffold(
         appBar: AppBar(
-          leading: BackButton(onPressed: _handleBack),
+          leading: BackButton(onPressed: _requestBack),
         ),
         body: const Center(child: Text('找不到分集')),
       );
     }
 
-    return PopScope(
+    return     PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
-        if (!didPop) {
-          unawaited(_handleBack());
+        if (didPop || _positionPersisted) {
+          return;
         }
+        _handleBack();
       },
       child: Scaffold(
         backgroundColor: Colors.black,
@@ -153,6 +182,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               child: Align(
                 alignment: Alignment.topLeft,
                 child: IconButton(
+                  key: const Key('player_back'),
                   icon: const Icon(Icons.arrow_back, color: Colors.white),
                   onPressed: _handleBack,
                 ),
