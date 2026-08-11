@@ -1,7 +1,7 @@
 # App UI + Player 子系统设计（Plan 5）
 
 **日期**: 2026-08-11  
-**状态**: 待用户审阅  
+**状态**: 已审阅修订（对齐 plan review 2026-08-11）  
 **前置计划**: Plan 1–4（已完成）  
 **后续计划**: Plan 6 Platform 胶水（WebView/Share）、Plan 7 LAN Cast + TV  
 **父规格**: `docs/superpowers/specs/2026-08-11-flutter-ffi-design.md`
@@ -66,8 +66,10 @@
 
 ### 3.1 自适应导航 Shell
 
-**窄屏（width < 600）**：`BottomNavigationBar` — 片库 | 任务 | 添加 | 设置  
-**宽屏（width ≥ 600）**：`NavigationRail` — 同上四项
+**窄屏（width < 600）**：Material 3 **`NavigationBar`**（底栏）— 片库 | 任务 | 添加 | 设置  
+**宽屏（width ≥ 600）**：**`NavigationRail`** — 同上四项
+
+> 产品文档可称「底栏导航」；实现与测试以 `NavigationBar` / `NavigationRail` Widget 类型为准（非旧版 `BottomNavigationBar`）。
 
 播放器路由 `/play/:episodeId` 为全屏覆盖层，不显示底栏 / Rail。
 
@@ -89,7 +91,9 @@ Plan 6 预留：`/add?url=<encoded>` 深链直达添加页并预填 URL。
 ```
 粘贴 URL → resolveUrl()
     ├─ Single        → 确认标题 → enqueueSingle → ensureDownloads()
-    ├─ Candidates    → 选候选；按需 resolveQualities → 选清晰度 → enqueueSingle
+    ├─ Candidates    → 选候选
+    │                   ├─ 候选已带 quality → 直接 enqueueSingle
+    │                   └─ HLS 且无 quality → resolveQualities(mediaUrl) → 选清晰度 → enqueueSingle
     ├─ EpisodeList   → 多选分集（默认全选）→ enqueueEpisodes → ensureDownloads()
     └─ NeedsBrowser  → 说明页：「此站点需登录浏览，内置浏览器将在后续版本支持」
 ```
@@ -102,7 +106,7 @@ Plan 6 预留：`/add?url=<encoded>` 深链直达添加页并预填 URL。
 - Single：详情页一键播放
 - Series：分集列表，每行可选显示进度（`position_ms / duration_ms`，`duration_ms` 为空时不绘条）
 - 播放：`LibraryEpisode.file_path` 已为引擎 canonicalize 的绝对路径，直接传给 media_kit
-- 进入播放器 `seek(position_ms)`；`Pop` 或页面 dispose 时 `setEpisodePosition(episodeId, positionMs)`
+- 进入播放器 `seek(position_ms)`；返回前 **`await` 持久化** `setEpisodePosition`；播放过程中缓存最近 position（暂停 / 每 5s debounce）以防 `dispose` 丢进度
 
 ---
 
@@ -111,9 +115,9 @@ Plan 6 预留：`/add?url=<encoded>` 深链直达添加页并预填 URL。
 ```
 app/lib/
   main.dart                    # WidgetsFlutterBinding + MediaKit + ProviderScope
-  app.dart                     # MaterialApp.router
+  app.dart                     # 引擎就绪门闩 + MaterialApp.router
   router.dart                  # go_router 配置
-  shell/app_shell.dart         # BottomNav / NavigationRail
+  shell/app_shell.dart         # NavigationBar / NavigationRail
   features/
     library/                   # library_screen, library_detail_screen, widgets
     tasks/                     # tasks_screen, TaskTile, ParentTaskGroup
@@ -121,8 +125,8 @@ app/lib/
     settings/                  # settings_screen
     player/                    # player_screen, player_controller
   providers/
-    engine_host_provider.dart  # keepAlive；open/dispose
-    engine_repository.dart     # 抽象接口（Widget 测试 mock 用）
+    engine_host_provider.dart  # FutureProvider；open/dispose
+    engine_repository.dart     # 抽象 + EngineHostRepository
     library_provider.dart
     tasks_provider.dart
     settings_provider.dart
@@ -143,24 +147,37 @@ app/lib/
 
 | Provider | 职责 |
 |----------|------|
-| `engineHostProvider` | `EngineHost.open(dataDir)`；app 生命周期内单例；退出时 `dispose` |
-| `engineRepositoryProvider` | 对 `EngineHost` 的薄封装，供测试替换 |
-| `libraryProvider` | `listLibrary()` |
+| `engineHostProvider` | `FutureProvider`：`EngineHost.open(dataDir)`；`ref.onDispose(host.dispose)` |
+| `engineRepositoryProvider` | `Provider`，**仅在** `engineHostProvider` 有 `data` 后可用；子页面不得 `.requireValue` 于未就绪态 |
+| `libraryProvider` | `listLibrary()`（拷贝后排序，不 mutate 引擎返回列表） |
 | `tasksProvider` | `listTasks()` |
-| `settingsProvider` | `settings()` / `saveSettings()` |
-| `downloadCoordinator` | 订阅 `taskEvents`；维护 `workerActive`；协调 `invalidate` |
+| `settingsProvider` | `settings()` |
+| `downloadCoordinatorProvider` | 订阅 `taskEvents`；`ensureDownloads()`；`invalidate` 列表 |
 
-### 5.2 下载协调器
+### 5.2 引擎启动门闩
+
+`VideoSniffingApp` 必须处理 `engineHostProvider` 三态：
+
+| 态 | UI |
+|----|-----|
+| `loading` | 全屏 `CircularProgressIndicator` +「正在初始化引擎…」 |
+| `error` | 错误文案 + 重试按钮（`ref.invalidate(engineHostProvider)`） |
+| `data` | `MaterialApp.router` + **eager** `ref.watch(downloadCoordinatorProvider)` |
+
+**禁止**在 `engineHostProvider` 未 `data` 时渲染依赖 `engineRepositoryProvider` 的 Feature 页面。
+
+### 5.3 下载协调器
 
 | 事件 / 操作 | 动作 |
 |-------------|------|
+| App `data` 就绪 | `ref.watch(downloadCoordinatorProvider)` 建立 `taskEvents` 订阅 |
 | 用户入队后 | `ensureDownloads()`：若 `!workerActive` 则 `startDownloads()` |
 | `TaskUpdated` + `Completed` | `invalidate(tasksProvider)` + `invalidate(libraryProvider)` |
 | `TaskUpdated`（其他状态） | 仅 `invalidate(tasksProvider)` |
 | `WorkerStopped` | `workerActive = false`；若仍有 `Queued` 任务则再次 `startDownloads()` |
 | `startDownloads` 返回 `downloads already running` | 忽略（幂等，不弹错） |
 
-### 5.3 任务列表 UI
+### 5.4 任务列表 UI
 
 - 父任务（`parent_id == null`）可展开显示子任务
 - `Running`：进度条 `progress_bytes / total_bytes`（`total_bytes == null` 时不除零，显示 indeterminate）
@@ -176,12 +193,12 @@ app/lib/
 |--------|----------|
 | `http` | 「网络请求失败，请检查连接后重试」（详情可展开） |
 | `not_found` | 「找不到对应内容」 |
-| `invalid_arg` | 直接展示 `message`（如 `media_dir` 校验） |
+| `invalid_arg` | 直接展示 `message`（如 `media_dir must be a single relative directory name`） |
 | `db` / `io` | 「本地存储异常」（详情可展开） |
-| `message` | 直接展示；`downloads already running` 不弹窗 |
+| `message` | 直接展示；`downloads already running` 不弹窗（`presentEngineError` 返回 `null`） |
 | `NeedsBrowser`（ResolveOutcome） | 专用说明页，非 Exception |
 
-解析 / 入队失败保留在当前向导页；其他操作失败用 SnackBar。`EngineHost` 已 dispose 时 Provider 层拦截并引导重启应用。
+解析 / 入队失败保留在当前向导页；其他操作失败用 SnackBar。
 
 ---
 
@@ -190,7 +207,12 @@ app/lib/
 - 依赖：`media_kit`、`media_kit_video`、`media_kit_libs_video`
 - 打开 `LibraryEpisode.file_path`（绝对路径）
 - 控件：播放/暂停、进度条、返回；无字幕、无 PiP（后续迭代）
-- 进度回写：离开播放器时调用 `setEpisodePosition`；建议 debounce _seek 事件（如每 5s 或暂停时）以减少 FFI 调用频率
+- **进度回写：**
+  - 监听 `player.stream.position`，缓存 `_lastPositionMs`
+  - 暂停、返回、`AppLifecycleState.paused` 时 `setEpisodePosition`
+  - 返回按钮：`await _persistPosition()` 后再 `context.pop()`
+  - `dispose` 使用缓存值同步写入（不依赖未完成的 async）
+- **验收：** 本地 MP4 与引擎 ffmpeg 合并后的 HLS（`.mp4` 输出）均可播放
 
 ---
 
@@ -206,7 +228,7 @@ app/lib/
 | `user_agent` | 可选文本 |
 | `device_name` | 文本 |
 
-保存调用 `saveSettings`；失败展示 `error_presenter` 文案。
+保存调用 `saveSettings`；失败展示 `presentEngineError` 文案（`invalid_arg` 展示引擎 `message`）。
 
 ---
 
@@ -216,10 +238,10 @@ app/lib/
 
 | ID | 场景 |
 |----|------|
-| W1 | `ResolveWizard` 对四种 `ResolveOutcome` 渲染正确分支 |
+| W1 | `ResolveWizard` 对四种 `ResolveOutcome` 各渲染正确分支（4 条独立 test） |
 | W2 | `TaskTile`：`total_bytes == null` 时不除零 |
-| W3 | `AppShell`：宽度阈值切换 BottomNav / Rail |
-| W4 | `SettingsScreen`：`media_dir` 含 `/` 时展示错误 |
+| W3 | `AppShell`：`width < 600` → `NavigationBar`；`>= 600` → `NavigationRail` |
+| W4 | `SettingsScreen`：`media_dir` 含 `/` 时展示引擎校验错误（`FakeEngineRepository` 须复刻 `validate_media_dir` 规则） |
 
 通过 `EngineRepository` 抽象 + mock 实现，避免 Widget 测试加载原生库。
 
@@ -227,9 +249,9 @@ app/lib/
 
 | ID | 场景 |
 |----|------|
-| U1 | 添加页粘贴 fixture MP4 URL → 任务列表出现条目 |
-| U2 | 等待 `Completed` → 片库出现对应条目 |
-| U3 | 播放 → seek → 退出 → 再进续播位置正确 |
+| U1 | 添加页粘贴 fixture MP4 URL → 填写标题 `ui-smoke-clip` → 任务列表出现该标题 |
+| U2 | 等待任务 `completed` → 片库 tab 出现对应条目 |
+| U3 | 播放 → 等待数秒 → 返回 → 再进播放；同一 `dataDir` 重开 `EngineHost` 断言 `positionMs > 0` |
 | U4 | 设置页修改 `deviceName` → 重启 app 后保留（交付前本地必跑） |
 | U5 | 暂停 / 恢复任务状态正确（交付前本地必跑） |
 
@@ -243,7 +265,9 @@ Plan 5 默认 **不修改** `engine/`。交付前仍运行：
 cargo fmt --manifest-path engine/Cargo.toml --all -- --check
 cargo test --manifest-path engine/Cargo.toml --workspace
 cargo clippy --manifest-path engine/Cargo.toml --all-targets --all-features -- -D warnings
-cd app && flutter test && flutter test integration_test/smoke_test.dart -d macos
+cd app && flutter test
+cd app && flutter test integration_test/smoke_test.dart -d macos
+cd app && flutter test integration_test/ui_test.dart -d macos
 ```
 
 ---
@@ -252,7 +276,7 @@ cd app && flutter test && flutter test integration_test/smoke_test.dart -d macos
 
 - [ ] Android / iOS / Windows / macOS `flutter build` 通过
 - [ ] §3 全部路由与用户流可用
-- [ ] 本地 MP4 与 ffmpeg 合并 HLS 文件可播放，进度回写持久化
+- [ ] 本地 MP4 与 ffmpeg 合并 HLS 文件可播放，进度回写持久化（U3 + 本地 HLS 手动冒烟）
 - [ ] W1–W4 + U1–U3 绿；U4–U5 交付前本地绿
 - [ ] README 补充 Plan 5 主流程说明
 - [ ] 不含 WebView、Share、LAN、TV UI、字幕/PiP

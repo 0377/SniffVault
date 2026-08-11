@@ -10,13 +10,17 @@
 
 **规格:** `docs/superpowers/specs/2026-08-11-app-ui-player-design.md`
 
+**修订:** 2026-08-11 plan review（引擎门闩、NavigationBar、DownloadCoordinator eager watch、W1/W3/W4/U1–U3 测试修正、Candidates resolveQualities、播放器进度持久化、HLS 验收）
+
 ## Global Constraints
 
 - Plan 5：**B+**；**不修改** `engine/` 与 FFI 边界（除非播放器集成发现阻断性缺口）
 - 状态管理：**flutter_riverpod**；路由：**go_router**；播放器：**media_kit** + media_kit_video + media_kit_libs_video
 - `main()` 调用 `WidgetsFlutterBinding.ensureInitialized()`、`MediaKit.ensureInitialized()`、`ProviderScope`
 - Feature 禁止直接 `EngineHost.open()`；经 `EngineRepository` / Provider
-- 窄屏 `width < 600` → BottomNav；宽屏 `width >= 600` → NavigationRail
+- **`engineHostProvider` 未 `data` 前不得渲染 Feature**；`VideoSniffingApp` 显示 loading/error 门闩
+- **`VideoSniffingApp` 在 `data` 态必须 `ref.watch(downloadCoordinatorProvider)`**（eager 订阅 taskEvents）
+- 窄屏 `width < 600` → Material 3 **`NavigationBar`**；宽屏 `width >= 600` → **`NavigationRail`**
 - 下载：`ensureDownloads()` 在入队后调用；`downloads already running` 静默忽略
 - `total_bytes == null` 时进度条用 indeterminate，**禁止除零**
 - 播放器离开页时 `setEpisodePosition`；`file_path` 为引擎 canonicalize 绝对路径
@@ -41,9 +45,9 @@
 |------|------|
 | `app/pubspec.yaml` | 新增 riverpod、go_router、media_kit 依赖 |
 | `app/lib/main.dart` | bootstrap：MediaKit + ProviderScope + `VideoSniffingApp` |
-| `app/lib/app.dart` | `MaterialApp.router` |
+| `app/lib/app.dart` | 引擎就绪门闩 + `MaterialApp.router` + eager `downloadCoordinator` |
 | `app/lib/router.dart` | go_router 路由表 |
-| `app/lib/shell/app_shell.dart` | BottomNav / NavigationRail |
+| `app/lib/shell/app_shell.dart` | NavigationBar / NavigationRail |
 | `app/lib/providers/engine_repository.dart` | `EngineRepository` 抽象 + `EngineHostRepository` |
 | `app/lib/providers/engine_host_provider.dart` | `engineHostProvider` FutureProvider |
 | `app/lib/providers/download_coordinator.dart` | taskEvents 订阅、worker 启停 |
@@ -88,12 +92,14 @@
   media_kit_libs_video: ^1.0.5
 ```
 
-- [ ] **Step 2: 创建 `app/lib/app.dart`**
+- [ ] **Step 2: 创建 `app/lib/app.dart`（含引擎门闩 + eager DownloadCoordinator）**
 
 ```dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'providers/download_coordinator.dart';
+import 'providers/engine_host_provider.dart';
 import 'router.dart';
 
 class VideoSniffingApp extends ConsumerWidget {
@@ -101,18 +107,59 @@ class VideoSniffingApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final router = ref.watch(appRouterProvider);
-    return MaterialApp.router(
-      title: 'Video Sniffing',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        useMaterial3: true,
+    final hostAsync = ref.watch(engineHostProvider);
+
+    return hostAsync.when(
+      loading: () => const MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('正在初始化引擎…'),
+              ],
+            ),
+          ),
+        ),
       ),
-      routerConfig: router,
+      error: (error, _) => MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('引擎初始化失败：$error'),
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: () => ref.invalidate(engineHostProvider),
+                  child: const Text('重试'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      data: (_) {
+        // Eager：应用生命周期内订阅 taskEvents
+        ref.watch(downloadCoordinatorProvider);
+        final router = ref.watch(appRouterProvider);
+        return MaterialApp.router(
+          title: 'Video Sniffing',
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+            useMaterial3: true,
+          ),
+          routerConfig: router,
+        );
+      },
     );
   }
 }
 ```
+
+> Task 1 时 `engine_host_provider.dart` / `download_coordinator.dart` 尚未存在，可先提交占位 `app.dart` 在 Task 3 再切换为上述完整版；或 Task 1–3 合并为一次提交。推荐 **Task 3 完成后** 将 `app.dart` 更新为本版本。
 
 - [ ] **Step 3: 替换 `app/lib/main.dart`**
 
@@ -182,7 +229,7 @@ git commit -m "feat(app): 添加 Plan 5 依赖与 bootstrap 脚手架"
 **Interfaces:**
 - Consumes: `EngineHost`、`EngineException`、`FfiError`、`ResolveOutcome*`、`EnqueueEpisodesResult`
 - Produces:
-  - `String presentEngineError(EngineException e)`
+  - `String? presentEngineError(EngineException e)`（`null` = 不向用户展示）
   - `abstract class EngineRepository`（完整方法列表见 Step 3）
   - `class EngineHostRepository implements EngineRepository`
   - `final engineHostProvider = FutureProvider<EngineHost>(...)`
@@ -410,19 +457,9 @@ final engineRepositoryProvider = Provider<EngineRepository>((ref) {
 });
 ```
 
-- [ ] **Step 7: 创建 `app/test/fakes/fake_engine_repository.dart`（空壳，后续 Widget 测试填充）**
+- [ ] **Step 7: 创建 `app/test/fakes/fake_engine_repository.dart`**
 
-```dart
-import 'package:video_sniffing/providers/engine_repository.dart';
-
-class FakeEngineRepository implements EngineRepository {
-  // Task 8 前 Widget 测试用；先留最小可编译桩
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-```
-
-将 `FakeEngineRepository` 改为完整 stub（各方法返回空列表/默认值），避免 `noSuchMethod` 在测试中意外调用：
+`FakeEngineRepository.saveSettings` **必须复刻** `engine/src/settings.rs` 的 `validate_media_dir` 规则（供 W4 使用）：
 
 ```dart
 import 'dart:async';
@@ -435,6 +472,26 @@ import 'package:video_sniffing/engine/models/library_item.dart';
 import 'package:video_sniffing/engine/models/resolve_types.dart';
 import 'package:video_sniffing/engine/models/task_event.dart';
 import 'package:video_sniffing/providers/engine_repository.dart';
+
+void validateMediaDirForTest(String name) {
+  if (name.isEmpty) {
+    throw EngineException(
+      const FfiError(kind: 'invalid_arg', message: 'media_dir must not be empty'),
+    );
+  }
+  if (name == '.' ||
+      name.startsWith('/') ||
+      name.contains('..') ||
+      name.contains('/') ||
+      name.contains('\\')) {
+    throw EngineException(
+      const FfiError(
+        kind: 'invalid_arg',
+        message: 'media_dir must be a single relative directory name',
+      ),
+    );
+  }
+}
 
 class FakeEngineRepository implements EngineRepository {
   FakeEngineRepository({
@@ -456,6 +513,7 @@ class FakeEngineRepository implements EngineRepository {
 
   @override
   void saveSettings(EngineSettings settings) {
+    validateMediaDirForTest(settings.mediaDir);
     settingsValue = settings;
   }
 
@@ -522,6 +580,8 @@ class FakeEngineRepository implements EngineRepository {
 }
 ```
 
+（删除计划中旧的 `noSuchMethod` 空壳版本。）
+
 - [ ] **Step 8: Commit**
 
 ```bash
@@ -551,17 +611,10 @@ git commit -m "feat(app): 添加 EngineRepository 与错误文案映射"
 
 - [ ] **Step 1: 写失败测试 `app/test/download_coordinator_test.dart`**
 
-使用 `ProviderContainer` + 手动 mock `EngineRepository`（可用简化 fake 记录 `startDownloads` 调用次数）：
-
 ```dart
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:video_sniffing/engine/models/task_event.dart';
-import 'package:video_sniffing/engine/models/task_status.dart';
-import 'package:video_sniffing/engine/models/download_task.dart';
+import '../fakes/fake_engine_repository.dart';
 import 'package:video_sniffing/providers/download_coordinator.dart';
-import 'package:video_sniffing/providers/engine_repository.dart';
-import 'package:video_sniffing/test/fakes/fake_engine_repository.dart';
 
 class _RecordingRepo extends FakeEngineRepository {
   int startCalls = 0;
@@ -572,7 +625,11 @@ class _RecordingRepo extends FakeEngineRepository {
 void main() {
   test('ensureDownloads calls startDownloads when worker inactive', () {
     final repo = _RecordingRepo();
-    final coordinator = DownloadCoordinator(repo);
+    final coordinator = DownloadCoordinator.forTest(
+      repo,
+      onInvalidateTasks: () {},
+      onInvalidateLibrary: () {},
+    );
     coordinator.ensureDownloads();
     expect(repo.startCalls, 1);
     coordinator.dispose();
@@ -588,6 +645,8 @@ cd app && flutter test test/download_coordinator_test.dart
 
 - [ ] **Step 3: 实现 `app/lib/providers/download_coordinator.dart`**
 
+`DownloadCoordinator` 提供 **生产构造** `DownloadCoordinator(Ref ref, EngineRepository repo)` 与 **测试构造** `DownloadCoordinator.forTest(repo, {required onInvalidateTasks, required onInvalidateLibrary})`，测试构造不依赖 `Ref`：
+
 ```dart
 import 'dart:async';
 
@@ -600,13 +659,41 @@ import 'package:video_sniffing/providers/engine_repository.dart';
 import 'package:video_sniffing/providers/library_provider.dart';
 import 'package:video_sniffing/providers/tasks_provider.dart';
 
+typedef _Invalidate = void Function();
+
 class DownloadCoordinator {
-  DownloadCoordinator(this._ref, this._repo) {
+  DownloadCoordinator._(
+    this._repo, {
+    required _Invalidate onInvalidateTasks,
+    required _Invalidate onInvalidateLibrary,
+  })  : _onInvalidateTasks = onInvalidateTasks,
+        _onInvalidateLibrary = onInvalidateLibrary {
     _subscription = _repo.taskEvents.listen(_onEvent);
   }
 
-  final Ref _ref;
+  factory DownloadCoordinator(Ref ref, EngineRepository repo) {
+    return DownloadCoordinator._(
+      repo,
+      onInvalidateTasks: () => ref.invalidate(tasksProvider),
+      onInvalidateLibrary: () => ref.invalidate(libraryProvider),
+    );
+  }
+
+  factory DownloadCoordinator.forTest(
+    EngineRepository repo, {
+    required _Invalidate onInvalidateTasks,
+    required _Invalidate onInvalidateLibrary,
+  }) {
+    return DownloadCoordinator._(
+      repo,
+      onInvalidateTasks: onInvalidateTasks,
+      onInvalidateLibrary: onInvalidateLibrary,
+    );
+  }
+
   final EngineRepository _repo;
+  final _Invalidate _onInvalidateTasks;
+  final _Invalidate _onInvalidateLibrary;
   StreamSubscription<TaskEvent>? _subscription;
   var _workerActive = false;
 
@@ -630,7 +717,7 @@ class DownloadCoordinator {
     switch (event.kind) {
       case TaskEventKind.workerStopped:
         _workerActive = false;
-        _ref.invalidate(tasksProvider);
+        _onInvalidateTasks();
         final queued = _repo
             .listTasks()
             .any((task) => task.status == TaskStatus.queued);
@@ -638,10 +725,10 @@ class DownloadCoordinator {
           ensureDownloads();
         }
       case TaskEventKind.taskUpdated:
-        _ref.invalidate(tasksProvider);
+        _onInvalidateTasks();
         final task = event.task;
         if (task != null && task.status == TaskStatus.completed) {
-          _ref.invalidate(libraryProvider);
+          _onInvalidateLibrary();
         }
     }
   }
@@ -667,12 +754,13 @@ final downloadCoordinatorProvider = Provider<DownloadCoordinator>((ref) {
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_sniffing/engine/models/library_item.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
+import 'package:video_sniffing/providers/engine_repository.dart';
 
 final libraryProvider = Provider<List<LibraryItem>>((ref) {
   ref.watch(engineHostProvider);
   final repo = ref.watch(engineRepositoryProvider);
-  final items = repo.listLibrary();
-  items.sort((a, b) => b.createdAtMs.compareTo(a.createdAtMs));
+  final items = [...repo.listLibrary()]
+    ..sort((a, b) => b.createdAtMs.compareTo(a.createdAtMs));
   return items;
 });
 ```
@@ -683,6 +771,7 @@ final libraryProvider = Provider<List<LibraryItem>>((ref) {
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_sniffing/engine/models/download_task.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
+import 'package:video_sniffing/providers/engine_repository.dart';
 
 final tasksProvider = Provider<List<DownloadTask>>((ref) {
   ref.watch(engineHostProvider);
@@ -697,12 +786,15 @@ final tasksProvider = Provider<List<DownloadTask>>((ref) {
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_sniffing/engine/models/engine_settings.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
+import 'package:video_sniffing/providers/engine_repository.dart';
 
 final settingsProvider = Provider<EngineSettings>((ref) {
   ref.watch(engineHostProvider);
   return ref.watch(engineRepositoryProvider).settings();
 });
 ```
+
+- [ ] **Step 4b: 将 `app/lib/app.dart` 更新为 Task 1 Step 2 完整版（引擎门闩 + eager `downloadCoordinatorProvider`）**
 
 - [ ] **Step 5: Run PASS**
 
@@ -713,7 +805,7 @@ cd app && flutter test test/download_coordinator_test.dart
 - [ ] **Step 6: Commit**
 
 ```bash
-git add app/lib/providers/download_coordinator.dart app/lib/providers/library_provider.dart app/lib/providers/tasks_provider.dart app/lib/providers/settings_provider.dart app/test/download_coordinator_test.dart
+git add app/lib/providers/ app/lib/app.dart app/test/download_coordinator_test.dart
 git commit -m "feat(app): 添加 DownloadCoordinator 与列表 Provider"
 ```
 
@@ -736,129 +828,80 @@ git commit -m "feat(app): 添加 DownloadCoordinator 与列表 Provider"
 
 - [ ] **Step 1: 写失败测试 W3 `app/test/app_shell_test.dart`**
 
+使用完整 `GoRouter` + `StatefulShellRoute`（**不要** fake `StatefulNavigationShell`）：
+
 ```dart
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:video_sniffing/shell/app_shell.dart';
 
-Widget _wrap(Widget child, double width) {
-  return MaterialApp(
-    home: MediaQuery(
-      data: MediaQueryData(size: Size(width, 800)),
-      child: child,
-    ),
+GoRouter _testRouter() {
+  return GoRouter(
+    initialLocation: '/library',
+    routes: [
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) =>
+            AppShell(navigationShell: navigationShell),
+        branches: [
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/library',
+                builder: (_, __) => const Text('library'),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(path: '/tasks', builder: (_, __) => const Text('tasks')),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(path: '/add', builder: (_, __) => const Text('add')),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/settings',
+                builder: (_, __) => const Text('settings'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    ],
   );
 }
 
 void main() {
-  testWidgets('W3 uses BottomNavigationBar when width < 600', (tester) async {
-    await tester.pumpWidget(
-      _wrap(
-        AppShell(
-          navigationShell: _FakeShell(),
-        ),
-        400,
-      ),
-    );
-    expect(find.byType(BottomNavigationBar), findsOneWidget);
-    expect(find.byType(NavigationRail), findsNothing);
-  });
-
-  testWidgets('W3 uses NavigationRail when width >= 600', (tester) async {
-    await tester.pumpWidget(
-      _wrap(
-        AppShell(
-          navigationShell: _FakeShell(),
-        ),
-        800,
-      ),
-    );
-    expect(find.byType(NavigationRail), findsOneWidget);
-    expect(find.byType(BottomNavigationBar), findsNothing);
-  });
-}
-
-class _FakeShell extends StatefulNavigationShell {
-  _FakeShell()
-      : super(
-          shellRouteContext: throw UnimplementedError(),
-          router: GoRouter(routes: []),
-          containerBuilder: (_, __, child) => child,
-        );
-}
-```
-
-> **注意：** `StatefulNavigationShell` 难以直接 fake。改用以下可运行方案——在测试中 pump 完整 `GoRouter` + `ShellRoute`：
-
-```dart
-import 'package:flutter/material.dart';
-import 'package:flutter_test/flutter_test.dart';
-import 'package:go_router/go_router.dart';
-import 'package:video_sniffing/shell/app_shell.dart';
-
-void main() {
-  testWidgets('W3 uses BottomNavigationBar when width < 600', (tester) async {
-    final router = GoRouter(
-      initialLocation: '/library',
-      routes: [
-        StatefulShellRoute.indexedStack(
-          builder: (context, state, navigationShell) =>
-              AppShell(navigationShell: navigationShell),
-          branches: [
-            StatefulShellBranch(
-              routes: [
-                GoRoute(
-                  path: '/library',
-                  builder: (_, __) => const Text('library'),
-                ),
-              ],
-            ),
-            StatefulShellBranch(
-              routes: [
-                GoRoute(
-                  path: '/tasks',
-                  builder: (_, __) => const Text('tasks'),
-                ),
-              ],
-            ),
-            StatefulShellBranch(
-              routes: [
-                GoRoute(path: '/add', builder: (_, __) => const Text('add')),
-              ],
-            ),
-            StatefulShellBranch(
-              routes: [
-                GoRoute(
-                  path: '/settings',
-                  builder: (_, __) => const Text('settings'),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ],
-    );
-
+  testWidgets('W3 uses NavigationBar when width < 600', (tester) async {
     await tester.pumpWidget(
       MediaQuery(
         data: const MediaQueryData(size: Size(400, 800)),
-        child: MaterialApp.router(routerConfig: router),
+        child: MaterialApp.router(routerConfig: _testRouter()),
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.byType(BottomNavigationBar), findsOneWidget);
+    expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.byType(NavigationRail), findsNothing);
   });
 
   testWidgets('W3 uses NavigationRail when width >= 600', (tester) async {
-    // 同上，MediaQuery size Width(800, 800)
-    // expect NavigationRail findsOneWidget
+    await tester.pumpWidget(
+      MediaQuery(
+        data: const MediaQueryData(size: Size(800, 800)),
+        child: MaterialApp.router(routerConfig: _testRouter()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(NavigationRail), findsOneWidget);
+    expect(find.byType(NavigationBar), findsNothing);
   });
 }
 ```
-
-（第二个 test 完整复制第一个，仅改 `Size(800, 800)` 与断言。）
 
 - [ ] **Step 2: Run FAIL**
 
@@ -1225,7 +1268,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:video_sniffing/features/settings/settings_screen.dart';
 import 'package:video_sniffing/providers/engine_repository.dart';
-import 'package:video_sniffing/test/fakes/fake_engine_repository.dart';
+import '../fakes/fake_engine_repository.dart';
 
 void main() {
   testWidgets('W4 shows error when media_dir contains slash', (tester) async {
@@ -1241,7 +1284,10 @@ void main() {
     await tester.enterText(find.byKey(const Key('settings_media_dir')), 'bad/dir');
     await tester.tap(find.byKey(const Key('settings_save')));
     await tester.pump();
-    expect(find.textContaining('media_dir'), findsOneWidget);
+    expect(
+      find.textContaining('media_dir must be a single relative directory name'),
+      findsOneWidget,
+    );
   });
 }
 ```
@@ -1281,7 +1327,7 @@ git commit -m "feat(app): 实现设置页与校验错误展示"
 - Consumes: `ResolveOutcome*`、`downloadCoordinatorProvider.ensureDownloads`、`settingsProvider`
 - Produces: `ResolveWizard(outcome, onEnqueueComplete)` 渲染四分支 UI
 
-- [ ] **Step 1: 写失败测试 W1**
+- [ ] **Step 1: 写失败测试 W1 `app/test/resolve_wizard_test.dart`（四条独立 test）**
 
 ```dart
 import 'package:flutter/material.dart';
@@ -1289,24 +1335,62 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:video_sniffing/engine/models/resolve_types.dart';
 import 'package:video_sniffing/features/add/resolve_wizard.dart';
 
+Widget _wrap(ResolveOutcome outcome) {
+  return MaterialApp(
+    home: Scaffold(
+      body: ResolveWizard(
+        outcome: outcome,
+        onEnqueue: (_) async {},
+      ),
+    ),
+  );
+}
+
 void main() {
-  testWidgets('W1 renders NeedsBrowser branch', (tester) async {
+  testWidgets('W1 Single shows download button', (tester) async {
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: ResolveWizard(
-            outcome: const ResolveOutcomeNeedsBrowser(
-              reason: 'auth_required',
-            ),
-            onEnqueue: (_) async {},
+      _wrap(
+        ResolveOutcomeSingle(
+          ResourceCandidate(id: '1', url: 'https://x/y.mp4', kind: MediaKind.mp4),
+        ),
+      ),
+    );
+    expect(find.text('下载'), findsOneWidget);
+  });
+
+  testWidgets('W1 Candidates shows quality picker', (tester) async {
+    await tester.pumpWidget(
+      _wrap(
+        ResolveOutcomeCandidates([
+          ResourceCandidate(id: '1', url: 'https://x/a.m3u8', kind: MediaKind.hls),
+        ]),
+      ),
+    );
+    expect(find.textContaining('清晰度'), findsOneWidget);
+  });
+
+  testWidgets('W1 EpisodeList shows multi select', (tester) async {
+    await tester.pumpWidget(
+      _wrap(
+        ResolveOutcomeEpisodeList(
+          EpisodeList(
+            title: 'Series',
+            episodes: [
+              Episode(index: 1, title: 'E1', url: 'https://x/1', qualityOptions: []),
+            ],
           ),
         ),
       ),
     );
-    expect(find.textContaining('内置浏览器'), findsOneWidget);
+    expect(find.textContaining('选择分集'), findsOneWidget);
   });
 
-  // 追加 Single / Candidates / EpisodeList 各一条 expect 关键文案
+  testWidgets('W1 NeedsBrowser shows browser hint', (tester) async {
+    await tester.pumpWidget(
+      _wrap(const ResolveOutcomeNeedsBrowser(reason: 'auth_required')),
+    );
+    expect(find.textContaining('内置浏览器'), findsOneWidget);
+  });
 }
 ```
 
@@ -1314,8 +1398,8 @@ void main() {
 
 | Outcome | UI |
 |---------|-----|
-| `Single` | 标题 TextField +「下载」按钮 → `enqueueSingle` |
-| `Candidates` | `QualityPicker` 列表 → `enqueueSingle` |
+| `Single` | 标题 `Key('resolve_title_field')` +「下载」 |
+| `Candidates` | 选候选 → 若 `quality == null` 且 `kind == hls` 则 `resolveQualities(url)` → `QualityPicker` → `enqueueSingle` |
 | `EpisodeList` | `EpisodeMultiSelect` 默认全选 → `enqueueEpisodes` |
 | `NeedsBrowser` | 说明文案 +「返回」 |
 
@@ -1372,129 +1456,45 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 class LocalPlayerController {
-  LocalPlayerController(String filePath)
-      : player = Player(),
-        controller = VideoController(Player()..open(Media(filePath)));
+  LocalPlayerController(String filePath) : player = Player() {
+    controller = VideoController(player);
+    player.open(Media(filePath));
+  }
 
   final Player player;
-  final VideoController controller;
+  late final VideoController controller;
+  int lastPositionMs = 0;
 
   Future<void> seekTo(Duration position) => player.seek(position);
 
-  Duration get position => player.state.position;
+  void updateCachedPosition() {
+    lastPositionMs = player.state.position.inMilliseconds;
+  }
 
   Future<void> dispose() async {
+    updateCachedPosition();
     await player.dispose();
   }
 }
 ```
 
-> 修正：同一 `Player` 实例传给 `VideoController`：
-
-```dart
-class LocalPlayerController {
-  LocalPlayerController(String filePath) : player = Player() {
-    controller = VideoController(player);
-    player.open(Media(filePath));
-  }
-  final Player player;
-  late final VideoController controller;
-  // ...
-}
-```
-
 - [ ] **Step 2: 实现 `player_screen.dart`**
 
-```dart
-class PlayerScreen extends ConsumerStatefulWidget {
-  const PlayerScreen({super.key, required this.episodeId});
-  final String episodeId;
+要点：
+- `WidgetsBindingObserver`：`paused` 时 `_persistPosition()`
+- 订阅 `player.stream.position`，debounce 5s 更新 `lastPositionMs`
+- `_init`：`player.stream.duration` 首帧非零后 `seek(positionMs)`（**不要** `player.stream.first`）
+- 返回：`await _persistPosition()` 再 `context.pop()`
+- `dispose`：用 `lastPositionMs` 同步调用 `setEpisodePosition`（不 await 未完成 Future）
 
-  @override
-  ConsumerState<PlayerScreen> createState() => _PlayerScreenState();
-}
-
-class _PlayerScreenState extends ConsumerState<PlayerScreen> {
-  LocalPlayerController? _player;
-  LibraryEpisode? _episode;
-
-  @override
-  void initState() {
-    super.initState();
-    _init();
-  }
-
-  Future<void> _init() async {
-    final repo = ref.read(engineRepositoryProvider);
-    // 从 listLibrary + listEpisodes 查找 episodeId
-    LibraryEpisode? found;
-    for (final item in repo.listLibrary()) {
-      for (final ep in repo.listEpisodes(item.id)) {
-        if (ep.id == widget.episodeId) {
-          found = ep;
-          break;
-        }
-      }
-    }
-    if (found == null || !mounted) return;
-    _episode = found;
-    final ctrl = LocalPlayerController(found.filePath);
-    await ctrl.player.stream.first; // 或 wait until duration ready
-    if (found.positionMs > 0) {
-      await ctrl.seekTo(Duration(milliseconds: found.positionMs));
-    }
-    if (mounted) setState(() => _player = ctrl);
-  }
-
-  Future<void> _persistPosition() async {
-    final ep = _episode;
-    final ctrl = _player;
-    if (ep == null || ctrl == null) return;
-    final ms = ctrl.position.inMilliseconds;
-    ref.read(engineRepositoryProvider).setEpisodePosition(ep.id, ms);
-  }
-
-  @override
-  void dispose() {
-    _persistPosition();
-    _player?.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ctrl = _player;
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: ctrl == null
-          ? const Center(child: CircularProgressIndicator())
-          : Stack(
-              children: [
-                Center(child: Video(controller: ctrl.controller)),
-                SafeArea(
-                  child: IconButton(
-                    icon: const Icon(Icons.arrow_back, color: Colors.white),
-                    onPressed: () async {
-                      await _persistPosition();
-                      if (context.mounted) context.pop();
-                    },
-                  ),
-                ),
-                // 底部 Play/Pause：IconButton 监听 player.state.playing
-              ],
-            ),
-    );
-  }
-}
-```
-
-- [ ] **Step 3: 本地验证播放**
+- [ ] **Step 3: 本地验证播放（MP4 + HLS）**
 
 ```bash
 cd app && flutter run -d macos
 ```
 
-完成一次 MP4 下载后从片库播放，退出再进确认续播。
+1. 下载 fixture MP4 → 片库播放 → 退出再进确认续播  
+2. 下载 HLS fixture（引擎 ffmpeg 合并输出）→ 片库播放确认可播
 
 - [ ] **Step 4: Commit**
 
@@ -1526,19 +1526,22 @@ git commit -m "feat(app): 集成 media_kit 本地播放器与进度回写"
 
 ```dart
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:video_sniffing/app.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:video_sniffing/engine/engine_host.dart';
+import 'package:video_sniffing/engine/models/task_status.dart';
 
-import 'smoke_test.dart' show pumpEngineEvents, waitForTaskEvent;
+import 'smoke_test.dart' show pumpEngineEvents;
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('U1 paste url creates task entry', (tester) async {
     await tester.pumpWidget(const ProviderScope(child: VideoSniffingApp()));
-    await tester.pumpAndSettle(const Duration(seconds: 5));
+    await tester.pumpAndSettle(const Duration(seconds: 15));
 
     await tester.tap(find.text('添加'));
     await tester.pumpAndSettle();
@@ -1548,22 +1551,70 @@ void main() {
     );
     await tester.tap(find.byKey(const Key('add_resolve_button')));
     await pumpEngineEvents(tester);
-    await tester.pumpAndSettle(const Duration(seconds: 10));
+    await tester.pumpAndSettle(const Duration(seconds: 15));
 
-    // Single 分支点「下载」
+    await tester.enterText(
+      find.byKey(const Key('resolve_title_field')),
+      'ui-smoke-clip',
+    );
     await tester.tap(find.text('下载'));
-    await tester.pumpAndSettle();
+    await tester.pumpAndSettle(const Duration(seconds: 5));
 
-    expect(find.byKey(const Key('tasks_list')), findsOneWidget);
-    expect(find.textContaining('smoke'), findsWidgets);
+    expect(find.text('ui-smoke-clip'), findsWidgets);
   });
 
-  // U2: 等待 Completed，切片库 tab，expect library 有条目
-  // U3: 点播放 → 等待 player → pop → 再进 verify position（可检查 position_ms > 0 via EngineHost 在 test 末尾直接 open 同一 dataDir 读 episodes）
+  testWidgets('U2 completed task appears in library', (tester) async {
+    await tester.pumpWidget(const ProviderScope(child: VideoSniffingApp()));
+    await tester.pumpAndSettle(const Duration(seconds: 15));
+
+    // 复用 U1 入队流程（可抽 helper enqueueFixtureMp4）
+    // ... 同上粘贴 URL、标题 ui-smoke-clip、点下载 ...
+
+    final end = DateTime.now().add(const Duration(seconds: 60));
+    while (DateTime.now().isBefore(end)) {
+      await tester.tap(find.text('任务'));
+      await pumpEngineEvents(tester);
+      await tester.pump(const Duration(seconds: 1));
+      if (find.textContaining('completed').evaluate().isNotEmpty) {
+        break;
+      }
+    }
+
+    await tester.tap(find.text('片库'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('library_list')), findsOneWidget);
+    expect(find.textContaining('ui-smoke-clip'), findsWidgets);
+  });
+
+  testWidgets('U3 resume position persists', (tester) async {
+    final supportDir = await getApplicationSupportDirectory();
+    // 先完成 U2 流程使片库有条目可播 …
+    await tester.pumpWidget(const ProviderScope(child: VideoSniffingApp()));
+    await tester.pumpAndSettle(const Duration(seconds: 15));
+    // 进入片库 → 点播放 → pump 5s → 返回
+    await tester.tap(find.text('片库'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('ui-smoke-clip'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('播放'));
+    await tester.pump(const Duration(seconds: 5));
+    await tester.tap(find.byIcon(Icons.arrow_back));
+    await tester.pumpAndSettle();
+
+    final host = await EngineHost.open(supportDir.path);
+    try {
+      final items = host.listLibrary();
+      expect(items, isNotEmpty);
+      final episodes = host.listEpisodes(items.first.id);
+      expect(episodes.first.positionMs, greaterThan(0));
+    } finally {
+      host.dispose();
+    }
+  });
 }
 ```
 
-U2/U3 需复用 `smoke_test.dart` 的 `pumpEngineEvents`；U2 轮询 tasks 直到 `completed`（timeout 60s）；U3 若 CI 上 media_kit 初始化慢，允许较长 `pumpAndSettle`。
+> U2/U3 实施时将入队 helper 抽为 `enqueueFixtureMp4(tester)` 避免重复。`VideoSniffingApp` 引擎门闩需 `pumpAndSettle` 足够长等待 `engineHostProvider.data`。
 
 - [ ] **Step 3: 更新 `.github/workflows/ci.yml`**
 
@@ -1632,12 +1683,11 @@ cd app && flutter build windows --debug
 
 （iOS/Android 构建在对应环境交付前验证。）
 
-- [ ] **Step 3: 提交计划与 README**
+- [ ] **Step 3: 提交 README**
 
 ```bash
 git add README.md
-git add -f docs/superpowers/plans/2026-08-11-app-ui-player.md
-git commit -m "docs: 添加 Plan 5 实现计划与 README UI 说明"
+git commit -m "docs: 补充 Plan 5 应用 UI 使用说明"
 ```
 
 ---
@@ -1654,7 +1704,9 @@ git commit -m "docs: 添加 Plan 5 实现计划与 README UI 说明"
 | 任务父子折叠 + 进度 | Task 6 |
 | 设置全字段 | Task 7 |
 | 播放器 + position 回写 | Task 9 |
-| DownloadCoordinator | Task 3 |
+| 引擎启动门闩 + eager coordinator | Task 1 Step 2、Task 3 Step 4b |
+| Candidates `resolveQualities` | Task 8 |
+| HLS 播放验收 | Task 9 Step 3 |
 | error_presenter | Task 2 |
 | W1–W4 | Task 4, 6, 7, 8 |
 | U1–U3 + F1–F5 保留 | Task 10 |
