@@ -1,11 +1,11 @@
 mod support;
 
-use std::sync::Arc;
-use std::sync::{mpsc, Mutex};
+use std::sync::{mpsc, Arc, OnceLock};
 use std::time::Duration;
 use support::engine_download::interruptible_mp4_fixture_bytes as build_interruptible_mp4;
 use support::fixture_server;
 use tempfile::tempdir;
+use tokio::sync::Mutex;
 use uuid::Uuid;
 use video_sniffing_engine::test_api::{
     run_worker, BundledFfmpegLocator, DownloadCommand, LibraryStore, TaskStore, WorkerConfig,
@@ -27,10 +27,10 @@ fn fixtures_hls_dir() -> std::path::PathBuf {
     fixture_server::fixtures_dir().join("hls")
 }
 
-static WORKER_TEST_LOCK: Mutex<()> = Mutex::new(());
+static WORKER_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
-fn lock_worker_tests() -> std::sync::MutexGuard<'static, ()> {
-    WORKER_TEST_LOCK.lock().unwrap()
+async fn lock_worker_tests() -> tokio::sync::MutexGuard<'static, ()> {
+    WORKER_TEST_LOCK.get_or_init(|| Mutex::new(())).lock().await
 }
 
 fn spawn_worker(
@@ -128,7 +128,7 @@ async fn wait_for_running(store: &TaskStore, task_id: &str, timeout: Duration) -
 
 #[tokio::test]
 async fn worker_downloads_mp4_and_registers_library() {
-    let _guard = lock_worker_tests();
+    let _guard = lock_worker_tests().await;
     let dir = tempdir().unwrap();
     let data_dir = dir.path();
     std::fs::create_dir_all(data_dir.join("media")).unwrap();
@@ -227,7 +227,7 @@ async fn worker_downloads_mp4_and_registers_library() {
 
 #[tokio::test]
 async fn worker_downloads_hls_and_registers_library() {
-    let _guard = lock_worker_tests();
+    let _guard = lock_worker_tests().await;
     let dir = tempdir().unwrap();
     let data_dir = dir.path();
     std::fs::create_dir_all(data_dir.join("media")).unwrap();
@@ -278,7 +278,7 @@ async fn worker_downloads_hls_and_registers_library() {
 
 #[tokio::test]
 async fn worker_cancel_cleans_temp_dir() {
-    let _guard = lock_worker_tests();
+    let _guard = lock_worker_tests().await;
     let dir = tempdir().unwrap();
     let data_dir = dir.path();
     let fixture_dir = data_dir.join("fixtures");
@@ -337,7 +337,7 @@ async fn worker_cancel_cleans_temp_dir() {
 
 #[tokio::test]
 async fn worker_pause_preserves_temp_dir() {
-    let _guard = lock_worker_tests();
+    let _guard = lock_worker_tests().await;
     let dir = tempdir().unwrap();
     let data_dir = dir.path();
     let fixture_dir = data_dir.join("fixtures");
