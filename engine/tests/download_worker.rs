@@ -106,18 +106,27 @@ async fn wait_until_running_or_progress(
     }
 }
 
-async fn wait_for_running(store: &TaskStore, task_id: &str, timeout: Duration) -> bool {
+async fn wait_for_part_progress(
+    store: &TaskStore,
+    task_id: &str,
+    part_path: &std::path::Path,
+    min_bytes: u64,
+    timeout: Duration,
+) -> bool {
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
         let task = store.get(task_id).unwrap();
-        if task.status == TaskStatus::Running {
-            return true;
-        }
         if matches!(
             task.status,
             TaskStatus::Completed | TaskStatus::Cancelled | TaskStatus::Failed
         ) {
             return false;
+        }
+        if part_path.is_file() {
+            let bytes = std::fs::metadata(part_path).map(|m| m.len()).unwrap_or(0);
+            if bytes >= min_bytes {
+                return true;
+            }
         }
         if tokio::time::Instant::now() > deadline {
             return false;
@@ -349,7 +358,7 @@ async fn worker_pause_preserves_temp_dir() {
     let now = 1i64;
     let task_id = Uuid::new_v4().to_string();
     let (addr, _guard) =
-        fixture_server::serve_dir_throttled(fixture_dir, 1_024, Duration::from_millis(20)).await;
+        fixture_server::serve_dir_throttled(fixture_dir, 512, Duration::from_millis(50)).await;
     let url = format!("http://{addr}/large.mp4");
 
     store
@@ -373,7 +382,12 @@ async fn worker_pause_preserves_temp_dir() {
         .unwrap();
 
     let (cmd_tx, worker) = spawn_worker(data_dir);
-    if wait_for_running(&store, &task_id, Duration::from_secs(10)).await {
+    let part_path = data_dir
+        .join("media")
+        .join(".dl")
+        .join(&task_id)
+        .join("large.mp4.part");
+    if wait_for_part_progress(&store, &task_id, &part_path, 4_096, Duration::from_secs(30)).await {
         cmd_tx
             .send(DownloadCommand::Pause {
                 task_id: task_id.clone(),

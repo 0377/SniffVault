@@ -482,10 +482,21 @@ async fn run_one_task(
                             save_interrupt_checkpoint_if_paused(config, task, &hls_states).await;
                         return TaskRunOutcome::Cancelled;
                     }
+                    let current = match tasks.get(&task.id) {
+                        Ok(t) => t,
+                        Err(e) => return TaskRunOutcome::Failed(e),
+                    };
+                    if current.status == TaskStatus::Paused || cancel.is_cancelled() {
+                        let _ = save_interrupt_checkpoint(config, task, &hls_states).await;
+                        return TaskRunOutcome::Cancelled;
+                    }
+                    if current.status != TaskStatus::Running {
+                        return TaskRunOutcome::Cancelled;
+                    }
                     if let Err(e) = tasks.complete_download(&task.id, &path_str, &item.id) {
                         return TaskRunOutcome::Failed(e);
                     }
-                    cleanup_temp_dir(&config.media_dir, &task.id);
+                    cleanup_download_temp_if_terminal(config, &task.id);
                     TaskRunOutcome::Success
                 }
                 Err(e) => TaskRunOutcome::Failed(e),
@@ -548,11 +559,14 @@ async fn save_interrupt_checkpoint(
     let temp_dir = config.media_dir.join(".dl").join(&task.id);
     let output_path = config.media_dir.join(output_filename(task));
     let part = mp4_part_path(&temp_dir, &output_path);
-    if !part.is_file() {
+    let (checkpoint_part, bytes_done) = if part.is_file() {
+        (part.clone(), std::fs::metadata(&part)?.len())
+    } else if output_path.is_file() {
+        (output_path.clone(), std::fs::metadata(&output_path)?.len())
+    } else {
         return Ok(());
-    }
+    };
 
-    let bytes_done = std::fs::metadata(&part)?.len();
     if bytes_done == 0 {
         return Ok(());
     }
@@ -561,7 +575,7 @@ async fn save_interrupt_checkpoint(
         version: 1,
         body: CheckpointBody::Mp4 {
             temp_dir: temp_dir.to_string_lossy().into_owned(),
-            part_path: part.to_string_lossy().into_owned(),
+            part_path: checkpoint_part.to_string_lossy().into_owned(),
             bytes_done,
         },
     };
@@ -638,6 +652,18 @@ fn cleanup_temp_dir(media_dir: &Path, task_id: &str) {
     if temp.exists() {
         let _ = std::fs::remove_dir_all(&temp);
     }
+}
+
+fn cleanup_download_temp_if_terminal(config: &WorkerConfig, task_id: &str) {
+    let tasks_path = config.data_dir.join("tasks.db");
+    if let Ok(store) = TaskStore::open(&tasks_path) {
+        if let Ok(task) = store.get(task_id) {
+            if matches!(task.status, TaskStatus::Paused | TaskStatus::Queued) {
+                return;
+            }
+        }
+    }
+    cleanup_temp_dir(&config.media_dir, task_id);
 }
 
 pub(crate) fn cleanup_download_temp(media_dir: &Path, task_id: &str) {
