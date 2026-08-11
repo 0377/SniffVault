@@ -33,6 +33,9 @@ Thumbs.db
 *.db
 *.log
 
+# 本地规格/计划（不入库）
+docs/
+
 # Vendor ffmpeg 二进制（通过 engine/scripts/fetch_ffmpeg.sh 获取）
 engine/vendor/ffmpeg/**/*
 !engine/vendor/ffmpeg/README.md
