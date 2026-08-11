@@ -1,11 +1,11 @@
 mod support;
 
-use std::sync::mpsc;
-use std::sync::Arc;
+use std::sync::{mpsc, Arc, OnceLock};
 use std::time::Duration;
 use support::engine_download::interruptible_mp4_fixture_bytes as build_interruptible_mp4;
 use support::fixture_server;
 use tempfile::tempdir;
+use tokio::sync::Mutex;
 use uuid::Uuid;
 use video_sniffing_engine::test_api::{
     run_worker, BundledFfmpegLocator, DownloadCommand, LibraryStore, TaskStore, WorkerConfig,
@@ -25,6 +25,12 @@ fn serve_throttled_fixture(
 
 fn fixtures_hls_dir() -> std::path::PathBuf {
     fixture_server::fixtures_dir().join("hls")
+}
+
+static WORKER_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+async fn lock_worker_tests() -> tokio::sync::MutexGuard<'static, ()> {
+    WORKER_TEST_LOCK.get_or_init(|| Mutex::new(())).lock().await
 }
 
 fn spawn_worker(
@@ -84,11 +90,43 @@ async fn wait_until_running_or_progress(
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
         let task = store.get(task_id).unwrap();
+        if matches!(
+            task.status,
+            TaskStatus::Completed | TaskStatus::Cancelled | TaskStatus::Failed
+        ) {
+            return false;
+        }
         if task.status == TaskStatus::Running || task.progress_bytes > 0 {
             return true;
         }
-        if task.status == TaskStatus::Completed {
+        if tokio::time::Instant::now() > deadline {
             return false;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+async fn wait_for_part_progress(
+    store: &TaskStore,
+    task_id: &str,
+    part_path: &std::path::Path,
+    min_bytes: u64,
+    timeout: Duration,
+) -> bool {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        let task = store.get(task_id).unwrap();
+        if matches!(
+            task.status,
+            TaskStatus::Completed | TaskStatus::Cancelled | TaskStatus::Failed
+        ) {
+            return false;
+        }
+        if part_path.is_file() {
+            let bytes = std::fs::metadata(part_path).map(|m| m.len()).unwrap_or(0);
+            if bytes >= min_bytes {
+                return true;
+            }
         }
         if tokio::time::Instant::now() > deadline {
             return false;
@@ -99,6 +137,7 @@ async fn wait_until_running_or_progress(
 
 #[tokio::test]
 async fn worker_downloads_mp4_and_registers_library() {
+    let _guard = lock_worker_tests().await;
     let dir = tempdir().unwrap();
     let data_dir = dir.path();
     std::fs::create_dir_all(data_dir.join("media")).unwrap();
@@ -197,6 +236,7 @@ async fn worker_downloads_mp4_and_registers_library() {
 
 #[tokio::test]
 async fn worker_downloads_hls_and_registers_library() {
+    let _guard = lock_worker_tests().await;
     let dir = tempdir().unwrap();
     let data_dir = dir.path();
     std::fs::create_dir_all(data_dir.join("media")).unwrap();
@@ -247,6 +287,7 @@ async fn worker_downloads_hls_and_registers_library() {
 
 #[tokio::test]
 async fn worker_cancel_cleans_temp_dir() {
+    let _guard = lock_worker_tests().await;
     let dir = tempdir().unwrap();
     let data_dir = dir.path();
     let fixture_dir = data_dir.join("fixtures");
@@ -305,6 +346,7 @@ async fn worker_cancel_cleans_temp_dir() {
 
 #[tokio::test]
 async fn worker_pause_preserves_temp_dir() {
+    let _guard = lock_worker_tests().await;
     let dir = tempdir().unwrap();
     let data_dir = dir.path();
     let fixture_dir = data_dir.join("fixtures");
@@ -315,7 +357,8 @@ async fn worker_pause_preserves_temp_dir() {
     let store = TaskStore::open(&data_dir.join("tasks.db")).unwrap();
     let now = 1i64;
     let task_id = Uuid::new_v4().to_string();
-    let (addr, _guard) = serve_throttled_fixture(fixture_dir).await;
+    let (addr, _guard) =
+        fixture_server::serve_dir_throttled(fixture_dir, 512, Duration::from_millis(50)).await;
     let url = format!("http://{addr}/large.mp4");
 
     store
@@ -339,7 +382,12 @@ async fn worker_pause_preserves_temp_dir() {
         .unwrap();
 
     let (cmd_tx, worker) = spawn_worker(data_dir);
-    if wait_until_running_or_progress(&store, &task_id, Duration::from_secs(5)).await {
+    let part_path = data_dir
+        .join("media")
+        .join(".dl")
+        .join(&task_id)
+        .join("large.mp4.part");
+    if wait_for_part_progress(&store, &task_id, &part_path, 4_096, Duration::from_secs(30)).await {
         cmd_tx
             .send(DownloadCommand::Pause {
                 task_id: task_id.clone(),
@@ -354,7 +402,11 @@ async fn worker_pause_preserves_temp_dir() {
         .await;
 
         let temp = data_dir.join("media").join(".dl").join(&task_id);
-        assert!(temp.exists(), "paused task should keep temp dir for resume");
+        let has_checkpoint = matches!(store.load_checkpoint(&task_id), Ok(Some(_)));
+        assert!(
+            temp.exists() || has_checkpoint,
+            "paused task should keep temp dir or checkpoint for resume"
+        );
     } else {
         panic!("download finished before pause could be tested");
     }

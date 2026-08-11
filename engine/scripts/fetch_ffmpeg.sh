@@ -45,17 +45,53 @@ if [[ -x "${dest}" ]]; then
   exit 0
 fi
 
-resolve_ffmpeg() {
-  if command -v ffmpeg >/dev/null 2>&1; then
-    command -v ffmpeg
-    return 0
-  fi
-  if [[ "${os}" == "macos" ]] && command -v brew >/dev/null 2>&1; then
-    local prefix
-    prefix="$(brew --prefix ffmpeg 2>/dev/null || true)"
-    if [[ -n "${prefix}" && -x "${prefix}/bin/ffmpeg" ]]; then
-      echo "${prefix}/bin/ffmpeg"
+# GHA macOS 上 PATH 过长会导致 brew link / opt 符号链接异常。
+if [[ -n "${GITHUB_ACTIONS:-}" ]] && [[ "${os}" == "macos" ]]; then
+  export PATH="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/opt/homebrew/sbin"
+fi
+
+find_cellar_ffmpeg() {
+  local cellar_root candidate
+  for cellar_root in /opt/homebrew/Cellar/ffmpeg /usr/local/Cellar/ffmpeg; do
+    if [[ ! -d "${cellar_root}" ]]; then
+      continue
+    fi
+    candidate="$(find "${cellar_root}" -type f -name "${binary_name}" -path '*/bin/*' 2>/dev/null | head -n 1)"
+    if [[ -n "${candidate}" && -f "${candidate}" ]]; then
+      echo "${candidate}"
       return 0
+    fi
+  done
+  return 1
+}
+
+copy_to_vendor() {
+  local src="$1"
+  if [[ ! -f "${src}" ]]; then
+    echo "源文件不存在: ${src}" >&2
+    return 1
+  fi
+  cp -f "${src}" "${dest}"
+  chmod +x "${dest}"
+}
+
+resolve_ffmpeg() {
+  if [[ "${os}" == "macos" ]]; then
+    local cellar_bin
+    if cellar_bin="$(find_cellar_ffmpeg)"; then
+      echo "${cellar_bin}"
+      return 0
+    fi
+  fi
+  if command -v ffmpeg >/dev/null 2>&1; then
+    local cmd resolved
+    cmd="$(command -v ffmpeg)"
+  if [[ -f "${cmd}" ]]; then
+      resolved="$(cd "$(dirname "${cmd}")" && pwd -P)/$(basename "${cmd}")"
+      if [[ -f "${resolved}" ]]; then
+        echo "${resolved}"
+        return 0
+      fi
     fi
   fi
   return 1
@@ -66,8 +102,50 @@ install_with_brew() {
     return 1
   fi
   echo "通过 Homebrew 安装 ffmpeg..."
-  brew install ffmpeg
-  resolve_ffmpeg
+  brew install ffmpeg 2>&1 || true
+
+  local cellar_bin
+  if cellar_bin="$(find_cellar_ffmpeg)"; then
+    copy_to_vendor "${cellar_bin}"
+    return 0
+  fi
+  return 1
+}
+
+download_macos_npm() {
+  if [[ "${os}" != "macos" ]]; then
+    return 1
+  fi
+
+  local npm_pkg version="4.1.5"
+  case "${arch}" in
+    x86_64) npm_pkg="darwin-x64" ;;
+    aarch64) npm_pkg="darwin-arm64" ;;
+    *) return 1 ;;
+  esac
+
+  local tmpdir src_bin
+  tmpdir="$(mktemp -d)"
+
+  echo "从 @ffmpeg-installer/${npm_pkg} 下载..."
+  if ! curl -fsSL \
+    "https://registry.npmjs.org/@ffmpeg-installer/${npm_pkg}/-/${npm_pkg}-${version}.tgz" \
+    -o "${tmpdir}/pkg.tgz"; then
+    rm -rf "${tmpdir}"
+    return 1
+  fi
+  if ! tar -xzf "${tmpdir}/pkg.tgz" -C "${tmpdir}"; then
+    rm -rf "${tmpdir}"
+    return 1
+  fi
+  src_bin="${tmpdir}/package/ffmpeg"
+  if [[ ! -f "${src_bin}" ]]; then
+    echo "在 npm 包中未找到 ffmpeg" >&2
+    rm -rf "${tmpdir}"
+    return 1
+  fi
+  copy_to_vendor "${src_bin}"
+  rm -rf "${tmpdir}"
 }
 
 extract_tar_xz() {
@@ -117,14 +195,19 @@ download_btbn() {
   esac
 
   tmpdir="$(mktemp -d)"
-  trap 'rm -rf "${tmpdir}"' RETURN
 
   echo "从 BtbN 下载 ${asset}..."
-  curl -fsSL "${BTBN_BASE}/${asset}" -o "${tmpdir}/${archive_name}"
+  if ! curl -fsSL "${BTBN_BASE}/${asset}" -o "${tmpdir}/${archive_name}"; then
+    rm -rf "${tmpdir}"
+    return 1
+  fi
 
   case "${archive_name}" in
     *.tar.xz)
-      extract_tar_xz "${tmpdir}/${archive_name}" "${tmpdir}"
+      if ! extract_tar_xz "${tmpdir}/${archive_name}" "${tmpdir}"; then
+        rm -rf "${tmpdir}"
+        return 1
+      fi
       ;;
     *.zip)
       if command -v unzip >/dev/null 2>&1; then
@@ -134,6 +217,7 @@ download_btbn() {
           "Expand-Archive -Path '${tmpdir}/${archive_name}' -DestinationPath '${tmpdir}' -Force"
       else
         echo "未找到 unzip 或 powershell，无法解压 ${archive_name}" >&2
+        rm -rf "${tmpdir}"
         return 1
       fi
       ;;
@@ -146,26 +230,45 @@ download_btbn() {
   fi
   if [[ -z "${src_bin}" || ! -f "${src_bin}" ]]; then
     echo "在 ${asset} 中未找到 ${binary_name}" >&2
+    rm -rf "${tmpdir}"
     return 1
   fi
 
-  cp -f "${src_bin}" "${dest}"
-  chmod +x "${dest}"
+  copy_to_vendor "${src_bin}"
+  rm -rf "${tmpdir}"
 }
 
-if src="$(resolve_ffmpeg)"; then
-  cp -f "${src}" "${dest}"
-  chmod +x "${dest}"
-elif src="$(install_with_brew)"; then
-  cp -f "${src}" "${dest}"
-  chmod +x "${dest}"
+install_macos_ffmpeg() {
+  if [[ -n "${GITHUB_ACTIONS:-}" ]] && download_macos_npm; then
+    return 0
+  fi
+  install_with_brew
+}
+
+if [[ "${os}" == "macos" ]]; then
+  if src="$(resolve_ffmpeg)"; then
+    copy_to_vendor "${src}"
+  elif install_macos_ffmpeg; then
+    :
+  elif download_macos_npm; then
+    :
+  else
+    cat >&2 <<EOF
+未找到 ffmpeg，且自动安装失败。
+
+macOS: brew install ffmpeg && $0
+目标路径: ${dest}
+EOF
+    exit 1
+  fi
+elif src="$(resolve_ffmpeg)"; then
+  copy_to_vendor "${src}"
 elif download_btbn; then
   :
 else
   cat >&2 <<EOF
 未找到 ffmpeg，且自动安装失败。
 
-macOS: brew install ffmpeg && $0
 Linux/Windows: 请检查网络后重试，或手动从 BtbN 下载并加入 PATH:
   https://github.com/BtbN/FFmpeg-Builds/releases
 

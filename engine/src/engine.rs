@@ -22,6 +22,7 @@ pub struct Engine {
     tasks: TaskStore,
     download: Option<DownloadRuntime>,
     task_event_rx: Option<mpsc::Receiver<TaskEvent>>,
+    pending_task_event_tx: Option<mpsc::Sender<TaskEvent>>,
 }
 
 fn absolute_data_dir(path: &Path) -> Result<PathBuf, EngineError> {
@@ -55,6 +56,7 @@ impl Engine {
             tasks,
             download: None,
             task_event_rx: None,
+            pending_task_event_tx: None,
         })
     }
 
@@ -196,8 +198,8 @@ impl Engine {
         Ok(id)
     }
 
-    pub fn start_downloads(&mut self) -> Result<(), EngineError> {
-        if self.download.is_some() {
+    pub fn prepare_download_events(&mut self) -> Result<(), EngineError> {
+        if self.download.is_some() || self.pending_task_event_tx.is_some() {
             return Err(EngineError::InvalidArg("downloads already running".into()));
         }
         for task in self.tasks.list_all()? {
@@ -207,6 +209,19 @@ impl Engine {
             }
         }
         let (task_event_tx, task_event_rx) = mpsc::channel();
+        self.pending_task_event_tx = Some(task_event_tx);
+        self.task_event_rx = Some(task_event_rx);
+        Ok(())
+    }
+
+    pub fn spawn_download_worker(&mut self) -> Result<(), EngineError> {
+        if self.download.is_some() {
+            return Err(EngineError::InvalidArg("downloads already running".into()));
+        }
+        let task_event_tx = self
+            .pending_task_event_tx
+            .take()
+            .ok_or_else(|| EngineError::InvalidArg("download events not prepared".into()))?;
         let config = worker_config(
             self.data_dir.clone(),
             self.media_dir(),
@@ -215,8 +230,13 @@ impl Engine {
             self.settings.default_quality_label.clone(),
             Some(task_event_tx),
         );
-        self.task_event_rx = Some(task_event_rx);
         self.download = Some(DownloadRuntime::spawn(config));
+        Ok(())
+    }
+
+    pub fn start_downloads(&mut self) -> Result<(), EngineError> {
+        self.prepare_download_events()?;
+        self.spawn_download_worker()?;
         Ok(())
     }
 
@@ -225,6 +245,7 @@ impl Engine {
     }
 
     pub fn stop_downloads(&mut self) -> Result<(), EngineError> {
+        self.pending_task_event_tx = None;
         if let Some(runtime) = self.download.take() {
             runtime.stop_and_join()?;
         }

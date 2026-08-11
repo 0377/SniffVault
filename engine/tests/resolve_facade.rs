@@ -1,9 +1,7 @@
 mod support;
 
 use support::fixture_server;
-use video_sniffing_engine::{
-    MediaKind, ResolveOptions, ResolveOutcome, resolve_url_for_ffi,
-};
+use video_sniffing_engine::{resolve_url_for_ffi, MediaKind, ResolveOptions, ResolveOutcome};
 
 #[tokio::test]
 async fn resolve_url_for_ffi_direct_mp4() {

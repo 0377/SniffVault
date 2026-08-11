@@ -18,7 +18,7 @@ jobs:
     name: fmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/rust-check
         with:
           run-fmt: "true"
@@ -34,9 +34,36 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/rust-check
         with:
           run-fmt: "false"
           run-test: "true"
           run-clippy: "true"
+
+  flutter-smoke:
+    name: flutter-smoke
+    needs: fmt
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Fetch bundled ffmpeg for HLS tests
+        run: bash engine/scripts/fetch_ffmpeg.sh
+
+      - name: Verify Rust FFI symlink
+        run: test -L app/rust || test -d app/rust_builder/rust
+
+      - name: Enable macOS desktop
+        run: flutter config --enable-macos-desktop
+
+      - name: Flutter test and integration smoke
+        run: |
+          cd app
+          flutter pub get
+          flutter test
+          flutter test integration_test/smoke_test.dart -d macos

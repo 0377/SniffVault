@@ -1450,10 +1450,13 @@ name = "video_sniffing_engine_ffi"
 version = "0.1.0"
 dependencies = [
  "allo-isolate",
+ "axum",
+ "bytes",
  "serde",
  "serde_json",
  "tempfile",
  "tokio",
+ "tokio-stream",
  "video_sniffing_engine",
 ]
 
