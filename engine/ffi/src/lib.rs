@@ -1,4 +1,9 @@
+pub mod handle;
 pub mod json_api;
+
+pub use handle::{
+    engine_destroy, engine_free_string, engine_last_error, engine_open, EngineHandle,
+};
 
 #[cfg(test)]
 mod tests {
