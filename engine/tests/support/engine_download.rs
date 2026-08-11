@@ -52,11 +52,14 @@ pub async fn wait_for_any_running_or_progress(
             .into_iter()
             .find(|t| t.id == task_id)
             .unwrap();
+        if matches!(
+            task.status,
+            TaskStatus::Completed | TaskStatus::Cancelled | TaskStatus::Failed
+        ) {
+            return false;
+        }
         if task.status == TaskStatus::Running || task.progress_bytes > 0 {
             return true;
-        }
-        if task.status == TaskStatus::Completed {
-            return false;
         }
         if tokio::time::Instant::now() > deadline {
             return false;

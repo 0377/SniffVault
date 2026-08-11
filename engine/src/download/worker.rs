@@ -288,6 +288,9 @@ async fn handle_outcome(
                             // Running：Pause/Cancel 命令可能尚未把状态写入 DB（与 handle_outcome 竞态）。
                             save_checkpoint = true;
                         }
+                        TaskStatus::Completed => {
+                            // Success 路径已收尾；避免把 Completed 误标为 Cancelled 并二次清理。
+                        }
                         _ => {
                             let _ = worker_set_task_status(
                                 &store,
@@ -463,6 +466,23 @@ async fn run_one_task(
             match ingest_result {
                 Ok((item, _episode)) => {
                     let path_str = final_path.to_string_lossy().into_owned();
+                    let current = match tasks.get(&task.id) {
+                        Ok(t) => t,
+                        Err(e) => return TaskRunOutcome::Failed(e),
+                    };
+                    if current.status == TaskStatus::Paused {
+                        let _ =
+                            save_interrupt_checkpoint(config, task, &hls_states).await;
+                        return TaskRunOutcome::Cancelled;
+                    }
+                    if current.status != TaskStatus::Running {
+                        return TaskRunOutcome::Cancelled;
+                    }
+                    if cancel.is_cancelled() {
+                        let _ =
+                            save_interrupt_checkpoint_if_paused(config, task, &hls_states).await;
+                        return TaskRunOutcome::Cancelled;
+                    }
                     if let Err(e) = tasks.complete_download(&task.id, &path_str, &item.id) {
                         return TaskRunOutcome::Failed(e);
                     }
