@@ -1,6 +1,7 @@
 use crate::download::ffmpeg::BundledFfmpegLocator;
 use crate::download::worker::{run_worker, DownloadCommand, WorkerConfig};
 use crate::error::EngineError;
+use crate::types::TaskEvent;
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::sync::Arc;
@@ -49,6 +50,7 @@ pub fn worker_config(
     max_concurrency: u32,
     user_agent: Option<String>,
     default_quality_label: Option<String>,
+    task_event_tx: Option<mpsc::Sender<TaskEvent>>,
 ) -> WorkerConfig {
     WorkerConfig {
         data_dir,
@@ -57,5 +59,6 @@ pub fn worker_config(
         user_agent,
         default_quality_label,
         ffmpeg: Arc::new(BundledFfmpegLocator),
+        task_event_tx,
     }
 }

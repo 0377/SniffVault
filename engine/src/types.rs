@@ -81,6 +81,19 @@ pub enum TaskStatus {
     Cancelled,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskEventKind {
+    TaskUpdated,
+    WorkerStopped,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TaskEvent {
+    pub kind: TaskEventKind,
+    pub task: Option<DownloadTask>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DownloadTask {
     pub id: String,

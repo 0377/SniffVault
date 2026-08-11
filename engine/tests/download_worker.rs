@@ -38,6 +38,7 @@ fn spawn_worker(
         user_agent: None,
         default_quality_label: Some("highest".into()),
         ffmpeg: Arc::new(BundledFfmpegLocator),
+        task_event_tx: None,
     };
     let worker = std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().unwrap();
@@ -155,6 +156,7 @@ async fn worker_downloads_mp4_and_registers_library() {
         user_agent: None,
         default_quality_label: Some("highest".into()),
         ffmpeg: Arc::new(BundledFfmpegLocator),
+        task_event_tx: None,
     };
 
     let worker = std::thread::spawn(move || {

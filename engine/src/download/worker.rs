@@ -8,7 +8,7 @@ use crate::error::EngineError;
 use crate::ingest;
 use crate::library::LibraryStore;
 use crate::tasks::TaskStore;
-use crate::types::{DownloadTask, TaskStatus};
+use crate::types::{DownloadTask, TaskEvent, TaskEventKind, TaskStatus};
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -38,6 +38,46 @@ pub struct WorkerConfig {
     pub user_agent: Option<String>,
     pub default_quality_label: Option<String>,
     pub ffmpeg: Arc<dyn FfmpegLocator>,
+    pub task_event_tx: Option<mpsc::Sender<TaskEvent>>,
+}
+
+fn emit_task_event(config: &WorkerConfig, kind: TaskEventKind, task: Option<DownloadTask>) {
+    if let Some(tx) = &config.task_event_tx {
+        let _ = tx.send(TaskEvent { kind, task });
+    }
+}
+
+fn emit_task_updated(config: &WorkerConfig, store: &TaskStore, id: &str) {
+    if config.task_event_tx.is_some() {
+        if let Ok(task) = store.get(id) {
+            emit_task_event(config, TaskEventKind::TaskUpdated, Some(task));
+        }
+    }
+}
+
+fn worker_set_task_status(
+    store: &TaskStore,
+    config: &WorkerConfig,
+    id: &str,
+    status: TaskStatus,
+    error_message: Option<&str>,
+) -> Result<(), EngineError> {
+    store.set_task_status(id, status, error_message)?;
+    emit_task_updated(config, store, id);
+    Ok(())
+}
+
+fn worker_update_progress(
+    store: &TaskStore,
+    config: &WorkerConfig,
+    id: &str,
+    progress_bytes: u64,
+    total_bytes: Option<u64>,
+    status: TaskStatus,
+) -> Result<(), EngineError> {
+    store.update_progress(id, progress_bytes, total_bytes, status)?;
+    emit_task_updated(config, store, id);
+    Ok(())
 }
 
 pub enum DownloadCommand {
@@ -75,7 +115,13 @@ pub async fn run_worker(config: WorkerConfig, cmd_rx: mpsc::Receiver<DownloadCom
                     if let Ok(store) = TaskStore::open(&tasks_path) {
                         if let Ok(task) = store.get(&task_id) {
                             if task.status == TaskStatus::Running {
-                                let _ = store.set_task_status(&task_id, TaskStatus::Paused, None);
+                                let _ = worker_set_task_status(
+                                    &store,
+                                    &config,
+                                    &task_id,
+                                    TaskStatus::Paused,
+                                    None,
+                                );
                                 if let Some(token) = task_cancels.lock().await.get(&task_id) {
                                     token.cancel();
                                 }
@@ -89,7 +135,13 @@ pub async fn run_worker(config: WorkerConfig, cmd_rx: mpsc::Receiver<DownloadCom
                     } else {
                         let tasks_path = config.data_dir.join("tasks.db");
                         if let Ok(store) = TaskStore::open(&tasks_path) {
-                            let _ = store.set_task_status(&task_id, TaskStatus::Queued, None);
+                            let _ = worker_set_task_status(
+                                &store,
+                                &config,
+                                &task_id,
+                                TaskStatus::Queued,
+                                None,
+                            );
                         }
                     }
                 }
@@ -99,7 +151,13 @@ pub async fn run_worker(config: WorkerConfig, cmd_rx: mpsc::Receiver<DownloadCom
                     }
                     let tasks_path = config.data_dir.join("tasks.db");
                     if let Ok(store) = TaskStore::open(&tasks_path) {
-                        let _ = store.set_task_status(&task_id, TaskStatus::Cancelled, None);
+                        let _ = worker_set_task_status(
+                            &store,
+                            &config,
+                            &task_id,
+                            TaskStatus::Cancelled,
+                            None,
+                        );
                         if let Ok(task) = store.get(&task_id) {
                             cleanup_temp_dir(&config.media_dir, &task.id);
                         }
@@ -113,8 +171,13 @@ pub async fn run_worker(config: WorkerConfig, cmd_rx: mpsc::Receiver<DownloadCom
                         if let Ok(all) = store.list_all() {
                             for task in all {
                                 if task.status == TaskStatus::Running {
-                                    let _ =
-                                        store.set_task_status(&task.id, TaskStatus::Paused, None);
+                                    let _ = worker_set_task_status(
+                                        &store,
+                                        &config,
+                                        &task.id,
+                                        TaskStatus::Paused,
+                                        None,
+                                    );
                                 }
                             }
                         }
@@ -132,6 +195,7 @@ pub async fn run_worker(config: WorkerConfig, cmd_rx: mpsc::Receiver<DownloadCom
             if let Some(ack) = shutdown_ack.take() {
                 let _ = ack.send(());
             }
+            emit_task_event(&config, TaskEventKind::WorkerStopped, None);
             break;
         }
 
@@ -157,7 +221,9 @@ pub async fn run_worker(config: WorkerConfig, cmd_rx: mpsc::Receiver<DownloadCom
                             .await
                             .insert(task.id.clone(), token.clone());
 
-                        if let Err(e) = store.set_task_status(&task.id, TaskStatus::Running, None) {
+                        if let Err(e) =
+                            worker_set_task_status(&store, &config, &task.id, TaskStatus::Running, None)
+                        {
                             tracing_log(&format!("set running failed: {e}"));
                             task_cancels.lock().await.remove(&task.id);
                             in_flight.lock().await.remove(&task.id);
@@ -218,7 +284,13 @@ async fn handle_outcome(
                             save_checkpoint = true;
                         }
                         _ => {
-                            let _ = store.set_task_status(&task.id, TaskStatus::Cancelled, None);
+                            let _ = worker_set_task_status(
+                                &store,
+                                config,
+                                &task.id,
+                                TaskStatus::Cancelled,
+                                None,
+                            );
                             cleanup_temp_dir(&config.media_dir, &task.id);
                         }
                     }
@@ -226,7 +298,13 @@ async fn handle_outcome(
             }
             TaskRunOutcome::DiskFull => {
                 scheduler.lock().await.pause_globally();
-                let _ = store.set_task_status(&task.id, TaskStatus::Paused, None);
+                let _ = worker_set_task_status(
+                    &store,
+                    config,
+                    &task.id,
+                    TaskStatus::Paused,
+                    None,
+                );
             }
             TaskRunOutcome::Failed(err) => {
                 let msg = err.to_string();
@@ -243,17 +321,17 @@ async fn handle_outcome(
         let _ = save_interrupt_checkpoint(config, task, &handles.hls_states).await;
     }
 
-    finish_task_handles(&config.data_dir, &task.id, &handles).await;
+    finish_task_handles(config, &task.id, &handles).await;
 }
 
-async fn finish_task_handles(data_dir: &Path, task_id: &str, handles: &WorkerHandles) {
+async fn finish_task_handles(config: &WorkerConfig, task_id: &str, handles: &WorkerHandles) {
     handles.task_cancels.lock().await.remove(task_id);
     handles.in_flight.lock().await.remove(task_id);
     handles.hls_states.lock().await.remove(task_id);
     if handles.pending_resumes.lock().await.remove(task_id) {
-        let tasks_path = data_dir.join("tasks.db");
+        let tasks_path = config.data_dir.join("tasks.db");
         if let Ok(store) = TaskStore::open(&tasks_path) {
-            let _ = store.set_task_status(task_id, TaskStatus::Queued, None);
+            let _ = worker_set_task_status(&store, config, task_id, TaskStatus::Queued, None);
         }
     }
 }
@@ -436,7 +514,7 @@ async fn save_interrupt_checkpoint(
             if let Some(checkpoint) = snapshot.to_checkpoint() {
                 let progress = snapshot.segments_done.len() as u64;
                 store.save_checkpoint(&task.id, &checkpoint)?;
-                store.update_progress(&task.id, progress, None, TaskStatus::Paused)?;
+                worker_update_progress(&store, config, &task.id, progress, None, TaskStatus::Paused)?;
             }
         }
         return Ok(());
@@ -463,7 +541,14 @@ async fn save_interrupt_checkpoint(
         },
     };
     store.save_checkpoint(&task.id, &checkpoint)?;
-    store.update_progress(&task.id, bytes_done, None, TaskStatus::Paused)?;
+    worker_update_progress(
+        &store,
+        config,
+        &task.id,
+        bytes_done,
+        None,
+        TaskStatus::Paused,
+    )?;
     Ok(())
 }
 

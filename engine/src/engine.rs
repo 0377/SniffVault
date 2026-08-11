@@ -7,9 +7,10 @@ use crate::settings;
 use crate::tasks::TaskStore;
 use crate::types::{
     DownloadTask, EngineSettings, LibraryEpisode, LibraryItem, Quality, ResolveOptions,
-    ResolveOutcome, ResourceCandidate, SniffEvent, TaskStatus,
+    ResolveOutcome, ResourceCandidate, SniffEvent, TaskEvent, TaskStatus,
 };
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
@@ -20,6 +21,7 @@ pub struct Engine {
     library: LibraryStore,
     tasks: TaskStore,
     download: Option<DownloadRuntime>,
+    task_event_rx: Option<mpsc::Receiver<TaskEvent>>,
 }
 
 fn absolute_data_dir(path: &Path) -> Result<PathBuf, EngineError> {
@@ -52,6 +54,7 @@ impl Engine {
             library,
             tasks,
             download: None,
+            task_event_rx: None,
         })
     }
 
@@ -203,15 +206,22 @@ impl Engine {
                     .set_task_status(&task.id, TaskStatus::Queued, None)?;
             }
         }
+        let (task_event_tx, task_event_rx) = mpsc::channel();
         let config = worker_config(
             self.data_dir.clone(),
             self.media_dir(),
             self.settings.max_concurrency,
             self.settings.user_agent.clone(),
             self.settings.default_quality_label.clone(),
+            Some(task_event_tx),
         );
+        self.task_event_rx = Some(task_event_rx);
         self.download = Some(DownloadRuntime::spawn(config));
         Ok(())
+    }
+
+    pub fn take_task_event_receiver(&mut self) -> Option<mpsc::Receiver<TaskEvent>> {
+        self.task_event_rx.take()
     }
 
     pub fn stop_downloads(&mut self) -> Result<(), EngineError> {
