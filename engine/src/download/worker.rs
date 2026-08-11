@@ -284,7 +284,8 @@ async fn handle_outcome(
                         TaskStatus::Cancelled => {
                             cleanup_temp_dir(&config.media_dir, &task.id);
                         }
-                        TaskStatus::Paused | TaskStatus::Queued => {
+                        TaskStatus::Paused | TaskStatus::Queued | TaskStatus::Running => {
+                            // Running：Pause/Cancel 命令可能尚未把状态写入 DB（与 handle_outcome 竞态）。
                             save_checkpoint = true;
                         }
                         _ => {
