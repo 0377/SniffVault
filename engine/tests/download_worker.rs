@@ -1,7 +1,7 @@
 mod support;
 
-use std::sync::{mpsc, Mutex};
 use std::sync::Arc;
+use std::sync::{mpsc, Mutex};
 use std::time::Duration;
 use support::engine_download::interruptible_mp4_fixture_bytes as build_interruptible_mp4;
 use support::fixture_server;
@@ -348,12 +348,8 @@ async fn worker_pause_preserves_temp_dir() {
     let store = TaskStore::open(&data_dir.join("tasks.db")).unwrap();
     let now = 1i64;
     let task_id = Uuid::new_v4().to_string();
-    let (addr, _guard) = fixture_server::serve_dir_throttled(
-        fixture_dir,
-        1_024,
-        Duration::from_millis(20),
-    )
-    .await;
+    let (addr, _guard) =
+        fixture_server::serve_dir_throttled(fixture_dir, 1_024, Duration::from_millis(20)).await;
     let url = format!("http://{addr}/large.mp4");
 
     store
@@ -392,10 +388,7 @@ async fn worker_pause_preserves_temp_dir() {
         .await;
 
         let temp = data_dir.join("media").join(".dl").join(&task_id);
-        let has_checkpoint = matches!(
-            store.load_checkpoint(&task_id),
-            Ok(Some(_))
-        );
+        let has_checkpoint = matches!(store.load_checkpoint(&task_id), Ok(Some(_)));
         assert!(
             temp.exists() || has_checkpoint,
             "paused task should keep temp dir or checkpoint for resume"
