@@ -223,6 +223,10 @@ class EngineHost {
     _callSyncVoid((handle) => _bindings.engineStartDownloads(handle));
   }
 
+  void spawnDownloadWorker() {
+    _callSyncVoid((handle) => _bindings.engineSpawnDownloadWorker(handle));
+  }
+
   void stopDownloads() {
     _callSyncVoid((handle) => _bindings.engineStopDownloads(handle));
   }
@@ -462,7 +466,12 @@ class EngineHost {
 
   void _ensureOpen() {
     if (_disposed) {
-      throw StateError('EngineHost has been disposed');
+      throw EngineException(
+        const FfiError(
+          kind: 'message',
+          message: 'EngineHost has been disposed',
+        ),
+      );
     }
   }
 

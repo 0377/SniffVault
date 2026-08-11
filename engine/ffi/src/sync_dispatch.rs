@@ -1,5 +1,7 @@
 use std::ffi::CStr;
 use std::os::raw::c_char;
+use std::thread;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use video_sniffing_engine::{Engine, EngineError, EngineSettings, SniffEvent};
@@ -193,31 +195,64 @@ pub unsafe extern "C" fn engine_enqueue_episodes(
     })
 }
 
+fn spawn_download_worker_deferred(handle: *mut EngineHandle) {
+    let handle_addr = handle as usize;
+    thread::spawn(move || {
+        thread::sleep(Duration::from_millis(10));
+        let handle = handle_addr as *mut EngineHandle;
+        if handle.is_null() {
+            return;
+        }
+        let handle = unsafe { &mut *handle };
+        let mut engine = match handle.engine.lock() {
+            Ok(guard) => guard,
+            Err(_) => return,
+        };
+        let _ = engine.spawn_download_worker();
+    });
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn engine_start_downloads(handle: *mut EngineHandle) -> *mut c_char {
     if handle.is_null() {
         return rust_to_c_string(err_json(EngineError::InvalidArg("handle is null".into())));
     }
-    let handle = unsafe { &mut *handle };
-    let mut engine = match handle.engine.lock() {
-        Ok(guard) => guard,
-        Err(_) => {
-            return rust_to_c_string(err_json(EngineError::Message(
-                "engine lock poisoned".into(),
-            )));
-        }
-    };
-    match engine.start_downloads() {
-        Ok(()) => {
-            let result = rust_to_c_string(ok_json(()));
-            if let Some(port_id) = handle.event_port {
-                drop(engine);
-                start_event_forwarder(handle, port_id);
+    let handle_ref = unsafe { &mut *handle };
+    {
+        let mut engine = match handle_ref.engine.lock() {
+            Ok(guard) => guard,
+            Err(_) => {
+                return rust_to_c_string(err_json(EngineError::Message(
+                    "engine lock poisoned".into(),
+                )));
             }
-            result
+        };
+        match engine.prepare_download_events() {
+            Ok(()) => {}
+            Err(err) => return rust_to_c_string(err_json(err)),
         }
-        Err(err) => rust_to_c_string(err_json(err)),
     }
+
+    if let Some(port_id) = handle_ref.event_port {
+        start_event_forwarder(handle_ref, port_id);
+    }
+
+    spawn_download_worker_deferred(handle);
+
+    rust_to_c_string(ok_json(()))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn engine_spawn_download_worker(handle: *mut EngineHandle) -> *mut c_char {
+    if handle.is_null() {
+        return rust_to_c_string(err_json(EngineError::InvalidArg("handle is null".into())));
+    }
+    let handle_ref = unsafe { &mut *handle };
+    if let Some(port_id) = handle_ref.event_port {
+        start_event_forwarder(handle_ref, port_id);
+    }
+    spawn_download_worker_deferred(handle);
+    rust_to_c_string(ok_json(()))
 }
 
 #[no_mangle]

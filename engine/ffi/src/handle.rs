@@ -100,12 +100,12 @@ pub unsafe extern "C" fn engine_destroy(handle: *mut EngineHandle) {
 
     let mut boxed = Box::from_raw(handle);
 
-    if let Some(join_handle) = boxed.event_forwarder.take() {
-        let _ = join_handle.join();
-    }
-
     if let Ok(mut engine) = boxed.engine.lock() {
         let _ = engine.stop_downloads();
+    }
+
+    if let Some(join_handle) = boxed.event_forwarder.take() {
+        let _ = join_handle.join();
     }
 
     drop(boxed);

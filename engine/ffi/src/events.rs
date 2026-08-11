@@ -32,7 +32,10 @@ pub fn start_event_forwarder(handle: &mut EngineHandle, port_id: i64) {
     let join_handle = std::thread::spawn(move || {
         let rx = rx.expect("receiver taken above");
         for event in rx {
-            post_task_event(port_id, &event);
+            let json = serde_json::to_string(&event).expect("serialize TaskEvent");
+            std::thread::spawn(move || {
+                Isolate::new(port_id).post(json);
+            });
         }
     });
 
@@ -67,6 +70,10 @@ pub unsafe extern "C" fn engine_unsubscribe_task_events(handle: *mut EngineHandl
     }
 
     let handle = unsafe { &mut *handle };
+
+    if let Ok(mut engine) = handle.engine.lock() {
+        let _ = engine.stop_downloads();
+    }
 
     if let Some(join_handle) = handle.event_forwarder.take() {
         let _ = join_handle.join();

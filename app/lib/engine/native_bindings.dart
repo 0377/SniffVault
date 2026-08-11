@@ -78,6 +78,9 @@ typedef EngineEnqueueEpisodes = Pointer<Char> Function(
 typedef EngineStartDownloadsNative = Pointer<Char> Function(Pointer<Void> handle);
 typedef EngineStartDownloads = Pointer<Char> Function(Pointer<Void> handle);
 
+typedef EngineSpawnDownloadWorkerNative = Pointer<Char> Function(Pointer<Void> handle);
+typedef EngineSpawnDownloadWorker = Pointer<Char> Function(Pointer<Void> handle);
+
 typedef EngineStopDownloadsNative = Pointer<Char> Function(Pointer<Void> handle);
 typedef EngineStopDownloads = Pointer<Char> Function(Pointer<Void> handle);
 
@@ -161,6 +164,16 @@ typedef EngineSubscribeTaskEvents = Pointer<Char> Function(
 typedef EngineUnsubscribeTaskEventsNative = Void Function(Pointer<Void> handle);
 typedef EngineUnsubscribeTaskEvents = void Function(Pointer<Void> handle);
 
+typedef DartPostCObjectFnNative = Int8 Function(Int64 port, Pointer<Dart_CObject> object);
+typedef DartPostCObjectFn = int Function(int port, Pointer<Dart_CObject> object);
+
+typedef StoreDartPostCObjectNative = Void Function(
+  Pointer<NativeFunction<DartPostCObjectFnNative>> ptr,
+);
+typedef StoreDartPostCObject = void Function(
+  Pointer<NativeFunction<DartPostCObjectFnNative>> ptr,
+);
+
 class NativeBindings {
   NativeBindings(DynamicLibrary lib)
       : engineOpen =
@@ -197,6 +210,10 @@ class NativeBindings {
         engineStartDownloads = lib
             .lookupFunction<EngineStartDownloadsNative, EngineStartDownloads>(
           'engine_start_downloads',
+        ),
+        engineSpawnDownloadWorker = lib.lookupFunction<
+            EngineSpawnDownloadWorkerNative, EngineSpawnDownloadWorker>(
+          'engine_spawn_download_worker',
         ),
         engineStopDownloads = lib
             .lookupFunction<EngineStopDownloadsNative, EngineStopDownloads>(
@@ -245,6 +262,7 @@ class NativeBindings {
   final EngineEnqueueSingle engineEnqueueSingle;
   final EngineEnqueueEpisodes engineEnqueueEpisodes;
   final EngineStartDownloads engineStartDownloads;
+  final EngineSpawnDownloadWorker engineSpawnDownloadWorker;
   final EngineStopDownloads engineStopDownloads;
   final EnginePauseTask enginePauseTask;
   final EngineResumeTask engineResumeTask;
@@ -263,8 +281,18 @@ NativeBindings openNativeLibrary() {
     return _bindings!;
   }
 
-  _bindings = NativeBindings(_loadNativeLibrary());
+  final library = _loadNativeLibrary();
+  _initializeIsolatePosting(library);
+  _bindings = NativeBindings(library);
   return _bindings!;
+}
+
+void _initializeIsolatePosting(DynamicLibrary library) {
+  final storeDartPostCObject = library.lookupFunction<
+      StoreDartPostCObjectNative, StoreDartPostCObject>(
+    'store_dart_post_cobject',
+  );
+  storeDartPostCObject(NativeApi.postCObject);
 }
 
 DynamicLibrary _loadNativeLibrary() {
