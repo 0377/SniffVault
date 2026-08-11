@@ -39,7 +39,7 @@ runs:
     - name: cargo test
       if: inputs.run-test == 'true'
       shell: bash
-      run: cargo test --manifest-path engine/Cargo.toml
+      run: cargo test --manifest-path engine/Cargo.toml --workspace
 
     - name: cargo clippy
       if: inputs.run-clippy == 'true'

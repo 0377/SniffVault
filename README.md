@@ -16,14 +16,15 @@
 
 ## 持续集成
 
-合并到 `main` 前须通过 GitHub Actions：**fmt**（ubuntu）、**test + clippy**（Linux / macOS / Windows 三平台）。
+合并到 `main` 前须通过 GitHub Actions：**fmt**（ubuntu）、**test + clippy**（Linux / macOS / Windows 三平台）、**flutter-smoke**（macOS，单元测试与 FFI 集成冒烟）。
 
 本地可运行与 CI 相同检查：
 
 ```bash
 cargo fmt --manifest-path engine/Cargo.toml --all -- --check
-cargo test --manifest-path engine/Cargo.toml
+cargo test --manifest-path engine/Cargo.toml --workspace
 cargo clippy --manifest-path engine/Cargo.toml --all-targets --all-features -- -D warnings
+cd app && flutter pub get && flutter test
 ```
 
 发版：推送 `v*` tag（如 `v0.1.0`）触发 Release workflow（`.github/workflows/release.yml`），质量检查通过后自动创建 GitHub Release。
@@ -31,10 +32,31 @@ cargo clippy --manifest-path engine/Cargo.toml --all-targets --all-features -- -
 ## 构建引擎
 
 ```bash
-cd engine && cargo test
+cd engine && cargo test --workspace
 ```
 
 解析与嗅探（Plan 3）：`Engine::resolve_url`、`resolve_qualities`、`sniff_urls`。
+
+## Flutter + FFI
+
+`app/` 通过 Cargokit（`rust_lib_video_sniffing`）在构建时编译 `engine/ffi`；`app/rust` 与 `app/rust_builder/rust` 均符号链接至 `engine/ffi`。
+
+前置：安装 [Flutter](https://docs.flutter.dev/get-started/install) stable，macOS 桌面需启用 desktop 支持。
+
+```bash
+# 引擎 workspace（含 ffi crate）
+cargo test --manifest-path engine/Cargo.toml --workspace
+
+# macOS 桌面构建与测试
+flutter config --enable-macos-desktop
+cd app
+flutter pub get
+flutter test
+flutter build macos --debug
+
+# FFI 集成冒烟（需 macOS 设备）
+flutter test integration_test/smoke_test.dart -d macos
+```
 
 ### 测试依赖 ffmpeg
 
