@@ -465,6 +465,7 @@ final engineRepositoryProvider = Provider<EngineRepository>((ref) {
 import 'dart:async';
 
 import 'package:video_sniffing/engine/engine_host.dart';
+import 'package:video_sniffing/engine/models/ffi_response.dart';
 import 'package:video_sniffing/engine/models/download_task.dart';
 import 'package:video_sniffing/engine/models/engine_settings.dart';
 import 'package:video_sniffing/engine/models/library_episode.dart';
