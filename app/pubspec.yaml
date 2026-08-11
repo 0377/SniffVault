@@ -34,6 +34,11 @@ dependencies:
   cupertino_icons: ^1.0.8
   ffi: ^2.1.0
   path_provider: ^2.1.0
+  flutter_riverpod: ^2.6.1
+  go_router: ^14.6.2
+  media_kit: ^1.2.0
+  media_kit_video: ^1.3.0
+  media_kit_libs_video: ^1.0.5
   rust_lib_video_sniffing:
     path: rust_builder
 
