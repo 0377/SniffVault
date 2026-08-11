@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "ffi"]
+resolver = "2"
+
 [package]
 name = "video_sniffing_engine"
 version = "0.1.0"
