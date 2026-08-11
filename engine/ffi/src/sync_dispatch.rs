@@ -1,5 +1,6 @@
 use std::ffi::CStr;
 use std::os::raw::c_char;
+use std::sync::{atomic::Ordering, Arc};
 use std::thread;
 use std::time::Duration;
 
@@ -195,21 +196,25 @@ pub unsafe extern "C" fn engine_enqueue_episodes(
     })
 }
 
-fn spawn_download_worker_deferred(handle: *mut EngineHandle) {
-    let handle_addr = handle as usize;
-    thread::spawn(move || {
+fn spawn_download_worker_deferred(handle: &mut EngineHandle) {
+    if let Some(join_handle) = handle.deferred_spawn.take() {
+        let _ = join_handle.join();
+    }
+
+    let engine = Arc::clone(&handle.engine);
+    let alive = Arc::clone(&handle.alive);
+    let join_handle = thread::spawn(move || {
         thread::sleep(Duration::from_millis(10));
-        let handle = handle_addr as *mut EngineHandle;
-        if handle.is_null() {
+        if !alive.load(Ordering::Acquire) {
             return;
         }
-        let handle = unsafe { &mut *handle };
-        let mut engine = match handle.engine.lock() {
+        let mut engine = match engine.lock() {
             Ok(guard) => guard,
             Err(_) => return,
         };
         let _ = engine.spawn_download_worker();
     });
+    handle.deferred_spawn = Some(join_handle);
 }
 
 #[no_mangle]
@@ -237,7 +242,7 @@ pub unsafe extern "C" fn engine_start_downloads(handle: *mut EngineHandle) -> *m
         start_event_forwarder(handle_ref, port_id);
     }
 
-    spawn_download_worker_deferred(handle);
+    spawn_download_worker_deferred(handle_ref);
 
     rust_to_c_string(ok_json(()))
 }
@@ -251,7 +256,7 @@ pub unsafe extern "C" fn engine_spawn_download_worker(handle: *mut EngineHandle)
     if let Some(port_id) = handle_ref.event_port {
         start_event_forwarder(handle_ref, port_id);
     }
-    spawn_download_worker_deferred(handle);
+    spawn_download_worker_deferred(handle_ref);
     rust_to_c_string(ok_json(()))
 }
 
