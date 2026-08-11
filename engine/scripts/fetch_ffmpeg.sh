@@ -126,19 +126,26 @@ download_macos_npm() {
 
   local tmpdir src_bin
   tmpdir="$(mktemp -d)"
-  trap 'rm -rf "${tmpdir}"' RETURN
 
   echo "从 @ffmpeg-installer/${npm_pkg} 下载..."
-  curl -fsSL \
+  if ! curl -fsSL \
     "https://registry.npmjs.org/@ffmpeg-installer/${npm_pkg}/-/${npm_pkg}-${version}.tgz" \
-    -o "${tmpdir}/pkg.tgz"
-  tar -xzf "${tmpdir}/pkg.tgz" -C "${tmpdir}"
+    -o "${tmpdir}/pkg.tgz"; then
+    rm -rf "${tmpdir}"
+    return 1
+  fi
+  if ! tar -xzf "${tmpdir}/pkg.tgz" -C "${tmpdir}"; then
+    rm -rf "${tmpdir}"
+    return 1
+  fi
   src_bin="${tmpdir}/package/ffmpeg"
   if [[ ! -f "${src_bin}" ]]; then
     echo "在 npm 包中未找到 ffmpeg" >&2
+    rm -rf "${tmpdir}"
     return 1
   fi
   copy_to_vendor "${src_bin}"
+  rm -rf "${tmpdir}"
 }
 
 extract_tar_xz() {
@@ -188,14 +195,19 @@ download_btbn() {
   esac
 
   tmpdir="$(mktemp -d)"
-  trap 'rm -rf "${tmpdir}"' RETURN
 
   echo "从 BtbN 下载 ${asset}..."
-  curl -fsSL "${BTBN_BASE}/${asset}" -o "${tmpdir}/${archive_name}"
+  if ! curl -fsSL "${BTBN_BASE}/${asset}" -o "${tmpdir}/${archive_name}"; then
+    rm -rf "${tmpdir}"
+    return 1
+  fi
 
   case "${archive_name}" in
     *.tar.xz)
-      extract_tar_xz "${tmpdir}/${archive_name}" "${tmpdir}"
+      if ! extract_tar_xz "${tmpdir}/${archive_name}" "${tmpdir}"; then
+        rm -rf "${tmpdir}"
+        return 1
+      fi
       ;;
     *.zip)
       if command -v unzip >/dev/null 2>&1; then
@@ -205,6 +217,7 @@ download_btbn() {
           "Expand-Archive -Path '${tmpdir}/${archive_name}' -DestinationPath '${tmpdir}' -Force"
       else
         echo "未找到 unzip 或 powershell，无法解压 ${archive_name}" >&2
+        rm -rf "${tmpdir}"
         return 1
       fi
       ;;
@@ -217,10 +230,12 @@ download_btbn() {
   fi
   if [[ -z "${src_bin}" || ! -f "${src_bin}" ]]; then
     echo "在 ${asset} 中未找到 ${binary_name}" >&2
+    rm -rf "${tmpdir}"
     return 1
   fi
 
   copy_to_vendor "${src_bin}"
+  rm -rf "${tmpdir}"
 }
 
 install_macos_ffmpeg() {
