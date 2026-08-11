@@ -4,6 +4,7 @@ use std::os::raw::c_char;
 use serde::{Deserialize, Serialize};
 use video_sniffing_engine::{Engine, EngineError, EngineSettings, SniffEvent};
 
+use crate::events::start_event_forwarder;
 use crate::handle::{rust_to_c_string, EngineHandle};
 use crate::json_api::{err_json, ok_json};
 
@@ -191,7 +192,29 @@ pub unsafe extern "C" fn engine_enqueue_episodes(
 
 #[no_mangle]
 pub unsafe extern "C" fn engine_start_downloads(handle: *mut EngineHandle) -> *mut c_char {
-    ffi_call_mut(handle, |engine| engine.start_downloads().map(|_| ()))
+    if handle.is_null() {
+        return rust_to_c_string(err_json(EngineError::InvalidArg("handle is null".into())));
+    }
+    let handle = unsafe { &mut *handle };
+    let mut engine = match handle.engine.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return rust_to_c_string(err_json(EngineError::Message(
+                "engine lock poisoned".into(),
+            )));
+        }
+    };
+    match engine.start_downloads() {
+        Ok(()) => {
+            let result = rust_to_c_string(ok_json(()));
+            if let Some(port_id) = handle.event_port {
+                drop(engine);
+                start_event_forwarder(handle, port_id);
+            }
+            result
+        }
+        Err(err) => rust_to_c_string(err_json(err)),
+    }
 }
 
 #[no_mangle]
