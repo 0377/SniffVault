@@ -135,13 +135,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _durationSubscription?.cancel();
 
     final controller = _playerController;
-    if (controller != null && !_positionPersisted) {
-      final positionMs = _resolvedPositionMs(controller);
-      controller.lastPositionMs = positionMs;
-      _repo.setEpisodePosition(
-            widget.episodeId,
-            positionMs,
-          );
+    if (controller != null) {
+      if (!_positionPersisted) {
+        final positionMs = _resolvedPositionMs(controller);
+        controller.lastPositionMs = positionMs;
+        _repo.setEpisodePosition(
+              widget.episodeId,
+              positionMs,
+            );
+      }
       unawaited(controller.dispose());
     }
 
