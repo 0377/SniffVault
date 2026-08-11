@@ -72,20 +72,20 @@ mod tests {
 
     #[test]
     fn bundled_path_format() {
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let path = BundledFfmpegLocator::candidate_path();
         let binary = if cfg!(windows) {
             "ffmpeg.exe"
         } else {
             "ffmpeg"
         };
-        let expected_suffix = format!(
-            "vendor/ffmpeg/{platform}/{binary}",
-            platform = platform_dir_name()
-        );
-        assert!(
-            path.to_string_lossy().ends_with(&expected_suffix),
-            "expected path ending with {expected_suffix}, got {}",
-            path.display()
-        );
+        let expected = Path::new("vendor")
+            .join("ffmpeg")
+            .join(platform_dir_name())
+            .join(binary);
+        let rel = path
+            .strip_prefix(&manifest)
+            .expect("candidate path should be under CARGO_MANIFEST_DIR");
+        assert_eq!(rel, expected, "got {}", path.display());
     }
 }

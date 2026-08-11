@@ -46,10 +46,6 @@ if [[ -x "${dest}" ]]; then
 fi
 
 resolve_ffmpeg() {
-  if command -v ffmpeg >/dev/null 2>&1; then
-    command -v ffmpeg
-    return 0
-  fi
   if [[ "${os}" == "macos" ]] && command -v brew >/dev/null 2>&1; then
     local prefix
     prefix="$(brew --prefix ffmpeg 2>/dev/null || true)"
@@ -57,6 +53,10 @@ resolve_ffmpeg() {
       echo "${prefix}/bin/ffmpeg"
       return 0
     fi
+  fi
+  if command -v ffmpeg >/dev/null 2>&1; then
+    command -v ffmpeg
+    return 0
   fi
   return 1
 }
@@ -66,8 +66,15 @@ install_with_brew() {
     return 1
   fi
   echo "通过 Homebrew 安装 ffmpeg..."
-  brew install ffmpeg
-  resolve_ffmpeg
+  # CI 上 brew link 可能因 PATH 过长失败，但 Cellar 内二进制仍可用。
+  brew install ffmpeg || true
+  local prefix
+  prefix="$(brew --prefix ffmpeg 2>/dev/null || true)"
+  if [[ -n "${prefix}" && -x "${prefix}/bin/ffmpeg" ]]; then
+    echo "${prefix}/bin/ffmpeg"
+    return 0
+  fi
+  return 1
 }
 
 extract_tar_xz() {
