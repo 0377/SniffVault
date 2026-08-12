@@ -44,7 +44,7 @@ jobs:
   flutter-smoke:
     name: flutter-smoke
     needs: fmt
-    runs-on: macos-latest
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v5
 
@@ -58,13 +58,19 @@ jobs:
       - name: Verify Rust FFI symlink
         run: test -L app/rust || test -d app/rust_builder/rust
 
-      - name: Enable macOS desktop
-        run: flutter config --enable-macos-desktop
+      - name: Configure Flutter for macOS integration tests
+        run: |
+          flutter config --enable-macos-desktop
+          flutter config --no-enable-swift-package-manager
 
       - name: Flutter test and integration smoke
+        timeout-minutes: 30
         run: |
           cd app
           flutter pub get
           flutter test
+          pkill -9 -f video_sniffing.app 2>/dev/null || true
           flutter test integration_test/smoke_test.dart -d macos
+          pkill -9 -f video_sniffing.app 2>/dev/null || true
+          sleep 2
           flutter test integration_test/ui_test.dart -d macos

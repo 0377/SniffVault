@@ -286,20 +286,16 @@ void main() {
     await stopFixtureServer();
   });
 
-  testWidgets('U1 paste url creates task entry', (tester) async {
-    final title = 'ui-smoke-u1-${DateTime.now().millisecondsSinceEpoch}';
-    await launchApp(tester, testLabel: 'u1');
-    await enqueueFixtureMp4(tester, title: title);
+  testWidgets('U1-U3 app smoke flow', (tester) async {
+    final title = 'ui-smoke-${DateTime.now().millisecondsSinceEpoch}';
 
+    // U1: paste URL creates task entry
+    await launchApp(tester, testLabel: 'u1-u3-flow');
+    await enqueueFixtureMp4(tester, title: title);
     expect(find.text(title), findsWidgets);
-  });
 
-  testWidgets('U2 completed task appears in library', (tester) async {
-    final title = 'ui-smoke-u2-${DateTime.now().millisecondsSinceEpoch}';
-    await launchApp(tester, testLabel: 'u2');
-    await enqueueFixtureMp4(tester, title: title);
+    // U2: completed task appears in library
     await waitForTaskCompleted(tester, title: title);
-
     await tester.tap(find.text('片库'));
     await pumpEngineEvents(tester);
     await pumpUntil(
@@ -310,17 +306,9 @@ void main() {
       timeout: const Duration(seconds: 30),
     );
     expect(find.textContaining(title), findsWidgets);
-  }, timeout: const Timeout(Duration(minutes: 3)));
 
-  testWidgets('U3 resume position persists', (tester) async {
-    final title = 'ui-smoke-u3-${DateTime.now().millisecondsSinceEpoch}';
-
-    await launchApp(tester, testLabel: 'u3');
-    await enqueueFixtureMp4(tester, title: title);
-    await waitForTaskCompleted(tester, title: title);
-    await waitForLibraryItemInEngine(tester, title);
+    // U3: resume position persists
     await openLibraryDetailForTitle(tester, title);
-
     await tapFilledButton(tester, '播放');
     await pumpUntil(
       tester,
@@ -344,5 +332,5 @@ void main() {
     final episodes = repo.listEpisodes(items.first.id);
     expect(episodes, hasLength(1));
     expect(episodes.first.positionMs, greaterThan(0));
-  }, timeout: const Timeout(Duration(minutes: 3)));
+  }, timeout: const Timeout(Duration(minutes: 5)));
 }
