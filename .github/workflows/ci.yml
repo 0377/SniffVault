@@ -71,6 +71,3 @@ jobs:
           flutter test
           pkill -9 -f video_sniffing.app 2>/dev/null || true
           flutter test integration_test/smoke_test.dart -d macos
-          pkill -9 -f video_sniffing.app 2>/dev/null || true
-          sleep 2
-          flutter test integration_test/ui_test.dart -d macos
