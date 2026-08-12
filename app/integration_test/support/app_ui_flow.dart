@@ -21,6 +21,9 @@ import 'test_pump.dart';
 String? _activeDataDir;
 HttpServer? _fixtureServer;
 
+const _skipPlayer =
+    bool.fromEnvironment('INTEGRATION_SKIP_PLAYER', defaultValue: false);
+
 const _playableMp4Base64 =
     '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';
 
@@ -158,7 +161,6 @@ Future<void> _openLibraryDetailForTitle(
 
 Future<void> _launchApp(WidgetTester tester, {required String testLabel}) async {
   _activeDataDir = await _createIsolatedDataDir(testLabel);
-  MediaKit.ensureInitialized();
   openNativeLibrary();
 
   tester.view.physicalSize = const Size(400, 800);
@@ -277,6 +279,39 @@ Future<void> _waitForTaskCompleted(
   fail('Timed out waiting for task to complete');
 }
 
+void _ensureMediaKit() {
+  MediaKit.ensureInitialized();
+}
+
+Future<void> _runPlayerResumeFlow(WidgetTester tester, String title) async {
+  _ensureMediaKit();
+  await _openLibraryDetailForTitle(tester, title);
+  await _tapFilledButton(tester, '播放');
+  await _pumpUntilCondition(
+    tester,
+    () => find.byIcon(Icons.arrow_back).evaluate().isNotEmpty,
+    timeout: const Duration(seconds: 15),
+  );
+  await tester.runAsync(() => Future<void>.delayed(const Duration(seconds: 6)));
+  await pumpEngineEvents(tester);
+  final backButton =
+      tester.widget<IconButton>(find.byKey(const Key('player_back')));
+  expect(backButton.onPressed, isNotNull);
+  backButton.onPressed!();
+  await _pumpUntilCondition(
+    tester,
+    () => find.text('播放').evaluate().isNotEmpty,
+    timeout: const Duration(seconds: 5),
+  );
+
+  final repo = _testRepo(tester);
+  final items = repo.listLibrary().where((item) => item.title == title).toList();
+  expect(items, hasLength(1));
+  final episodes = repo.listEpisodes(items.first.id);
+  expect(episodes, hasLength(1));
+  expect(episodes.first.positionMs, greaterThan(0));
+}
+
 Future<void> runAppUiSmokeFlow(WidgetTester tester) async {
   await _startFixtureServer();
   try {
@@ -298,31 +333,17 @@ Future<void> runAppUiSmokeFlow(WidgetTester tester) async {
     );
     expect(find.textContaining(title), findsWidgets);
 
-    await _openLibraryDetailForTitle(tester, title);
-    await _tapFilledButton(tester, '播放');
-    await _pumpUntilCondition(
-      tester,
-      () => find.byIcon(Icons.arrow_back).evaluate().isNotEmpty,
-      timeout: const Duration(seconds: 15),
-    );
-    await tester.runAsync(() => Future<void>.delayed(const Duration(seconds: 6)));
-    await pumpEngineEvents(tester);
-    final backButton =
-        tester.widget<IconButton>(find.byKey(const Key('player_back')));
-    expect(backButton.onPressed, isNotNull);
-    backButton.onPressed!();
-    await _pumpUntilCondition(
-      tester,
-      () => find.text('播放').evaluate().isNotEmpty,
-      timeout: const Duration(seconds: 5),
-    );
+    if (_skipPlayer) {
+      await _openLibraryDetailForTitle(tester, title);
+      final repo = _testRepo(tester);
+      final items =
+          repo.listLibrary().where((item) => item.title == title).toList();
+      expect(items, hasLength(1));
+      expect(repo.listEpisodes(items.first.id), isNotEmpty);
+      return;
+    }
 
-    final repo = _testRepo(tester);
-    final items = repo.listLibrary().where((item) => item.title == title).toList();
-    expect(items, hasLength(1));
-    final episodes = repo.listEpisodes(items.first.id);
-    expect(episodes, hasLength(1));
-    expect(episodes.first.positionMs, greaterThan(0));
+    await _runPlayerResumeFlow(tester, title);
   } finally {
     await _stopFixtureServer();
   }

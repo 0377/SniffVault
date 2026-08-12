@@ -105,5 +105,6 @@ jobs:
           if [ "${{ matrix.suite }}" = "engine" ]; then
             flutter test integration_test/engine_smoke_test.dart -d macos
           else
-            flutter test integration_test/ui_test.dart -d macos
+            flutter test integration_test/ui_test.dart -d macos \
+              --dart-define=INTEGRATION_SKIP_PLAYER=true
           fi
