@@ -10,7 +10,6 @@ import 'package:video_sniffing/engine/models/library_item.dart';
 import 'package:video_sniffing/engine/models/resolve_types.dart';
 import 'package:video_sniffing/engine/models/task_event.dart';
 
-import 'support/app_ui_flow.dart';
 import 'support/test_pump.dart';
 
 void main() {
@@ -130,10 +129,6 @@ void main() {
       throwsA(isA<EngineException>()),
     );
   });
-
-  testWidgets('U1-U3 app smoke flow', (tester) async {
-    await runAppUiSmokeFlow(tester);
-  }, timeout: const Timeout(Duration(minutes: 5)));
 }
 
 void expectLibraryItemFields(LibraryItem item) {

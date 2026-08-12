@@ -41,10 +41,43 @@ jobs:
           run-test: "true"
           run-clippy: "true"
 
-  flutter-smoke:
-    name: flutter-smoke
+  flutter-test:
+    name: flutter-test
     needs: fmt
     runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Fetch bundled ffmpeg for HLS tests
+        run: bash engine/scripts/fetch_ffmpeg.sh
+
+      - name: Verify Rust FFI symlink
+        run: test -L app/rust || test -d app/rust_builder/rust
+
+      - name: Configure Flutter for macOS
+        run: |
+          flutter config --enable-macos-desktop
+          flutter config --no-enable-swift-package-manager
+
+      - name: Flutter widget tests
+        timeout-minutes: 15
+        run: |
+          cd app
+          flutter pub get
+          flutter test
+
+  flutter-integration:
+    name: flutter-integration (${{ matrix.suite }})
+    needs: fmt
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [engine, ui]
     steps:
       - uses: actions/checkout@v5
 
@@ -63,11 +96,14 @@ jobs:
           flutter config --enable-macos-desktop
           flutter config --no-enable-swift-package-manager
 
-      - name: Flutter test and integration smoke
+      - name: Flutter macOS integration test (${{ matrix.suite }})
         timeout-minutes: 30
         run: |
           cd app
           flutter pub get
-          flutter test
           pkill -9 -f video_sniffing.app 2>/dev/null || true
-          flutter test integration_test/smoke_test.dart -d macos
+          if [ "${{ matrix.suite }}" = "engine" ]; then
+            flutter test integration_test/engine_smoke_test.dart -d macos
+          else
+            flutter test integration_test/ui_test.dart -d macos
+          fi
