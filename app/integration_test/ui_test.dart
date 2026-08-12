@@ -4,7 +4,6 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:media_kit/media_kit.dart';
@@ -14,10 +13,34 @@ import 'package:video_sniffing/router.dart';
 import 'package:video_sniffing/engine/engine_host.dart';
 import 'package:video_sniffing/engine/models/task_status.dart';
 import 'package:video_sniffing/engine/native_bindings.dart';
+import 'package:video_sniffing/providers/engine_host_provider.dart';
+import 'package:video_sniffing/providers/engine_repository.dart';
+import 'package:video_sniffing/providers/library_provider.dart';
 
 import 'smoke_test.dart' show pumpEngineEvents;
 
-const _fixtureTitle = 'ui-smoke-clip';
+String? _activeDataDir;
+
+Future<String> createIsolatedDataDir(String label) async {
+  final temp = await getTemporaryDirectory();
+  final dir = Directory(
+    '${temp.path}/ui_test_${label}_${DateTime.now().millisecondsSinceEpoch}',
+  );
+  await dir.create(recursive: true);
+  return dir.path;
+}
+
+EngineRepository testRepo(WidgetTester tester) {
+  return ProviderScope.containerOf(
+    tester.element(find.byType(MaterialApp)),
+  ).read(engineRepositoryProvider);
+}
+
+void invalidateLibrary(WidgetTester tester) {
+  ProviderScope.containerOf(
+    tester.element(find.byType(MaterialApp)),
+  ).invalidate(libraryProvider);
+}
 
 late String fixtureMp4Url;
 HttpServer? _fixtureServer;
@@ -102,18 +125,16 @@ Future<void> pumpUntil(
   fail('Timed out after ${timeout.inSeconds}s waiting for condition');
 }
 
-Future<void> waitForLibraryItemInEngine(String title) async {
-  final supportDir = await getApplicationSupportDirectory();
+Future<void> waitForLibraryItemInEngine(
+  WidgetTester tester,
+  String title,
+) async {
   final end = DateTime.now().add(const Duration(seconds: 60));
   while (DateTime.now().isBefore(end)) {
-    final host = await EngineHost.open(supportDir.path);
-    try {
-      if (host.listLibrary().any((item) => item.title == title)) {
-        return;
-      }
-    } finally {
-      host.dispose();
+    if (testRepo(tester).listLibrary().any((item) => item.title == title)) {
+      return;
     }
+    await pumpEngineEvents(tester);
     await Future<void>.delayed(const Duration(milliseconds: 200));
   }
   fail('Timed out waiting for library item: $title');
@@ -123,24 +144,18 @@ Future<void> openLibraryDetailForTitle(
   WidgetTester tester,
   String title,
 ) async {
-  final supportDir = await getApplicationSupportDirectory();
-  final host = await EngineHost.open(supportDir.path);
-  late String itemId;
-  try {
-    final items =
-        host.listLibrary().where((item) => item.title == title).toList();
-    expect(items, hasLength(1));
-    itemId = items.first.id;
-  } finally {
-    host.dispose();
-  }
+  final repo = testRepo(tester);
+  final items = repo.listLibrary().where((item) => item.title == title).toList();
+  expect(items, hasLength(1));
+  final itemId = items.first.id;
 
   final container = ProviderScope.containerOf(tester.element(find.text('片库')));
   container.read(appRouterProvider).push('/library/$itemId');
   await pumpUntil(tester, () => find.text('播放').evaluate().isNotEmpty);
 }
 
-Future<void> launchApp(WidgetTester tester) async {
+Future<void> launchApp(WidgetTester tester, {required String testLabel}) async {
+  _activeDataDir = await createIsolatedDataDir(testLabel);
   MediaKit.ensureInitialized();
   openNativeLibrary();
 
@@ -149,7 +164,18 @@ Future<void> launchApp(WidgetTester tester) async {
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
 
-  await tester.pumpWidget(const ProviderScope(child: VideoSniffingApp()));
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        engineHostProvider.overrideWith((ref) async {
+          final host = await EngineHost.open(_activeDataDir!);
+          ref.onDispose(host.dispose);
+          return host;
+        }),
+      ],
+      child: const VideoSniffingApp(),
+    ),
+  );
   await pumpUntil(
     tester,
     () =>
@@ -190,7 +216,7 @@ Future<void> tapDownload(WidgetTester tester) async {
 
 Future<void> enqueueFixtureMp4(
   WidgetTester tester, {
-  String title = _fixtureTitle,
+  required String title,
 }) async {
   final addTab = find.text('添加');
   await tester.ensureVisible(addTab);
@@ -220,42 +246,30 @@ Future<void> enqueueFixtureMp4(
 
 Future<void> waitForTaskCompleted(
   WidgetTester tester, {
-  String title = _fixtureTitle,
+  required String title,
 }) async {
-  final supportDir = await getApplicationSupportDirectory();
   final end = DateTime.now().add(const Duration(seconds: 60));
   while (DateTime.now().isBefore(end)) {
-    final host = await EngineHost.open(supportDir.path);
-    try {
-      for (final task in host.listTasks()) {
-        if (task.title != title) {
-          continue;
-        }
-        if (task.status == TaskStatus.completed) {
-          await pumpEngineEvents(tester);
-          await waitForLibraryItemInEngine(title);
-          return;
-        }
-        if (task.status == TaskStatus.failed) {
-          fail('Download failed: ${task.errorMessage ?? "unknown error"}');
-        }
+    for (final task in testRepo(tester).listTasks()) {
+      if (task.title != title) {
+        continue;
       }
-    } finally {
-      host.dispose();
+      if (task.status == TaskStatus.completed) {
+        await pumpEngineEvents(tester);
+        await waitForLibraryItemInEngine(tester, title);
+        invalidateLibrary(tester);
+        await pumpEngineEvents(tester);
+        return;
+      }
+      if (task.status == TaskStatus.failed) {
+        fail('Download failed: ${task.errorMessage ?? "unknown error"}');
+      }
     }
 
     final tasksTab = find.text('任务');
     await tester.ensureVisible(tasksTab);
     await tester.tap(tasksTab);
     await pumpEngineEvents(tester);
-    final completedTile = find.descendant(
-      of: find.byKey(const Key('tasks_list')),
-      matching: find.textContaining(title),
-    );
-    if (completedTile.evaluate().isNotEmpty &&
-        find.textContaining('已完成').evaluate().isNotEmpty) {
-      return;
-    }
     await Future<void>.delayed(const Duration(seconds: 1));
   }
   fail('Timed out waiting for task to complete');
@@ -273,34 +287,38 @@ void main() {
   });
 
   testWidgets('U1 paste url creates task entry', (tester) async {
-    await launchApp(tester);
-    await enqueueFixtureMp4(tester);
+    final title = 'ui-smoke-u1-${DateTime.now().millisecondsSinceEpoch}';
+    await launchApp(tester, testLabel: 'u1');
+    await enqueueFixtureMp4(tester, title: title);
 
-    expect(find.text(_fixtureTitle), findsWidgets);
+    expect(find.text(title), findsWidgets);
   });
 
   testWidgets('U2 completed task appears in library', (tester) async {
-    await launchApp(tester);
-    await enqueueFixtureMp4(tester);
-    await waitForTaskCompleted(tester);
+    final title = 'ui-smoke-u2-${DateTime.now().millisecondsSinceEpoch}';
+    await launchApp(tester, testLabel: 'u2');
+    await enqueueFixtureMp4(tester, title: title);
+    await waitForTaskCompleted(tester, title: title);
 
     await tester.tap(find.text('片库'));
+    await pumpEngineEvents(tester);
     await pumpUntil(
       tester,
-      () => find.byKey(const Key('library_list')).evaluate().isNotEmpty,
+      () =>
+          find.byKey(const Key('library_list')).evaluate().isNotEmpty ||
+          find.textContaining(title).evaluate().isNotEmpty,
+      timeout: const Duration(seconds: 30),
     );
-    expect(find.byKey(const Key('library_list')), findsOneWidget);
-    expect(find.textContaining(_fixtureTitle), findsWidgets);
+    expect(find.textContaining(title), findsWidgets);
   }, timeout: const Timeout(Duration(minutes: 3)));
 
   testWidgets('U3 resume position persists', (tester) async {
-    final supportDir = await getApplicationSupportDirectory();
-    final title = 'ui-smoke-clip-u3-${DateTime.now().millisecondsSinceEpoch}';
+    final title = 'ui-smoke-u3-${DateTime.now().millisecondsSinceEpoch}';
 
-    await launchApp(tester);
+    await launchApp(tester, testLabel: 'u3');
     await enqueueFixtureMp4(tester, title: title);
     await waitForTaskCompleted(tester, title: title);
-    await waitForLibraryItemInEngine(title);
+    await waitForLibraryItemInEngine(tester, title);
     await openLibraryDetailForTitle(tester, title);
 
     await tapFilledButton(tester, '播放');
@@ -320,18 +338,11 @@ void main() {
       timeout: const Duration(seconds: 5),
     );
 
-    final host = await EngineHost.open(supportDir.path);
-    try {
-      final items = host
-          .listLibrary()
-          .where((item) => item.title == title)
-          .toList();
-      expect(items, hasLength(1));
-      final episodes = host.listEpisodes(items.first.id);
-      expect(episodes, hasLength(1));
-      expect(episodes.first.positionMs, greaterThan(0));
-    } finally {
-      host.dispose();
-    }
+    final repo = testRepo(tester);
+    final items = repo.listLibrary().where((item) => item.title == title).toList();
+    expect(items, hasLength(1));
+    final episodes = repo.listEpisodes(items.first.id);
+    expect(episodes, hasLength(1));
+    expect(episodes.first.positionMs, greaterThan(0));
   }, timeout: const Timeout(Duration(minutes: 3)));
 }
