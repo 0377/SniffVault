@@ -10,6 +10,8 @@ import 'package:video_sniffing/engine/models/library_item.dart';
 import 'package:video_sniffing/engine/models/resolve_types.dart';
 import 'package:video_sniffing/engine/models/task_event.dart';
 
+import 'support/test_pump.dart';
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -211,15 +213,4 @@ Future<T> pumpUntil<T>(
     );
   }
   return result;
-}
-
-Future<void> pumpEngineEvents(WidgetTester tester) async {
-  await Future<void>.delayed(const Duration(milliseconds: 50));
-  try {
-    await tester.pump(const Duration(milliseconds: 1)).timeout(
-      const Duration(milliseconds: 100),
-    );
-  } on TimeoutException {
-    // Integration tests may block in pump when the app cannot foreground.
-  }
 }
