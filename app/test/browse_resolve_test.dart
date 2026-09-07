@@ -297,4 +297,63 @@ void main() {
     expect(find.text('嗅探候选 1'), findsOneWidget);
     expect(find.text('http://x/a.m3u8'), findsOneWidget);
   });
+
+  testWidgets('tap sniff candidate opens wizard and enqueue keeps cookies', (
+    tester,
+  ) async {
+    final fake = FakeEngineRepository();
+    fake.sniffResults = const [
+      ResourceCandidate(id: '1', url: 'http://x/a.m3u8', kind: MediaKind.hls),
+    ];
+    final session = BrowseSession(
+      repo: fake,
+      cookies: FakeCookieExporter('sid=ok'),
+    );
+    session.currentUrl = Uri.parse('http://x/page');
+    session.candidates = fake.sniffResults;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          engineRepositoryProvider.overrideWithValue(fake),
+          settingsProvider.overrideWith((ref) => EngineSettings.defaults),
+          browseSessionProvider.overrideWith((ref) => session),
+        ],
+        child: MaterialApp.router(
+          routerConfig: GoRouter(
+            initialLocation: '/browse',
+            routes: [
+              GoRoute(
+                path: '/browse',
+                builder: (_, _) => BrowseScreen(session: session),
+                routes: [
+                  GoRoute(
+                    path: 'wizard',
+                    builder: (_, _) => const BrowseWizardPage(),
+                  ),
+                ],
+              ),
+              GoRoute(path: '/tasks', builder: (_, _) => const Text('tasks')),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('http://x/a.m3u8'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('下载'), findsOneWidget);
+    expect(find.text('确认下载'), findsOneWidget);
+    expect(fake.lastResolveQualitiesOpts?.cookies, 'sid=ok');
+    expect(fake.lastResolveQualitiesOpts?.referer, 'http://x/page');
+    expect(fake.lastResolveQualitiesOpts?.pageUrl, 'http://x/page');
+
+    await tester.tap(find.text('下载'));
+    await tester.pumpAndSettle();
+
+    expect(fake.lastEnqueueAuth?.cookies, 'sid=ok');
+    expect(fake.lastEnqueueAuth?.referer, 'http://x/page');
+  });
 }

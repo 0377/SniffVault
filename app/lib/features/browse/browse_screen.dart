@@ -8,6 +8,7 @@ import 'package:video_sniffing/features/browse/browse_chrome.dart';
 import 'package:video_sniffing/features/browse/browse_load_error.dart';
 import 'package:video_sniffing/features/browse/browse_unavailable_screen.dart';
 import 'package:video_sniffing/features/browse/browse_url.dart';
+import 'package:video_sniffing/features/browse/browse_webview.dart';
 import 'package:video_sniffing/features/browse/hook_to_sniff.dart';
 import 'package:video_sniffing/features/browse/sniff_candidate_list.dart';
 import 'package:video_sniffing/features/browse/sniff_script.dart';
@@ -22,9 +23,10 @@ import 'package:video_sniffing/ui/loading_overlay.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 class BrowseScreen extends ConsumerStatefulWidget {
-  const BrowseScreen({super.key, this.session});
+  const BrowseScreen({super.key, this.session, this.webViewAvailable});
 
   final BrowseSession? session;
+  final bool? webViewAvailable;
 
   @override
   ConsumerState<BrowseScreen> createState() => _BrowseScreenState();
@@ -228,12 +230,37 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
       );
       context.push('/browse/wizard');
     } on EngineException catch (e) {
-      final message = presentEngineError(e);
-      if (message != null && mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(message)));
+      _showEngineError(e);
+    }
+  }
+
+  Future<void> _onSelectCandidate(ResourceCandidate candidate) async {
+    final session = _resolvedSession(watch: false);
+    session.currentUrl ??= _pendingLoadUrl;
+    if (session.currentUrl == null) {
+      return;
+    }
+    try {
+      await LoadingOverlay.run(context, session.refreshAuth);
+      if (!mounted) {
+        return;
       }
+      ref.read(browseResolveProvider.notifier).state = BrowseResolveArgs(
+        outcome: ResolveOutcomeCandidates([candidate]),
+        auth: session.auth,
+      );
+      context.push('/browse/wizard');
+    } on EngineException catch (e) {
+      _showEngineError(e);
+    }
+  }
+
+  void _showEngineError(EngineException e) {
+    final message = presentEngineError(e);
+    if (message != null && mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 
@@ -245,6 +272,9 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
     }
     if (tvAsync.requireValue) {
       return const BrowseUnavailableScreen();
+    }
+    if (!(widget.webViewAvailable ?? browseWebViewAvailable())) {
+      return const BrowseUnavailableScreen(message: '此平台尚未提供内置浏览');
     }
     final session = _resolvedSession(watch: true);
     String? userAgent;
@@ -281,7 +311,10 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
                 ? const SizedBox.shrink()
                 : WebViewWidget(controller: controller),
           ),
-          SniffCandidateList(candidates: session.candidates, onSelect: (_) {}),
+          SniffCandidateList(
+            candidates: session.candidates,
+            onSelect: _onSelectCandidate,
+          ),
         ],
       ),
     );

@@ -15,7 +15,10 @@ import 'package:video_sniffing/providers/engine_repository.dart';
 void validateMediaDirForTest(String name) {
   if (name.isEmpty) {
     throw EngineException(
-      const FfiError(kind: 'invalid_arg', message: 'media_dir must not be empty'),
+      const FfiError(
+        kind: 'invalid_arg',
+        message: 'media_dir must not be empty',
+      ),
     );
   }
   if (name == '.' ||
@@ -44,6 +47,8 @@ class FakeEngineRepository implements EngineRepository {
   List<DownloadTask> tasks;
   DownloadAuth? lastEnqueueAuth;
   ResolveOptions? lastResolveOpts;
+  ResolveOptions? lastResolveQualitiesOpts;
+  List<ResourceCandidate> sniffResults = const [];
   final _events = StreamController<TaskEvent>.broadcast();
 
   @override
@@ -109,11 +114,7 @@ class FakeEngineRepository implements EngineRepository {
   Future<ResolveOutcome> resolveUrl(String url, {ResolveOptions? opts}) async {
     lastResolveOpts = opts;
     return ResolveOutcomeSingle(
-      ResourceCandidate(
-        id: '1',
-        url: url,
-        kind: MediaKind.mp4,
-      ),
+      ResourceCandidate(id: '1', url: url, kind: MediaKind.mp4),
     );
   }
 
@@ -121,12 +122,16 @@ class FakeEngineRepository implements EngineRepository {
   Future<List<Quality>> resolveQualities(
     String mediaUrl, {
     ResolveOptions? opts,
-  }) async =>
-      [const Quality(label: '1080p')];
+  }) async {
+    lastResolveQualitiesOpts = opts;
+    return [const Quality(label: '1080p')];
+  }
 
   @override
-  List<ResourceCandidate> sniffUrls(List<SniffEvent> events, {String? pageUrl}) =>
-      const [];
+  List<ResourceCandidate> sniffUrls(
+    List<SniffEvent> events, {
+    String? pageUrl,
+  }) => sniffResults;
 
   void dispose() => _events.close();
 }

@@ -70,20 +70,28 @@ class BrowseSession extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> resolveThisPage() async {
+  Future<void> refreshAuth() async {
     final url = currentUrl;
     if (url == null) {
       return;
     }
     final cookieHeader = await cookies.cookieHeaderFor(url);
-    final urlString = url.toString();
-    auth = DownloadAuth(cookies: cookieHeader, referer: urlString);
+    auth = DownloadAuth(cookies: cookieHeader, referer: url.toString());
+    notifyListeners();
+  }
+
+  Future<void> resolveThisPage() async {
+    final url = currentUrl;
+    if (url == null) {
+      return;
+    }
+    await refreshAuth();
     outcome = await repo.resolveUrl(
-      urlString,
+      url.toString(),
       opts: ResolveOptions(
-        cookies: cookieHeader,
-        referer: urlString,
-        pageUrl: urlString,
+        cookies: auth?.cookies,
+        referer: auth?.referer,
+        pageUrl: auth?.referer,
       ),
     );
     notifyListeners();
