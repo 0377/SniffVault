@@ -30,6 +30,7 @@ class ResolveWizard extends StatefulWidget {
     this.enqueueEpisodes,
     this.defaultQualityLabel,
     this.onOpenBrowser,
+    this.auth,
   });
 
   final ResolveOutcome outcome;
@@ -39,6 +40,7 @@ class ResolveWizard extends StatefulWidget {
   final EnqueueEpisodesCallback? enqueueEpisodes;
   final String? defaultQualityLabel;
   final VoidCallback? onOpenBrowser;
+  final DownloadAuth? auth;
 
   @override
   State<ResolveWizard> createState() => _ResolveWizardState();
@@ -121,6 +123,7 @@ class _ResolveWizardState extends State<ResolveWizard> {
             : _titleController.text.trim(),
         url: candidate.url,
         qualityLabel: _selectedQuality?.label ?? widget.defaultQualityLabel,
+        auth: widget.auth,
       );
       await widget.onEnqueue(context);
     } finally {
@@ -145,6 +148,7 @@ class _ResolveWizardState extends State<ResolveWizard> {
             .map((e) => (e.index, e.title, e.url))
             .toList(),
         qualityLabel: widget.defaultQualityLabel,
+        auth: widget.auth,
       );
       await widget.onEnqueue(context);
     } finally {

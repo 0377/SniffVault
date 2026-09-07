@@ -7,6 +7,7 @@ class BrowseChrome extends StatefulWidget {
     this.canGoBack = false,
     this.canGoForward = false,
     this.resolveEnabled = true,
+    this.url,
     this.onSubmit,
     this.onBack,
     this.onForward,
@@ -17,6 +18,7 @@ class BrowseChrome extends StatefulWidget {
   final bool canGoBack;
   final bool canGoForward;
   final bool resolveEnabled;
+  final String? url;
   final ValueChanged<Uri>? onSubmit;
   final VoidCallback? onBack;
   final VoidCallback? onForward;
@@ -28,8 +30,24 @@ class BrowseChrome extends StatefulWidget {
 }
 
 class _BrowseChromeState extends State<BrowseChrome> {
-  final _urlController = TextEditingController();
+  late final TextEditingController _urlController;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _urlController = TextEditingController(text: widget.url ?? '');
+  }
+
+  @override
+  void didUpdateWidget(BrowseChrome oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.url != oldWidget.url &&
+        widget.url != null &&
+        widget.url != _urlController.text) {
+      _urlController.text = widget.url!;
+    }
+  }
 
   @override
   void dispose() {

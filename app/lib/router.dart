@@ -46,7 +46,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     parentNavigatorKey: _rootNavigatorKey,
                     path: 'wizard',
-                    builder: (_, _) => const Scaffold(body: SizedBox.shrink()),
+                    builder: (_, _) => const BrowseWizardPage(),
                   ),
                 ],
               ),
