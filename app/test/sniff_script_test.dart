@@ -8,6 +8,11 @@ void main() {
     expect(sniffScript, contains(sniffChannelName));
   });
 
+  test('sniff script hooks HTMLMediaElement src and Request.url', () {
+    expect(sniffScript, contains('HTMLMediaElement'));
+    expect(sniffScript, contains('.url'));
+  });
+
   test('sniff channel name matches JavaScript SniffChannel', () {
     expect(sniffChannelName, 'SniffChannel');
   });

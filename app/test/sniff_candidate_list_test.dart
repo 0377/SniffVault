@@ -48,4 +48,39 @@ void main() {
     await tester.tap(find.text('1080p'));
     expect(selected?.url, selectedUrl);
   });
+
+  testWidgets('long candidate list does not consume the full column height', (
+    tester,
+  ) async {
+    const aboveKey = Key('above');
+    final candidates = [
+      for (var i = 0; i < 40; i++)
+        ResourceCandidate(
+          id: '$i',
+          url: 'https://cdn/$i.mp4',
+          kind: MediaKind.mp4,
+        ),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 800,
+            child: Column(
+              children: [
+                Expanded(
+                  child: ColoredBox(key: aboveKey, color: Colors.red),
+                ),
+                SniffCandidateList(candidates: candidates, onSelect: (_) {}),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.getSize(find.byKey(aboveKey)).height, greaterThan(250));
+    expect(find.byType(ListView), findsOneWidget);
+  });
 }

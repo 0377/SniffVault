@@ -10,11 +10,14 @@ import 'package:video_sniffing/features/browse/browse_screen.dart';
 import 'package:video_sniffing/features/browse/cookie_store.dart';
 import 'package:video_sniffing/providers/browse_resolve_provider.dart';
 import 'package:video_sniffing/providers/browse_session.dart';
+import 'package:video_sniffing/providers/device_profile.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
 import 'package:video_sniffing/providers/settings_provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
 
 import 'fakes/fake_engine_repository.dart';
+import 'fakes/fake_webview_platform.dart';
 
 class FakeCookieExporter implements CookieExporter {
   FakeCookieExporter(this.header);
@@ -253,6 +256,110 @@ void main() {
 
     expect(session.pendingLoadUrl, isNull);
     expect(session.currentUrl, isNull);
+  });
+
+  testWidgets('query url loadRequest runs after BrowseScreen already mounted', (
+    tester,
+  ) async {
+    final session = BrowseSession(
+      repo: FakeEngineRepository(),
+      cookies: FakeCookieExporter('sid=ok'),
+    );
+    final platform = WebViewPlatform.instance! as FakeWebViewPlatform;
+    final target = Uri.parse('https://example.com/watch');
+    final router = GoRouter(
+      initialLocation: '/library',
+      routes: [
+        StatefulShellRoute.indexedStack(
+          builder: (context, state, navigationShell) => navigationShell,
+          branches: [
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/library',
+                  builder: (_, _) => const Text('library'),
+                ),
+              ],
+            ),
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/browse',
+                  builder: (_, _) => BrowseScreen(session: session),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [isTelevisionProvider.overrideWith((ref) async => false)],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    router.go('/browse');
+    await tester.pump();
+    await tester.pump();
+
+    expect(platform.lastController, isNotNull);
+    expect(platform.lastController!.loadedUris, isEmpty);
+
+    router.go('/browse?url=${Uri.encodeQueryComponent(target.toString())}');
+    await tester.pump();
+    await tester.pump();
+
+    expect(platform.lastController!.loadedUris, contains(target));
+  });
+
+  testWidgets('setUserAgent is not repeated on sniff rebuilds', (tester) async {
+    final platform = WebViewPlatform.instance! as FakeWebViewPlatform;
+    final session = BrowseSession(
+      repo: FakeEngineRepository(),
+      cookies: FakeCookieExporter('sid=ok'),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        isTelevisionProvider.overrideWith((ref) async => false),
+        engineRepositoryProvider.overrideWithValue(FakeEngineRepository()),
+        browseSessionProvider.overrideWith((ref) => session),
+        settingsProvider.overrideWith(
+          (ref) => EngineSettings.defaults.copyWith(userAgent: 'VS-Test/1'),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp.router(
+          routerConfig: GoRouter(
+            initialLocation: '/browse',
+            routes: [
+              GoRoute(path: '/browse', builder: (_, _) => const BrowseScreen()),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(platform.lastController?.lastUserAgent, 'VS-Test/1');
+    expect(platform.lastController?.setUserAgentCount, 1);
+
+    session.onHookEvent(
+      const SniffEvent(url: 'http://x/a.mp4', initiator: SniffInitiator.media),
+    );
+    await tester.pump();
+    expect(platform.lastController?.setUserAgentCount, 1);
+    await tester.pump(const Duration(milliseconds: 300));
   });
 
   testWidgets('BrowseScreen watches browseSessionProvider candidates', (

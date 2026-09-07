@@ -38,6 +38,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
   WebViewController? _controller;
   String? _loadError;
   String? _lastMainFrameUrl;
+  String? _appliedUserAgent;
   bool _canGoBack = false;
   bool _canGoForward = false;
 
@@ -50,14 +51,16 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
     }
     _appliedRawUrl = raw;
     final parsed = raw == null ? null : parseBrowseUrl(raw);
-    if (parsed != null) {
-      _pendingLoadUrl = parsed;
+    final session = _resolvedSession(watch: false);
+    if (parsed == null) {
+      session.applyRouteUrl(raw);
+      return;
     }
-    final injected = widget.session;
-    if (injected != null) {
-      injected.applyRouteUrl(raw);
-    } else {
-      ref.read(browseSessionProvider).applyRouteUrl(raw);
+    _pendingLoadUrl = parsed;
+    session.onTopLevelNavigation(parsed);
+    session.applyRouteUrl(raw);
+    if (_controller != null) {
+      _loadUrl(parsed);
     }
   }
 
@@ -71,11 +74,19 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
         : ref.read(browseSessionProvider);
   }
 
+  void _applyUserAgent(WebViewController controller, String? userAgent) {
+    if (userAgent == null ||
+        userAgent.isEmpty ||
+        userAgent == _appliedUserAgent) {
+      return;
+    }
+    _appliedUserAgent = userAgent;
+    controller.setUserAgent(userAgent);
+  }
+
   void _ensureController(BrowseSession session, String? userAgent) {
     if (_controller != null) {
-      if (userAgent != null && userAgent.isNotEmpty) {
-        _controller!.setUserAgent(userAgent);
-      }
+      _applyUserAgent(_controller!, userAgent);
       return;
     }
     final controller = WebViewController()
@@ -114,9 +125,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
           },
         ),
       );
-    if (userAgent != null && userAgent.isNotEmpty) {
-      controller.setUserAgent(userAgent);
-    }
+    _applyUserAgent(controller, userAgent);
     _controller = controller;
     final pending =
         _pendingLoadUrl ?? session.pendingLoadUrl ?? session.currentUrl;

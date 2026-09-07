@@ -2,11 +2,13 @@ import 'package:flutter/widgets.dart';
 import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
 
 class FakeWebViewPlatform extends WebViewPlatform {
+  FakeWebViewController? lastController;
+
   @override
   PlatformWebViewController createPlatformWebViewController(
     PlatformWebViewControllerCreationParams params,
   ) {
-    return FakeWebViewController(params);
+    return lastController = FakeWebViewController(params);
   }
 
   @override
@@ -34,6 +36,10 @@ class FakeWebViewPlatform extends WebViewPlatform {
 class FakeWebViewController extends PlatformWebViewController {
   FakeWebViewController(super.params) : super.implementation();
 
+  final List<Uri> loadedUris = <Uri>[];
+  int setUserAgentCount = 0;
+  String? lastUserAgent;
+
   @override
   Future<void> setJavaScriptMode(JavaScriptMode javaScriptMode) async {}
 
@@ -51,13 +57,18 @@ class FakeWebViewController extends PlatformWebViewController {
   ) async {}
 
   @override
-  Future<void> loadRequest(LoadRequestParams params) async {}
+  Future<void> loadRequest(LoadRequestParams params) async {
+    loadedUris.add(params.uri);
+  }
 
   @override
   Future<void> runJavaScript(String javaScript) async {}
 
   @override
-  Future<void> setUserAgent(String? userAgent) async {}
+  Future<void> setUserAgent(String? userAgent) async {
+    setUserAgentCount += 1;
+    lastUserAgent = userAgent;
+  }
 
   @override
   Future<void> goBack() async {}
