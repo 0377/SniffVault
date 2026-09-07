@@ -21,6 +21,8 @@ pub(crate) struct PageFetchOptions {
 pub(crate) struct HttpClient {
     client: Client,
     cancel: CancellationToken,
+    cookies: Option<String>,
+    referer: Option<String>,
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -36,6 +38,8 @@ impl HttpClient {
         Ok(Self {
             client,
             cancel: CancellationToken::new(),
+            cookies: None,
+            referer: None,
         })
     }
 
@@ -44,9 +48,25 @@ impl HttpClient {
         self
     }
 
+    pub fn with_auth(mut self, cookies: Option<String>, referer: Option<String>) -> Self {
+        self.cookies = cookies;
+        self.referer = referer;
+        self
+    }
+
+    fn apply_client_auth(&self, mut request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        if let Some(cookies) = &self.cookies {
+            request = request.header(reqwest::header::COOKIE, cookies);
+        }
+        if let Some(referer) = &self.referer {
+            request = request.header(reqwest::header::REFERER, referer);
+        }
+        request
+    }
+
     pub async fn get_text(&self, url: &str) -> Result<String, EngineError> {
         let response = self
-            .execute_with_retry(|| self.client.get(url).send())
+            .execute_with_retry(|| self.apply_client_auth(self.client.get(url)).send())
             .await?;
         Ok(response.text().await?)
     }
@@ -113,7 +133,7 @@ impl HttpClient {
 
     pub async fn get_bytes(&self, url: &str) -> Result<Vec<u8>, EngineError> {
         let response = self
-            .execute_with_retry(|| self.client.get(url).send())
+            .execute_with_retry(|| self.apply_client_auth(self.client.get(url)).send())
             .await?;
         Ok(response.bytes().await?.to_vec())
     }
@@ -130,8 +150,7 @@ impl HttpClient {
         };
         let response = self
             .execute_with_retry(|| {
-                self.client
-                    .get(url)
+                self.apply_client_auth(self.client.get(url))
                     .header(reqwest::header::RANGE, range_value.clone())
                     .send()
             })
@@ -144,7 +163,7 @@ impl HttpClient {
         url: &str,
     ) -> Result<(Option<u64>, bool), EngineError> {
         let response = self
-            .execute_with_retry(|| self.client.head(url).send())
+            .execute_with_retry(|| self.apply_client_auth(self.client.head(url)).send())
             .await?;
         let size = response
             .headers()
@@ -160,7 +179,7 @@ impl HttpClient {
     }
 
     pub(crate) async fn get_stream(&self, url: &str) -> Result<Response, EngineError> {
-        self.execute_with_retry(|| self.client.get(url).send())
+        self.execute_with_retry(|| self.apply_client_auth(self.client.get(url)).send())
             .await
     }
 
@@ -171,8 +190,7 @@ impl HttpClient {
     ) -> Result<Response, EngineError> {
         let range_value = format!("bytes={start}-");
         self.execute_with_retry(|| {
-            self.client
-                .get(url)
+            self.apply_client_auth(self.client.get(url))
                 .header(reqwest::header::RANGE, range_value.clone())
                 .send()
         })
@@ -636,5 +654,35 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, EngineError::Message(_)));
         assert_eq!(counter.0.load(Ordering::SeqCst), 0);
+    }
+
+    async fn cookie_handler(headers: HeaderMap) -> impl IntoResponse {
+        let cookie = headers
+            .get("cookie")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        (StatusCode::OK, cookie)
+    }
+
+    #[tokio::test]
+    async fn get_stream_sends_client_auth() {
+        let (base_url, _guard) = spawn_server(Router::new().route("/v", get(cookie_handler))).await;
+        let client = HttpClient::new(None).unwrap().with_auth(
+            Some("sid=ok".into()),
+            Some("http://ref.example/page".into()),
+        );
+        let response = client.get_stream(&format!("{base_url}/v")).await.unwrap();
+        let body = response.text().await.unwrap();
+        assert_eq!(body, "sid=ok");
+    }
+
+    #[tokio::test]
+    async fn get_stream_without_auth_sends_no_cookie() {
+        let (base_url, _guard) = spawn_server(Router::new().route("/v", get(cookie_handler))).await;
+        let client = HttpClient::new(None).unwrap();
+        let response = client.get_stream(&format!("{base_url}/v")).await.unwrap();
+        let body = response.text().await.unwrap();
+        assert_eq!(body, "");
     }
 }

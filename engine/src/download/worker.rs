@@ -376,7 +376,9 @@ async fn run_one_task(
     }
 
     let http = match HttpClient::new(config.user_agent.as_deref()) {
-        Ok(c) => c.with_cancellation(cancel.clone()),
+        Ok(c) => c
+            .with_cancellation(cancel.clone())
+            .with_auth(task.cookie_header.clone(), task.referer.clone()),
         Err(e) => return TaskRunOutcome::Failed(e),
     };
 
