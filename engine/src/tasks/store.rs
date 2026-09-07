@@ -230,6 +230,9 @@ impl TaskStore {
         let tx = self.conn.unchecked_transaction()?;
         Self::upsert_conn(&tx, parent)?;
         for child in children {
+            if child.id.is_empty() {
+                return Err(EngineError::InvalidArg("task id must not be empty".into()));
+            }
             Self::upsert_conn(&tx, child)?;
         }
         tx.commit()?;

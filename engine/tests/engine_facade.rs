@@ -15,6 +15,7 @@ fn enqueue_series_persists_season_on_parent_and_children() {
                 (2, "第2集".into(), "https://ex/2.m3u8".into()),
             ],
             Some("1080p"),
+            None,
         )
         .unwrap();
 

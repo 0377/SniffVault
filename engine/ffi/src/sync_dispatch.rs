@@ -5,7 +5,7 @@ use std::thread;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use video_sniffing_engine::{Engine, EngineError, EngineSettings, SniffEvent};
+use video_sniffing_engine::{DownloadAuth, Engine, EngineError, EngineSettings, SniffEvent};
 
 use crate::events::start_event_forwarder;
 use crate::handle::{rust_to_c_string, EngineHandle};
@@ -86,11 +86,32 @@ pub(crate) fn parse_json_c_str<T: for<'de> Deserialize<'de>>(
 }
 
 #[derive(Debug, Deserialize)]
+struct EnqueueAuthJson {
+    cookies: Option<String>,
+    referer: Option<String>,
+}
+
+fn parse_enqueue_auth(opts_json: *const c_char) -> Result<Option<DownloadAuth>, EngineError> {
+    if opts_json.is_null() {
+        return Ok(None);
+    }
+    let parsed: EnqueueAuthJson = parse_json_c_str(opts_json, "opts_json")?;
+    Ok(Some(DownloadAuth {
+        cookies: parsed.cookies,
+        referer: parsed.referer,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
 struct EnqueueEpisodesArgs {
     list_title: String,
     season: Option<u32>,
     episodes: Vec<(u32, String, String)>,
     quality_label: Option<String>,
+    #[serde(default)]
+    cookies: Option<String>,
+    #[serde(default)]
+    referer: Option<String>,
 }
 
 #[no_mangle]
@@ -159,6 +180,7 @@ pub unsafe extern "C" fn engine_enqueue_single(
     title: *const c_char,
     url: *const c_char,
     quality_label: *const c_char,
+    opts_json: *const c_char,
 ) -> *mut c_char {
     let title = match parse_c_str(title, "title") {
         Ok(s) => s,
@@ -172,8 +194,12 @@ pub unsafe extern "C" fn engine_enqueue_single(
         Ok(s) => s,
         Err(err) => return rust_to_c_string(err_json(err)),
     };
+    let auth = match parse_enqueue_auth(opts_json) {
+        Ok(auth) => auth,
+        Err(err) => return rust_to_c_string(err_json(err)),
+    };
     ffi_call_mut(handle, |engine| {
-        engine.enqueue_single(&title, &url, quality_label.as_deref())
+        engine.enqueue_single(&title, &url, quality_label.as_deref(), auth.as_ref())
     })
 }
 
@@ -186,12 +212,17 @@ pub unsafe extern "C" fn engine_enqueue_episodes(
         Ok(args) => args,
         Err(err) => return rust_to_c_string(err_json(err)),
     };
+    let auth = DownloadAuth {
+        cookies: args.cookies,
+        referer: args.referer,
+    };
     ffi_call_mut(handle, |engine| {
         engine.enqueue_episodes(
             &args.list_title,
             args.season,
             &args.episodes,
             args.quality_label.as_deref(),
+            Some(&auth),
         )
     })
 }

@@ -58,12 +58,14 @@ typedef EngineEnqueueSingleNative = Pointer<Char> Function(
   Pointer<Utf8> title,
   Pointer<Utf8> url,
   Pointer<Utf8> qualityLabel,
+  Pointer<Utf8> optsJson,
 );
 typedef EngineEnqueueSingle = Pointer<Char> Function(
   Pointer<Void> handle,
   Pointer<Utf8> title,
   Pointer<Utf8> url,
   Pointer<Utf8> qualityLabel,
+  Pointer<Utf8> optsJson,
 );
 
 typedef EngineEnqueueEpisodesNative = Pointer<Char> Function(

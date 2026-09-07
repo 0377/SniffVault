@@ -15,8 +15,15 @@ fn start_downloads_prepare_returns_immediately() {
 
     let title = CString::new("ffi smoke").unwrap();
     let url = CString::new("https://cdn.example/clip.mp4").unwrap();
-    let enqueue =
-        unsafe { engine_enqueue_single(handle, title.as_ptr(), url.as_ptr(), std::ptr::null()) };
+    let enqueue = unsafe {
+        engine_enqueue_single(
+            handle,
+            title.as_ptr(),
+            url.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+        )
+    };
     assert!(!enqueue.is_null());
     unsafe { engine_free_string(enqueue) };
 

@@ -6,8 +6,8 @@ use crate::library::LibraryStore;
 use crate::settings;
 use crate::tasks::TaskStore;
 use crate::types::{
-    DownloadTask, EngineSettings, LibraryEpisode, LibraryItem, Quality, ResolveOptions,
-    ResolveOutcome, ResourceCandidate, SniffEvent, TaskEvent, TaskStatus,
+    DownloadAuth, DownloadTask, EngineSettings, LibraryEpisode, LibraryItem, Quality,
+    ResolveOptions, ResolveOutcome, ResourceCandidate, SniffEvent, TaskEvent, TaskStatus,
 };
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -115,12 +115,15 @@ impl Engine {
         season: Option<u32>,
         episodes: &[(u32, String, String)],
         quality_label: Option<&str>,
+        auth: Option<&DownloadAuth>,
     ) -> Result<(String, Vec<String>), EngineError> {
         if episodes.is_empty() {
             return Err(EngineError::InvalidArg("episodes must not be empty".into()));
         }
         let now = Self::now_ms();
         let parent_id = Uuid::new_v4().to_string();
+        let cookie_header = auth.and_then(|a| a.cookies.clone());
+        let referer = auth.and_then(|a| a.referer.clone());
         let mut child_ids = Vec::new();
         let mut child_tasks = Vec::new();
         for (index, title, url) in episodes {
@@ -142,8 +145,8 @@ impl Engine {
                 episode_index: Some(*index),
                 created_at_ms: now,
                 updated_at_ms: now,
-                cookie_header: None,
-                referer: None,
+                cookie_header: cookie_header.clone(),
+                referer: referer.clone(),
             });
         }
         self.tasks.upsert_parent_with_children(
@@ -163,8 +166,8 @@ impl Engine {
                 episode_index: None,
                 created_at_ms: now,
                 updated_at_ms: now,
-                cookie_header: None,
-                referer: None,
+                cookie_header,
+                referer,
             },
             &child_tasks,
         )?;
@@ -176,6 +179,7 @@ impl Engine {
         title: &str,
         url: &str,
         quality_label: Option<&str>,
+        auth: Option<&DownloadAuth>,
     ) -> Result<String, EngineError> {
         if url.is_empty() {
             return Err(EngineError::InvalidArg("url must not be empty".into()));
@@ -198,8 +202,8 @@ impl Engine {
             episode_index: None,
             created_at_ms: now,
             updated_at_ms: now,
-            cookie_header: None,
-            referer: None,
+            cookie_header: auth.and_then(|a| a.cookies.clone()),
+            referer: auth.and_then(|a| a.referer.clone()),
         })?;
         Ok(id)
     }
