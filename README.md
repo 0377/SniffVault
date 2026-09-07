@@ -11,8 +11,8 @@
 ## 仓库结构
 
 - `engine/` — Rust 核心（片库、任务、后续下载/解析/LAN）
-- `app/` — Flutter UI（片库、任务、添加、播放器；Riverpod + go_router + media_kit）
-- `platforms/` — 极少原生胶水（后续计划）
+- `app/` — Flutter UI（片库、浏览、任务、添加、播放器；Riverpod + go_router + media_kit）
+- `platforms/` — 原生胶水（`webview_sniff`：Cookie 仓 + Android `isTelevision`；iOS Share Extension 尚未实现）
 
 ## 持续集成
 
@@ -59,6 +59,11 @@ flutter test integration_test/engine_smoke_test.dart -d macos
 flutter test integration_test/ui_test.dart -d macos
 # 完整 UI 流程（含播放器，本地有 GUI 时）
 # flutter test integration_test/ui_test.dart -d macos
+
+# 浏览 U6 门禁（本地交付必须通过，不要 skip）
+flutter test integration_test/browse_test.dart -d macos
+# CI 无头环境可跳过浏览 WebView
+# flutter test integration_test/browse_test.dart -d macos --dart-define=INTEGRATION_SKIP_BROWSE=true
 ```
 
 ### 测试依赖 ffmpeg
@@ -87,6 +92,20 @@ flutter test integration_test/ui_test.dart -d macos
 ```
 
 规格见 `docs/superpowers/specs/2026-08-11-app-ui-player-design.md`。
+
+## 内置浏览（Plan 6a）
+
+主路径：添加页粘贴 URL → 解析返回 **NeedsBrowser** →「打开内置浏览」→ 浏览页加载该页 →「解析本页」→ 向导「下载」。也可直接点「浏览」，在地址栏打开页面后点「解析本页」（带着当前页 Cookie / Referer）。
+
+Android / iOS / macOS 使用官方 `webview_flutter`（NavigationDelegate + 注入脚本）。官方包 **没有 Windows 实现**，Windows 上浏览页不可用。Android TV 隐藏浏览入口。
+
+```bash
+# 本地交付必须通过 U6（不要加 INTEGRATION_SKIP_BROWSE）
+cd app && flutter test integration_test/browse_test.dart -d macos
+
+# CI 可用 skip；U7（video src 嗅探候选）5 秒内无条目时可 skip，不是门禁
+# flutter test integration_test/browse_test.dart -d macos --dart-define=INTEGRATION_SKIP_BROWSE=true
+```
 
 ## 许可证
 
