@@ -11,12 +11,12 @@
 ## 仓库结构
 
 - `engine/` — Rust 核心（片库、任务、后续下载/解析/LAN）
-- `app/` — Flutter UI（后续计划）
+- `app/` — Flutter UI（片库、任务、添加、播放器；Riverpod + go_router + media_kit）
 - `platforms/` — 极少原生胶水（后续计划）
 
 ## 持续集成
 
-合并到 `main` 前须通过 GitHub Actions：**fmt**（ubuntu）、**test + clippy**（Linux / macOS / Windows 三平台）、**flutter-smoke**（macOS，单元测试与 FFI 集成冒烟）。
+合并到 `main` 前须通过 GitHub Actions：**fmt**（ubuntu）、**test + clippy**（Linux / macOS / Windows 三平台）、**flutter-test**（macOS 单元测试）、**flutter-integration**（macOS 引擎 FFI 与 UI 集成冒烟，并行 job）。
 
 本地可运行与 CI 相同检查：
 
@@ -54,8 +54,11 @@ flutter pub get
 flutter test
 flutter build macos --debug
 
-# FFI 集成冒烟（需 macOS 设备）
-flutter test integration_test/smoke_test.dart -d macos
+# FFI 集成冒烟（需 macOS 设备；CI 在独立 job 中各跑一次）
+flutter test integration_test/engine_smoke_test.dart -d macos
+flutter test integration_test/ui_test.dart -d macos
+# 完整 UI 流程（含播放器，本地有 GUI 时）
+# flutter test integration_test/ui_test.dart -d macos
 ```
 
 ### 测试依赖 ffmpeg
@@ -77,6 +80,9 @@ cd app
 flutter pub get
 flutter run -d macos   # 或 android / ios / windows
 flutter test
+# CI 等价（跳过无头环境不稳定的播放器步骤）
+flutter test integration_test/ui_test.dart -d macos --dart-define=INTEGRATION_SKIP_PLAYER=true
+# 完整 U1–U3（含播放进度回写，需本机 GUI）
 flutter test integration_test/ui_test.dart -d macos
 ```
 
