@@ -41,6 +41,8 @@ dependencies:
   media_kit_libs_video: ^1.0.5
   rust_lib_video_sniffing:
     path: rust_builder
+  webview_sniff:
+    path: ../platforms/webview_sniff
 
 dev_dependencies:
   flutter_test:

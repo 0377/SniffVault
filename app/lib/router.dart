@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:video_sniffing/features/add/add_screen.dart';
+import 'package:video_sniffing/features/browse/browse_screen.dart';
 import 'package:video_sniffing/features/library/library_detail_screen.dart';
 import 'package:video_sniffing/features/library/library_screen.dart';
 import 'package:video_sniffing/features/player/player_screen.dart';
@@ -31,6 +32,21 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                     builder: (_, state) => LibraryDetailScreen(
                       itemId: state.pathParameters['itemId']!,
                     ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/browse',
+                builder: (_, _) => const BrowseScreen(),
+                routes: [
+                  GoRoute(
+                    parentNavigatorKey: _rootNavigatorKey,
+                    path: 'wizard',
+                    builder: (_, _) => const Scaffold(body: SizedBox.shrink()),
                   ),
                 ],
               ),

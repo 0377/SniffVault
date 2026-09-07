@@ -715,6 +715,13 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "3.1.0"
+  webview_sniff:
+    dependency: "direct main"
+    description:
+      path: "../platforms/webview_sniff"
+      relative: true
+    source: path
+    version: "0.0.1"
   win32:
     dependency: transitive
     description:
