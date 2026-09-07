@@ -43,6 +43,7 @@ dependencies:
     path: rust_builder
   webview_sniff:
     path: ../platforms/webview_sniff
+  webview_flutter: ^4.10.0
 
 dev_dependencies:
   flutter_test:
@@ -56,6 +57,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  webview_flutter_platform_interface: ^2.15.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

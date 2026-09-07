@@ -12,6 +12,7 @@ import 'package:video_sniffing/providers/browse_resolve_provider.dart';
 import 'package:video_sniffing/providers/browse_session.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
 import 'package:video_sniffing/providers/settings_provider.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 import 'fakes/fake_engine_repository.dart';
 
@@ -252,5 +253,48 @@ void main() {
 
     expect(session.pendingLoadUrl, isNull);
     expect(session.currentUrl, isNull);
+  });
+
+  testWidgets('BrowseScreen watches browseSessionProvider candidates', (
+    tester,
+  ) async {
+    final fake = _SniffRecordingRepo();
+    fake.sniffResult = const [
+      ResourceCandidate(id: '1', url: 'http://x/a.m3u8', kind: MediaKind.hls),
+    ];
+    final session = BrowseSession(
+      repo: fake,
+      cookies: FakeCookieExporter('sid=ok'),
+    );
+    session.currentUrl = Uri.parse('http://x/page');
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          browseSessionProvider.overrideWith((ref) => session),
+          settingsProvider.overrideWith((ref) => EngineSettings.defaults),
+        ],
+        child: MaterialApp.router(
+          routerConfig: GoRouter(
+            initialLocation: '/browse',
+            routes: [
+              GoRoute(path: '/browse', builder: (_, _) => const BrowseScreen()),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(WebViewWidget), findsOneWidget);
+    expect(find.text('嗅探候选 1'), findsNothing);
+
+    session.onHookEvent(
+      const SniffEvent(url: 'http://x/a.m3u8', initiator: SniffInitiator.media),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('嗅探候选 1'), findsOneWidget);
+    expect(find.text('http://x/a.m3u8'), findsOneWidget);
   });
 }

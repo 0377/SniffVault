@@ -4,7 +4,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:video_sniffing/features/browse/browse_screen.dart';
 import 'package:video_sniffing/providers/device_profile.dart';
+import 'package:video_sniffing/providers/engine_host_provider.dart';
 import 'package:video_sniffing/shell/app_shell.dart';
+
+import 'fakes/fake_engine_repository.dart';
+import 'fakes/fake_ready_engine_host.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -64,13 +68,22 @@ GoRouter _testRouter({String initialLocation = '/library'}) {
   );
 }
 
+List<Override> _engineOverrides() => [
+  engineHostProvider.overrideWith((ref) async {
+    final host = FakeReadyEngineHost();
+    ref.onDispose(host.dispose);
+    return host;
+  }),
+  engineRepositoryProvider.overrideWithValue(FakeEngineRepository()),
+];
+
 Widget _shellApp({
   required Size size,
   List<Override> overrides = const [],
   String location = '/library',
 }) {
   return ProviderScope(
-    overrides: overrides,
+    overrides: [..._engineOverrides(), ...overrides],
     child: MediaQuery(
       data: MediaQueryData(size: size),
       child: MaterialApp.router(

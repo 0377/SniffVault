@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:video_sniffing/engine/models/sniff_types.dart';
 
 class HookRequest {
@@ -12,6 +14,32 @@ class HookRequest {
   final String? pageUrl;
   final bool isMainFrame;
   final String? mime;
+}
+
+/// Parses a JavaScriptChannel payload. [pageUrl] is the current main-frame URL
+/// filled by Dart, not by the injected script.
+HookRequest? hookRequestFromJsMessage(String message, {String? pageUrl}) {
+  try {
+    final decoded = jsonDecode(message);
+    if (decoded is! Map) {
+      return null;
+    }
+    final map = Map<String, dynamic>.from(decoded);
+    final url = map['url'];
+    if (url is! String || url.isEmpty) {
+      return null;
+    }
+    final mimeRaw = map['mime'];
+    final mime = mimeRaw is String && mimeRaw.isNotEmpty ? mimeRaw : null;
+    return HookRequest(
+      url: url,
+      pageUrl: pageUrl,
+      isMainFrame: map['is_main_frame'] == true,
+      mime: mime,
+    );
+  } on Object {
+    return null;
+  }
 }
 
 SniffEvent hookToSniffEvent(HookRequest request) {
