@@ -142,6 +142,8 @@ impl Engine {
                 episode_index: Some(*index),
                 created_at_ms: now,
                 updated_at_ms: now,
+                cookie_header: None,
+                referer: None,
             });
         }
         self.tasks.upsert_parent_with_children(
@@ -161,6 +163,8 @@ impl Engine {
                 episode_index: None,
                 created_at_ms: now,
                 updated_at_ms: now,
+                cookie_header: None,
+                referer: None,
             },
             &child_tasks,
         )?;
@@ -194,6 +198,8 @@ impl Engine {
             episode_index: None,
             created_at_ms: now,
             updated_at_ms: now,
+            cookie_header: None,
+            referer: None,
         })?;
         Ok(id)
     }

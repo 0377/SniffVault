@@ -112,6 +112,17 @@ pub struct DownloadTask {
     pub episode_index: Option<u32>,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
+    /// 入队瞬间 Cookie 快照；仅本机 store/worker 使用。
+    #[serde(default, skip_serializing)]
+    pub cookie_header: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub referer: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadAuth {
+    pub cookies: Option<String>,
+    pub referer: Option<String>,
 }
 
 /// 设置。LAN 信任设备列表留到 Plan 7，本期不预留半截字段。

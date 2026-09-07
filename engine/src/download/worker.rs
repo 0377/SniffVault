@@ -714,6 +714,8 @@ mod tests {
             episode_index: Some(3),
             created_at_ms: 1,
             updated_at_ms: 1,
+            cookie_header: None,
+            referer: None,
         };
         assert_eq!(output_filename(&task), "第1集_S1E3.mp4");
     }

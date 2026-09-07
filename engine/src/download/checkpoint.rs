@@ -57,6 +57,8 @@ mod tests {
             episode_index: None,
             created_at_ms: 1,
             updated_at_ms: 1,
+            cookie_header: None,
+            referer: None,
         }
     }
 
