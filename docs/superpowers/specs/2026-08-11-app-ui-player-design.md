@@ -95,7 +95,7 @@ Plan 6 预留：`/add?url=<encoded>` 深链直达添加页并预填 URL。
     │                   ├─ 候选已带 quality → 直接 enqueueSingle
     │                   └─ HLS 且无 quality → resolveQualities(mediaUrl) → 选清晰度 → enqueueSingle
     ├─ EpisodeList   → 多选分集（默认全选）→ enqueueEpisodes → ensureDownloads()
-    └─ NeedsBrowser  → 说明页：「此站点需登录浏览，内置浏览器将在后续版本支持」
+    └─ NeedsBrowser  → 说明页 + 「打开内置浏览」→ `/browse?url=`（Plan 6a：`docs/superpowers/specs/2026-09-07-webview-sniff-design.md`）
 ```
 
 入队成功后导航至 `/tasks` 并 SnackBar 提示。`qualityLabel` 默认取 `settings.defaultQualityLabel`（含 `"highest"`）。
@@ -290,5 +290,6 @@ cd app && flutter test integration_test/ui_test.dart -d macos
 |---|------|------|
 | 1–4 | Engine / Downloader / Resolver / FFI | ✅ |
 | **5** | **App UI + Player** | **本规格** |
-| 6 | Platform 胶水 | 待开始 |
+| 6a | 受控 WebView + 嗅探 | 见 `2026-09-07-webview-sniff-design.md` |
+| 6b | 系统分享 | 待开始 |
 | 7 | LAN Cast + TV | 待开始 |
