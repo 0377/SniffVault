@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:video_sniffing/engine/engine_host.dart';
+import 'package:video_sniffing/engine/models/download_auth.dart';
 import 'package:video_sniffing/engine/models/resolve_types.dart';
 import 'package:video_sniffing/features/add/widgets/episode_multi_select.dart';
 import 'package:video_sniffing/features/add/widgets/quality_picker.dart';
@@ -9,12 +10,14 @@ typedef EnqueueSingleCallback = String Function({
   required String title,
   required String url,
   String? qualityLabel,
+  DownloadAuth? auth,
 });
 typedef EnqueueEpisodesCallback = EnqueueEpisodesResult Function({
   required String listTitle,
   int? season,
   required List<(int index, String title, String url)> episodes,
   String? qualityLabel,
+  DownloadAuth? auth,
 });
 
 class ResolveWizard extends StatefulWidget {
