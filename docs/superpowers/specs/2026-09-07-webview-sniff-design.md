@@ -1,7 +1,7 @@
 # 受控 WebView + 嗅探闭环设计（Plan 6a）
 
 **日期**: 2026-09-07  
-**状态**: 待用户审阅  
+**状态**: 已审阅修订（对齐 plan review 2026-09-07）  
 **前置计划**: Plan 1–5（已完成）  
 **后续计划**: Plan 6b 系统分享 / 深链、Plan 7 LAN Cast + TV  
 **父规格**: `docs/superpowers/specs/2026-08-11-app-ui-player-design.md`、`docs/superpowers/specs/2026-08-11-flutter-ffi-design.md`
@@ -21,13 +21,13 @@
 | 主导航「浏览」+ 受控 WebView（地址栏、前进后退、刷新） | 系统分享、iOS Share Extension（Plan 6b） |
 | `NeedsBrowser` 一键打开同一浏览页并带入 URL | LAN 投送、Android TV Leanback（Plan 7） |
 | 导出 Cookie/Referer/`page_url` 调用 `resolveUrl` / `resolveQualities` | 多标签、书签、历史云同步 |
-| 原生网络钩子 → `SniffEvent` → `sniffUrls` → 候选入队 | 广告过滤、站点插件、系统级抓包 |
+| `NavigationDelegate` + 注入脚本观察请求 → `HookRequest` → Dart 映射 `SniffEvent` → `sniffUrls` | `shouldInterceptRequest` / WebView2 资源拦截、广告过滤、站点插件、系统级抓包 |
 | 任务级 Cookie/Referer 持久化，供 worker 下载 | DRM 绕过、账号体系 |
 | 设置「清除浏览 Cookie」 | 海报、字幕、PiP |
 
 **不选完整 Plan 6（含 Share）**：分享只是把 URL 填进 `/add`，不解决 `NeedsBrowser`。  
 **不选先做 Plan 7**：投送依赖片库已有缓存，主路径仍断在取流。  
-**不选纯 Flutter 拦截**：子资源（HLS、XHR）大量不可见，嗅探会长期残缺。  
+**不选 `shouldInterceptRequest` / 私有 PlatformView 挖 WebView**：`webview_flutter` 无稳定公开拦截 API，计划里「找不到就搜 View 树」不可执行。四端统一走公开 `NavigationDelegate` + 脚本，嗅探覆盖为「中」，**解析本页为必须闭环**。  
 **不选四端各写一套原生浏览器**：与 Plan 5 Flutter 壳分裂，后续分享/TV 更难收。
 
 ### 1.2 产品原则
@@ -64,7 +64,13 @@
 | `/browse/wizard` | 复用 `ResolveWizard` | 全屏，无 Shell（与 `/play` 相同 `parentNavigatorKey`） |
 | 现有 `/library` `/tasks` `/add` `/settings` `/play/:episodeId` | 不变 | 播放器仍全屏无 Shell |
 
-Android TV（`uiMode` 为 television）：**不展示「浏览」destination**，也不注册可用的 `/browse` 业务页（深链进入则提示「请在手机或电脑使用内置浏览」）。`NeedsBrowser` 在 TV 上保持说明 + 返回，不提供打开浏览按钮。
+Android TV：**不展示「浏览」destination**；深链 `/browse` 只显示说明页（「请在手机或电脑使用内置浏览」），**不创建 WebView**。`NeedsBrowser` 在 TV 上只有说明 + 返回，无「打开内置浏览」。
+
+生产检测（不可只靠测试 override）：
+
+- Android：读 `Configuration.uiMode & UI_MODE_TYPE_MASK == UI_MODE_TYPE_TELEVISION`，经 MethodChannel `isTelevision` → Dart `isTelevisionProvider`。实现可放在 `platforms/webview_sniff` 或 `app/android` `MainActivity`，但必须有真实 Channel，不得仅测试 override。
+- iOS / macOS / Windows：恒为 `false`（一期无 tvOS）。
+- Widget 测试可 `overrideWithValue`；**未 override 时必须调用真实检测**，默认不得写死 `false` 而忽略 Channel 结果。
 
 ### 2.2 浏览页（受控 Chrome）
 
@@ -87,7 +93,7 @@ WebView 的 `User-Agent`：若 `EngineSettings.user_agent` 非空则使用该值
 ### 2.4 解析本页
 
 1. 读取当前主框架 URL 为 `page_url` 与 `referer`。
-2. 导出该 URL 作用域下的 Cookie，格式为 HTTP `Cookie` 头：`name=value; name2=value2`（与 Plan 3 R6 一致）。
+2. 经 `CookieExporter.cookieHeaderFor(pageUri)` 导出该 URL 作用域 Cookie，格式为 HTTP `Cookie` 头：`name=value; name2=value2`（与 Plan 3 R6 一致）。生产实现必须读 **同一 WebView 的平台 Cookie 仓**（Android `CookieManager.getCookie`、iOS/macOS `WKHTTPCookieStore`、Windows WebView2 cookie manager），禁止只在测试里注入假 Cookie、真机路径为空。
 3. `resolveUrl(page_url, ResolveOptions { cookies, referer, page_url })`。
 4. 成功则用 **根 Navigator** 打开现有 `ResolveWizard`（路径 `/browse/wizard`，`parentNavigatorKey` 与播放器相同），避免盖在 WebView 上无法返回或销毁 WebView。向导入参经 Riverpod 传递 `ResolveOutcome` 与 `DownloadAuth`，**禁止**把 Cookie 放进路由 query。
 5. 向导入队时把 **同一组** `cookies` / `referer` 传给 `enqueue*`（见 §4），再 `ensureDownloads()`，成功后仍去 `/tasks`。
@@ -98,7 +104,7 @@ WebView 的 `User-Agent`：若 `EngineSettings.user_agent` 非空则使用该值
 
 ### 2.5 嗅探候选
 
-1. 原生钩子把请求打成 `SniffEvent`（§5），Dart 按当前页会话累积。
+1. 观察层发出 `HookRequest`（§5），Dart `hookToSniffEvent` 映射为 `SniffEvent` 后按当前页会话累积。
 2. **顶层导航**（主框架 URL 变化）清空该会话缓冲区并重新累积。
 3. 缓冲区上限 **500** 条；超出丢弃最旧事件。
 4. 自上次事件起 **300ms** 无新事件则调用 `Engine.sniffUrls(events, pageUrl: 当前主框架 URL)`，用返回列表刷新 UI（引擎内已去重）。
@@ -113,27 +119,28 @@ WebView 的 `User-Agent`：若 `EngineSettings.user_agent` 非空则使用该值
 ### 3.1 混合分层（已选方案 C）
 
 ```
-app/lib/features/browse/     # 浏览 UI、会话状态、解析/嗅探协调
-app/lib/providers/           # Cookie 导出、嗅探缓冲；经 EngineRepository 调引擎
-platforms/webview_sniff/     # 最小 Flutter 插件：网络钩子 EventChannel
-engine/                      # 入队鉴权快照 + worker 带头发下载；sniff/resolve 语义不变
+app/lib/features/browse/     # 浏览 UI、会话、CookieExporter、嗅探缓冲
+app/lib/providers/           # isTelevision、browseResolve；经 EngineRepository 调引擎
+platforms/webview_sniff/     # Cookie 仓读写 + Android isTelevision；不解析媒体、不入队
+engine/                      # 入队鉴权快照 + worker 带头发下载
 ```
 
-- **Flutter**：地址栏、WebView 控件、Cookie 导出、调用 `resolve*` / `sniffUrls` / `enqueue*`、向导复用。
-- **`platforms/webview_sniff`**：在四端 WebView 实现上注册请求观察，发出 JSON `SniffEvent`（字段与 `engine` / Dart 模型一致：`url`、`page_url`、`initiator`）。
-- **禁止**：在原生层解析媒体、入队或写 SQLite。
-
-WebView 控件本身用官方 `webview_flutter`（及各端实现）。钩子插件 **必须挂在同一 WebView 实例上**，不能另开看不见的第二个 WebView 只钩空页面。
+- **Flutter**：`webview_flutter` 负责页面；`NavigationDelegate` + 注入脚本 + `JavaScriptChannel` 收集 `HookRequest`；`hookToSniffEvent` 映射后 `sniffUrls`；`CookieExporter` 调插件读 Cookie；解析/入队复用向导。
+- **禁止**：第二套隐藏 WebView、系统抓包、在原生层入队或写 SQLite。
+- **禁止**：依赖 `shouldInterceptRequest` 或反射/遍历 PlatformView 找 `WebView` 实例。
 
 ### 3.2 模块（相对 Plan 5 增量）
 
 ```
 app/lib/features/browse/
   browse_screen.dart
-  browse_chrome.dart          # 地址栏与导航按钮
+  browse_chrome.dart
   sniff_candidate_list.dart
-platforms/webview_sniff/      # 插件包，app 依赖 path
-  lib/webview_sniff.dart      # attach(controller) + Stream<SniffEvent>
+  browse_url.dart
+  hook_to_sniff.dart
+  cookie_store.dart           # CookieExporter + 清除；生产走插件
+platforms/webview_sniff/
+  lib/webview_sniff.dart      # isTelevision / cookieHeaderFor / clearCookies
   android/ ios/ macos/ windows/
 ```
 
@@ -176,6 +183,10 @@ List<ResourceCandidate> sniffUrls(List<SniffEvent> events, {String? pageUrl});
 
 `source_url` 仍可能含查询鉴权参数；Cookie 与其同等对待：**仅本机任务库**。
 
+命名：入队/FFI JSON 用 **`cookies` / `referer`**（`DownloadAuth`）；SQLite 与 `DownloadTask` 内部字段用 **`cookie_header` / `referer`**。公开任务 JSON **两者都不出现**。
+
+进度、checkpoint、`set_task_status` 只能 `UPDATE` 对应列，**禁止**用整行 `upsert` 回写任务，以免把鉴权列覆盖成 `NULL`。
+
 ### 4.2 公开 JSON 脱敏
 
 `DownloadTask` 经 FFI 出现在 `list_tasks` 与 `task_updated.task` 时：
@@ -193,7 +204,7 @@ List<ResourceCandidate> sniffUrls(List<SniffEvent> events, {String? pageUrl});
 { "cookies": "sid=ok", "referer": "https://example/page" }
 ```
 
-- `engine_enqueue_single`：增加最后一个可选 `opts_json`（`null` = 无鉴权）。应用与 `engine/ffi` 同仓构建，不保持旧 C ABI。
+- `engine_enqueue_single`：增加最后一个可选 `opts_json`（`null` = 无鉴权）。**同一提交**必须更新 `engine/ffi` 与 Dart `native_bindings.dart` / `EngineHost.enqueueSingle`，禁止只改 C 符号导致 FFI 错位。
 - `engine_enqueue_episodes`：不新增 C 参数；把同样的 `cookies` / `referer` 键并入 **现有** 入队 JSON。缺省则与今日行为一致。
 
 `HttpClient` 下载 MP4 / HLS（playlist 与分片）必须带上该任务的 Cookie 与 Referer；不能只在「抓 HTML」路径支持。
@@ -208,30 +219,35 @@ WebView 登录态以 **平台 CookieManager** 为准（随 WebView 持久化）�
 
 ---
 
-## 5. 原生钩子与 initiator 映射
+## 5. 嗅探观察与 initiator 映射
 
-插件事件 JSON 与 Dart `SniffEvent.toJson()` 一致。`page_url` 为发出该请求时的主框架 URL；未知则省略，由 `sniffUrls` 的第二个参数补齐。
+**策略 B（已锁定）：** 四端均使用 `webview_flutter` 公开 API：
 
-| 端 | 机制 | 覆盖预期 |
-|----|------|----------|
-| Android | `WebViewClient.shouldInterceptRequest`（观察后 **放行原请求**，不改写 body） | 高：常见 http(s) 子资源 |
-| Windows | WebView2 `WebResourceRequested`（同样只观察） | 高 |
-| iOS / macOS | `WKNavigationDelegate` + 注入脚本观察 `fetch` / `XHR` / `HTMLMediaElement` | 中：导航与脚本可见请求 |
+- `NavigationDelegate`：主框架导航 URL（`is_main_frame: true`）
+- 注入脚本：`fetch` / `XHR` / `HTMLMediaElement.src`（`is_main_frame: false`，`mime` 可知则带上）
 
-**明确不保证：** MSE / `blob:` / 纯内存播放器、Service Worker 隐匿请求、非 WebView 发出的请求。这些路径用户仍可用「解析本页」（Cookie 注入 HTML/API 解析）。
+覆盖预期 **四端均为「中」**：脚本可见的请求 + 导航。不保证 MSE / `blob:` / Service Worker / 播放器内部请求。这些路径以「解析本页」为准。
+
+观察层 JSON 为 **`HookRequest`**（不是 `SniffEvent`）：
+
+```json
+{ "url": "https://cdn/x.m3u8", "page_url": "https://site/page", "is_main_frame": false, "mime": "application/vnd.apple.mpegurl" }
+```
+
+Dart `hookToSniffEvent` 按表映射 `initiator` 后再调用 `sniffUrls`。`page_url` 未知则省略，由 `sniffUrls` 的第二个参数补齐。
 
 `initiator` 映射（无法区分时用 `other`，禁止编造 `media`）：
 
 | 条件 | `SniffInitiator` |
 |------|------------------|
-| 主框架导航 | `navigation` |
-| MIME 或 URL 可判断为音视频 / `.m3u8` / `.mp4` | `media` |
-| 其它子资源 | `sub_resource` |
+| `is_main_frame == true` | `navigation` |
+| MIME 含 `video`/`audio`，或 URL 路径以 `.m3u8` / `.mp4` 结尾（忽略 query） | `media` |
+| 其它非主框架 | `sub_resource` |
 | 其余 | `other` |
 
 `sniff_urls` 仍只按 **URL 分类** 产出候选；initiator 供后续分析，本规格不改变分类器。
 
-钩子 **不得** 把 Cookie 头放进事件 payload。
+钩子 **不得** 把 Cookie 头放进 `HookRequest`。
 
 ---
 
@@ -254,7 +270,7 @@ WebView 登录态以 **平台 CookieManager** 为准（随 WebView 持久化）�
 
 在现有 `EngineSettings` 表单之下增加 **浏览数据**（非引擎字段）：
 
-- 按钮「清除浏览 Cookie」：调用平台 `CookieManager` 删除全部 Cookie，成功 SnackBar「已清除浏览 Cookie」。
+- 按钮「清除浏览 Cookie」：调用与导出相同的平台 Cookie 仓 `clearCookies`，成功 SnackBar「已清除浏览 Cookie」。**不清**任务库鉴权快照。
 - 不增加「Cookie 文本框」或手动粘贴 Cookie（避免把应用做成通用盗号工具 UI）。
 
 ---
@@ -269,8 +285,8 @@ Widget 测试仍通过 `EngineRepository` fake，不加载原生库。
 | W5 | `NeedsBrowser` 显示「打开内置浏览」（TV 形态测试可 skip 或断言无此按钮） |
 | W6 | 非法地址（`javascript:`）不调用加载 |
 | W7 | fake `sniffUrls` 返回候选时列表展示并可点选进入入队路径 |
-| W8 | fake `resolveUrl` 在「解析本页」时收到非空 `opts.cookies`（由 fake Cookie 导出注入） |
-| W9 | `enqueueSingle` 在浏览入队路径收到 `DownloadAuth`；添加页无鉴权路径仍不传 |
+| W8 | `BrowseSession`（无 WebView widget）：假 `CookieExporter` 下「解析本页」调用 `resolveUrl` 时 `opts.cookies` 非空 |
+| W9 | 浏览入队路径 `enqueueSingle` 收到 `DownloadAuth`；添加页路径不传 auth |
 
 引擎 / FFI：
 
@@ -279,22 +295,23 @@ Widget 测试仍通过 `EngineRepository` fake，不加载原生库。
 | T1 | 带 Cookie 入队后 worker 请求含 `Cookie` 头；重启 `Engine::open` 后未完成任务仍带快照 |
 | T2 | `list_tasks` JSON 不含 cookie 原文 |
 | T3 | `opts_json` 为空时下载请求无强制 Cookie 头（与旧行为一致） |
-| T4 | `enqueue_episodes` 父子同一事务且子任务鉴权一致；失败回滚无部分行 |
+| T4 | `enqueue_episodes` 父子同一事务且子任务鉴权一致；事务中途失败（如子任务 `id` 为空）父任务不得落库 |
 
 集成（macOS，可与现有 fixture HTTP 服务）：
 
 | ID | 场景 |
 |----|------|
-| U6 | 浏览打开需 Cookie 的 HTML fixture → 解析本页得到非 `NeedsBrowser` 或明确候选 |
-| U7 | 页面引用 fixture MP4 → 嗅探列表出现该 URL（若 WKWebView 钩不到则记录为端能力缺口，U6 仍必须绿） |
+| U6 | **门禁**：浏览打开含直接 mp4 链接的本地 HTML → 解析本页 → 向导出现「下载」（真引擎）。不依赖嗅探钩子。可选：`CookieManager` 种 `sid=ok` 后再解析需 Cookie 页。 |
+| U7 | **非门禁**：页面引用 fixture MP4 后嗅探列表出现该 URL；钩不到则 skip，不得导致 CI 失败 |
 
-Plan 5 的 W1–W4、U1–U3 与 F1–F5 **保持绿色**。交付前运行 AGENTS.md 中的 cargo fmt / test / clippy 与 `cd app && flutter test`。
+U6 不得写成「必须先嗅探到候选」。Plan 5 的 W1–W4、U1–U3 与 F1–F5 **保持绿色**。
 
 ---
 
 ## 9. 完成标准
 
-- [ ] Android / iOS / Windows / macOS：浏览页可打开 http(s)、解析本页、候选入队（嗅探覆盖按 §5 矩阵，iOS/macOS 允许仅解析闭环）
+- [ ] Android / iOS / Windows / macOS：浏览页可打开 http(s)、**解析本页**闭环；嗅探为「中」覆盖，候选入队可用但不作为 U6 门禁
+- [ ] 生产 `isTelevision` 检测生效；TV 无浏览 tab / 无 WebView
 - [ ] `NeedsBrowser` 能进入同一浏览会话
 - [ ] 任务鉴权快照：T1–T4 绿；UI/事件无 Cookie
 - [ ] 设置可清除浏览 Cookie

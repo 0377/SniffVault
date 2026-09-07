@@ -4,22 +4,27 @@
 
 **Goal:** 交付受控内置浏览、Cookie 注入解析、嗅探候选入队，以及任务级 Cookie/Referer 快照，使登录后的下载在重启后仍能带鉴权头完成。
 
-**Architecture:** 引擎先扩展 `DownloadTask` 鉴权列与 worker HTTP 头；Flutter 经 `EngineRepository` 入队时传入 `DownloadAuth`。浏览 UI 用 `webview_flutter`；`platforms/webview_sniff` 只把请求观察为 `HookRequest`，Dart 按规格映射 `SniffEvent` 后调用现有 `sniffUrls`。不在原生层写库或入队。
+**Architecture:** 引擎先扩展任务鉴权列与 worker HTTP 头。Flutter 用 `webview_flutter` 的 `NavigationDelegate` + 注入脚本观察 `HookRequest`，Dart 映射 `SniffEvent`。`platforms/webview_sniff` 只做 Cookie 仓读写与 Android `isTelevision`。C ABI 与 Dart `EngineHost` 必须同一提交更新。
 
 **Tech Stack:** 现有 Rust engine / JSON FFI / Cargokit、flutter_riverpod、go_router、webview_flutter、新建 path 插件 `platforms/webview_sniff`
 
 **规格:** `docs/superpowers/specs/2026-09-07-webview-sniff-design.md`
 
+**修订:** 2026-09-07 plan review（钩子策略 B、生产 TV 检测、生产 Cookie 导出、FFI Dart 同提交、T1/U6 门禁边界）
+
 ## Global Constraints
 
 - 产品：受控 WebView，**不是**片源导航浏览器；无站点目录、无官方收藏夹、无 Share / LAN / TV Leanback / 系统抓包 / DRM 绕过
+- 嗅探策略 **B**：四端 `NavigationDelegate` + 注入脚本，覆盖为「中」；**禁止** `shouldInterceptRequest` 与遍历 PlatformView 找 WebView
 - 导航顺序固定：**片库 | 浏览 | 任务 | 添加 | 设置**；窄屏 `NavigationBar`，宽屏 `NavigationRail`（断点 `kAppShellBreakpoint == 600`）
 - Feature 禁止 `EngineHost.open()`；写任务/片库必须经 `Engine`
 - Cookie：**不得**出现在 `list_tasks` / `task_updated` JSON、路由 query、SnackBar、日志全文；调试日志只打 host + initiator
-- 浏览 Cookie 仓 = 平台 `CookieManager`；引擎只存 **入队瞬间** `cookie_header` / `referer` 快照
-- `engine_enqueue_single` 增加最后可选 `opts_json`；`engine_enqueue_episodes` 把 `cookies`/`referer` 并入现有 JSON
-- Android TV（`isTelevisionProvider == true`）：无浏览 tab；`NeedsBrowser` 无「打开内置浏览」；`/browse` 仅说明页
-- iOS/macOS 嗅探允许弱于 Android/Windows；**解析本页闭环必须通**
+- FFI JSON / `DownloadAuth` 字段名 **`cookies`**；SQLite / `DownloadTask` 字段名 **`cookie_header`**
+- 浏览 Cookie 仓 = 平台 CookieManager（插件 `cookieHeaderFor` / `clearCookies`）；引擎只存入队瞬间快照
+- 生产 `isTelevision` 必须走 Android `UI_MODE_TYPE_TELEVISION` Channel；测试可 override，**默认实现不得写死 false 并跳过 Channel**
+- `engine_enqueue_single` 增加 `opts_json` 的提交 **必须同时** 改 Dart `native_bindings` / `EngineHost`
+- 进度更新禁止整行 `upsert` 任务（以免鉴权列被覆盖成 NULL）
+- U6 门禁 = 解析本页 + 真引擎；U7 嗅探非门禁
 - `docs/` 在 `.gitignore`；计划/规格用 `git add -f`
 - 验证：
   ```bash
@@ -45,10 +50,11 @@
 | `engine/ffi/src/sync_dispatch.rs` | enqueue FFI |
 | `engine/tests/task_store.rs` | 重启持久化 |
 | `engine/tests/types_serde.rs` | T2 脱敏 |
-| `engine/tests/download_integration.rs` | T1/T3 worker 带头 |
-| `engine/tests/engine_facade.rs`（或新建 `engine/tests/enqueue_auth.rs`） | T4 |
+| `engine/tests/download_integration.rs` | T1 入队后下载带头（Task 3 起） |
+| `engine/tests/enqueue_auth.rs` | T4 入队鉴权与回滚 |
 | `app/lib/engine/models/download_auth.dart` | Dart `DownloadAuth` |
-| `app/lib/engine/native_bindings.dart` / `engine_host.dart` | FFI 入队 + `sniffUrls` 已有则接到 repository |
+| `app/lib/engine/native_bindings.dart` / `engine_host.dart` | **与 FFI 同提交** 增加 opts_json |
+| `platforms/webview_sniff/` | Cookie 仓 + `isTelevision` |
 | `app/lib/providers/engine_repository.dart` | `sniffUrls`、`enqueue*` + `DownloadAuth?` |
 | `app/lib/features/browse/browse_url.dart` | 地址栏校验 |
 | `app/lib/features/browse/hook_to_sniff.dart` | Hook → `SniffEvent` |
@@ -58,11 +64,12 @@
 | `app/lib/features/browse/browse_screen.dart` | WebView + 解析本页 |
 | `app/lib/features/browse/browse_unavailable_screen.dart` | TV 说明 |
 | `app/lib/providers/browse_resolve_provider.dart` | 向导入参（outcome + auth） |
+| `app/lib/providers/browse_session.dart` | 解析本页 / 嗅探 debounce（无 WebView） |
+| `app/lib/features/browse/cookie_store.dart` | CookieExporter + 清除 |
 | `app/lib/providers/device_profile.dart` | `isTelevisionProvider` |
 | `app/lib/shell/app_shell.dart` / `router.dart` | 五栏 + `/browse` + `/browse/wizard` |
 | `app/lib/features/add/resolve_wizard.dart` | NeedsBrowser CTA |
 | `app/lib/features/settings/settings_screen.dart` | 清除浏览 Cookie |
-| `platforms/webview_sniff/` | 四端请求观察插件 |
 | `app/pubspec.yaml` | `webview_flutter` + path 插件 |
 | `README.md` / `platforms/README.md` | 使用说明 |
 | `app/test/` | W3'、W5–W9 |
@@ -207,14 +214,9 @@ ALTER TABLE download_tasks ADD COLUMN referer TEXT;
         let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
         if version < 3 {
             let tx = conn.unchecked_transaction()?;
-            for stmt in [
-                "ALTER TABLE download_tasks ADD COLUMN cookie_header TEXT;",
-                "ALTER TABLE download_tasks ADD COLUMN referer TEXT;",
-            ] {
-                if let Err(e) = tx.execute(stmt, []) {
-                    if !e.to_string().contains("duplicate column name") {
-                        return Err(EngineError::Db(e));
-                    }
+            if let Err(e) = tx.execute_batch(TASK_MIGRATION_V3) {
+                if !e.to_string().contains("duplicate column name") {
+                    return Err(EngineError::Db(e));
                 }
             }
             tx.execute("PRAGMA user_version = 3", [])?;
@@ -223,9 +225,11 @@ ALTER TABLE download_tasks ADD COLUMN referer TEXT;
         Ok(())
 ```
 
+SQLite 多句 `ALTER` 的 `execute_batch` 若第一条成功第二条 duplicate，需按句执行并忽略 duplicate（与现网 V2 相同策略）。**只使用** `TASK_MIGRATION_V3` 常量作为语句来源，不要另写一份列名。
+
 `row_to_task`：SELECT 在 `updated_at_ms` 后加 `cookie_header, referer`（下标 15、16）。**所有** `SELECT id, parent_id, ... updated_at_ms FROM download_tasks` 必须同步加这两列（`get` / `list_all` / `list_children` / `list_runnable_tasks`）。
 
-`upsert_conn` INSERT/UPDATE 增加 `cookie_header, referer` 绑定 `task.cookie_header`、`task.referer`。
+`upsert_conn` INSERT/UPDATE 增加 `cookie_header, referer`。`update_progress` / checkpoint / `set_task_status` **保持列更新**，禁止改成整行 `upsert`。
 
 给每个 `DownloadTask {` 字面量补：
 
@@ -303,85 +307,9 @@ EOF
     }
 ```
 
-在 `engine/tests/download_integration.rs` 追加 T1（fixture 要求 Cookie 否则 403）：
+在 `engine/src/download/http.rs` 测试模块追加（复用文件内 `spawn_server`）。**本任务不要**写 `mp4_download_sends_enqueued_cookie`（双 `TaskStore` 竞态）；T1 集成放到 Task 3，用 `enqueue_single(..., Some(&auth))`。
 
-```rust
-#[test]
-fn mp4_download_sends_enqueued_cookie() {
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(async {
-        // 本测试在 Task 3 接上 enqueue auth 后才会绿；若本任务尚未改 enqueue，
-        // 先用 TaskStore 直接 upsert 带 cookie_header 的任务再 start_downloads。
-        let mut fx = EngineFixture::open();
-        let (addr, _guard) = serve_cookie_mp4().await;
-        let url = format!("http://{addr}/secret.mp4");
-        let store = TaskStore::open(&fx.data_dir().join("tasks.db")).unwrap();
-        let mut task = store
-            .get(
-                // 先 enqueue_single 无 auth 得到 id，再 upsert 补 cookie
-                &{
-                    fx.engine.enqueue_single("authed", &url, None).unwrap()
-                },
-            )
-            .unwrap();
-        task.cookie_header = Some("sid=ok".into());
-        task.referer = Some(format!("http://{addr}/page"));
-        store.upsert(&task).unwrap();
-        fx.engine.start_downloads().unwrap();
-        wait_for_task(&fx.engine, &task.id, TaskStatus::Completed, Duration::from_secs(30)).await;
-    });
-}
-```
-
-**不要**在 Step 1 依赖尚未存在的 `enqueue_single(..., Some(auth))`。T3：无 cookie 的公开 `sample.mp4` 既有 `mp4_download_registers` 必须保持绿色。
-
-在 `engine/tests/download_integration.rs` 增加：
-
-```rust
-async fn serve_cookie_mp4() -> (std::net::SocketAddr, fixture_server::ServerGuard) {
-    use axum::{
-        body::Body,
-        http::{header, HeaderMap, StatusCode},
-        response::Response,
-        routing::get,
-        Router,
-    };
-    use tokio::net::TcpListener;
-
-    let bytes = std::fs::read(fixture_server::fixtures_dir().join("sample.mp4")).unwrap();
-    let router = Router::new().route(
-        "/secret.mp4",
-        get(move |headers: HeaderMap| {
-            let bytes = bytes.clone();
-            async move {
-                let ok = headers
-                    .get(header::COOKIE)
-                    .and_then(|v| v.to_str().ok())
-                    .is_some_and(|v| v.contains("sid=ok"));
-                if !ok {
-                    return Response::builder()
-                        .status(StatusCode::FORBIDDEN)
-                        .body(Body::empty())
-                        .unwrap();
-                }
-                Response::builder()
-                    .status(StatusCode::OK)
-                    .header(header::CONTENT_TYPE, "video/mp4")
-                    .body(Body::from(bytes))
-                    .unwrap()
-            }
-        }),
-    );
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let handle = tokio::spawn(async move {
-        axum::serve(listener, router).await.unwrap();
-    });
-    (addr, fixture_server::ServerGuard(handle))
-}
-```
-
-若 `ServerGuard` 的内部 `JoinHandle` 为私有，把该函数放到 `engine/tests/support/fixture_server.rs` 并公开构造。无 Cookie 的 `mp4_download_registers` 必须保持绿色（T3）。
+T3：无 cookie 的既有 `mp4_download_registers` 必须保持绿色。
 
 - [ ] **Step 2: 运行确认 HTTP 单测失败**
 
@@ -393,7 +321,7 @@ Expected: `with_auth` 未定义 或 断言失败。
 
 - [ ] **Step 3: 实现 `HttpClient` 鉴权并让 worker 使用**
 
-`HttpClient` 增加字段 `cookies: Option<String>`、`referer: Option<String>`，`new` 里置 `None`。
+`HttpClient` 增加字段 `cookies: Option<String>`、`referer: Option<String>`。`new` 的 `Ok(Self { ... })` **必须**同时初始化这两字段为 `None`（以及现有 `client`/`cancel`）。
 
 ```rust
     pub fn with_auth(mut self, cookies: Option<String>, referer: Option<String>) -> Self {
@@ -434,7 +362,7 @@ Expected: `with_auth` 未定义 或 断言失败。
 cargo test --manifest-path engine/Cargo.toml --workspace
 ```
 
-Expected: PASS，含 `get_stream_sends_client_auth`、`mp4_download_sends_enqueued_cookie`、`mp4_download_registers`。
+Expected: PASS，含 `get_stream_sends_client_auth`、`get_stream_without_auth_sends_no_cookie`、`mp4_download_registers`。不含入队鉴权集成测试（Task 3）。
 
 - [ ] **Step 5: Commit**
 
@@ -449,23 +377,21 @@ EOF
 
 ---
 
-### Task 3: enqueue API + FFI（T4 + 接上入队鉴权）
+### Task 3: enqueue API + FFI + Dart EngineHost（T1 / T4）
 
 **Files:**
 - Modify: `engine/src/engine.rs`
+- Modify: `engine/src/tasks/store.rs`（`upsert_parent_with_children` 在父任务写入后校验子任务 `id` 非空，失败不 commit）
 - Modify: `engine/ffi/src/sync_dispatch.rs`
-- Modify: `engine/ffi/tests/sync_tasks_test.rs`、`engine/ffi/tests/start_downloads_prepare_test.rs`（`engine_enqueue_single` 多一个 `ptr::null()`）
-- Modify: 所有 `enqueue_single(` / `enqueue_episodes(` Rust 调用点加 `None` auth
-- Test: `engine/tests/enqueue_auth.rs`（新建）
+- Modify: `engine/ffi/tests/sync_tasks_test.rs`、`engine/ffi/tests/start_downloads_prepare_test.rs`
+- Modify: `engine/tests/engine_facade.rs`、`engine/tests/download_integration.rs`、`engine/tests/task_events.rs` 以及所有 `enqueue_single(` / `enqueue_episodes(`
+- Modify: `app/lib/engine/native_bindings.dart`、`app/lib/engine/engine_host.dart`、`app/integration_test/engine_smoke_test.dart`（`enqueueSingle` 增加可选 `auth`，默认 null，C 侧多传 `nullptr`）
+- Create: `app/lib/engine/models/download_auth.dart`（供 EngineHost JSON；Repository 封装可留 Task 4）
+- Test: `engine/tests/enqueue_auth.rs`；`engine/tests/download_integration.rs` 的 T1；`engine/tests/task_store.rs` 回滚
 
 **Interfaces:**
 - Consumes: `DownloadAuth`
-- Produces:
-  ```rust
-  pub fn enqueue_single(&mut self, title: &str, url: &str, quality_label: Option<&str>, auth: Option<&DownloadAuth>) -> Result<String, EngineError>;
-  pub fn enqueue_episodes(&mut self, list_title: &str, season: Option<u32>, episodes: &[(u32, String, String)], quality_label: Option<&str>, auth: Option<&DownloadAuth>) -> Result<(String, Vec<String>), EngineError>;
-  ```
-  FFI：`engine_enqueue_single(..., opts_json: *const c_char)`；`EnqueueEpisodesArgs` 增加 `cookies`/`referer`
+- Produces: 见原 `enqueue_single` / `enqueue_episodes` 五参数签名；FFI `opts_json`；Dart `EngineHost.enqueueSingle({DownloadAuth? auth})` 与 C 五指针 **同提交**
 
 - [ ] **Step 1: 写失败测试 `engine/tests/enqueue_auth.rs`**
 
@@ -526,9 +452,49 @@ fn enqueue_episodes_empty_writes_nothing() {
         .is_err());
     assert!(engine.list_tasks().unwrap().is_empty());
 }
+
+#[test]
+fn upsert_parent_rolls_back_when_child_id_empty() {
+    let dir = tempdir().unwrap();
+    let store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();
+    let parent = sample_task("p"); // 与 task_store::sample 相同形状，Queued，cookie 可 None
+    let mut child = sample_task("c1");
+    child.parent_id = Some("p".into());
+    child.id.clear();
+    assert!(store.upsert_parent_with_children(&parent, &[child]).is_err());
+    assert!(store.get("p").is_err());
+}
 ```
 
-FFI 测试（可放同文件或 `engine/ffi/tests`）：`engine_list_tasks` 返回 JSON `data` 数组元素 **不含** `sid=ok` 字符串。
+`sample_task` 可复用 `task_store.rs` 的 `sample`（测试可见性：把 `sample` 留在 `task_store.rs` 并在本文件复制最小字面量，禁止依赖未导出私有函数）。
+
+在 `engine/tests/support/fixture_server.rs` **新增** `serve_cookie_mp4() -> (SocketAddr, ServerGuard)`（在**该模块内**构造 `ServerGuard`，测试 crate 不要用 `ServerGuard(handle)`）。`GET /secret.mp4`：Cookie 含 `sid=ok` 则返回 `sample.mp4` 字节，否则 403。
+
+`engine/tests/download_integration.rs`：
+
+```rust
+#[test]
+fn mp4_download_sends_enqueued_cookie() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let mut fx = EngineFixture::open();
+        let (addr, _guard) = fixture_server::serve_cookie_mp4().await;
+        let url = format!("http://{addr}/secret.mp4");
+        let auth = DownloadAuth {
+            cookies: Some("sid=ok".into()),
+            referer: Some(format!("http://{addr}/page")),
+        };
+        let id = fx
+            .engine
+            .enqueue_single("authed", &url, None, Some(&auth))
+            .unwrap();
+        fx.engine.start_downloads().unwrap();
+        wait_for_task(&fx.engine, &id, TaskStatus::Completed, Duration::from_secs(30)).await;
+    });
+}
+```
+
+FFI：`engine_enqueue_single` 带 auth 入队后 `engine_list_tasks` JSON **不含** `sid=ok`。
 
 - [ ] **Step 2: 运行确认失败**
 
@@ -547,7 +513,34 @@ Expected: 参数个数不匹配。
         referer: auth.and_then(|a| a.referer.clone()),
 ```
 
-父任务与子任务使用 **同一** `auth` 克隆。继续走 `upsert_parent_with_children` 单事务。
+父任务与子任务使用 **同一** `auth` 克隆。`upsert_parent_with_children`：
+
+```rust
+        Self::upsert_conn(&tx, parent)?;
+        for child in children {
+            if child.id.is_empty() {
+                return Err(EngineError::InvalidArg("task id must not be empty".into()));
+            }
+            Self::upsert_conn(&tx, child)?;
+        }
+        tx.commit()?;
+```
+
+空 `id` 必须在 **父任务 upsert 之后** 检查，以便 T4 回滚测试有效。
+
+Dart **本任务同步**：
+
+```dart
+typedef EngineEnqueueSingleNative = Pointer<Char> Function(
+  Pointer<Void> handle,
+  Pointer<Utf8> title,
+  Pointer<Utf8> url,
+  Pointer<Utf8> qualityLabel,
+  Pointer<Utf8> optsJson,
+);
+```
+
+`EngineHost.enqueueSingle` / `enqueueEpisodes` 增加 `DownloadAuth? auth`，`null` → 不传 cookies 键 / `opts_json` 为 `nullptr`。`engine_smoke_test` 不传 auth。
 
 `sync_dispatch.rs`：
 
@@ -574,38 +567,24 @@ fn parse_enqueue_auth(opts_json: *const c_char) -> Result<Option<DownloadAuth>, 
 
 `EnqueueEpisodesArgs` 增加 `#[serde(default)] cookies: Option<String>`、`referer: Option<String>`，拼成 `DownloadAuth` 传入 `enqueue_episodes`。
 
-把旧调用点第四个/第五个参数补 `None`。FFI 测试调用增加 `std::ptr::null()`。
+把 Rust 旧调用点补 `None`（**包括** `engine/tests/engine_facade.rs`）。FFI 测试增加 `std::ptr::null()` 作为 `opts_json`。
 
-将 Task 2 的 `mp4_download_sends_enqueued_cookie` 改为直接：
+T1 使用 `enqueue_single(..., Some(&auth))`，不要第二套 `TaskStore` upsert。
 
-```rust
-        let auth = DownloadAuth {
-            cookies: Some("sid=ok".into()),
-            referer: Some(format!("http://{addr}/page")),
-        };
-        let id = fx
-            .engine
-            .enqueue_single("authed", &url, None, Some(&auth))
-            .unwrap();
-```
-
-删除「先无 auth enqueue 再 TaskStore upsert」的过渡写法。
-
-- [ ] **Step 4: 跑 workspace 测试**
+- [ ] **Step 4: 跑 workspace 测试 + `cd app && flutter test`**（Dart FFI 签名已改，未加载原生库的 widget 测试应仍绿）
 
 ```bash
 cargo test --manifest-path engine/Cargo.toml --workspace
 cargo clippy --manifest-path engine/Cargo.toml --all-targets --all-features -- -D warnings
+cd app && flutter test
 ```
 
-Expected: PASS，clippy 无警告。
-
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Commit**（**同一 commit** 含 engine FFI 与 `app/lib/engine/native_bindings.dart` `engine_host.dart` `download_auth.dart`）
 
 ```bash
-git add engine
+git add engine app/lib/engine app/integration_test/engine_smoke_test.dart
 git commit -m "$(cat <<'EOF'
-feat(engine): 入队 API 与 FFI 接受可选下载鉴权
+feat(engine): 入队鉴权快照并同步 Dart FFI 签名
 
 EOF
 )"
@@ -613,34 +592,21 @@ EOF
 
 ---
 
-### Task 4: Dart FFI、Repository、Fake
+### Task 4: EngineRepository、Fake、向导回调
 
 **Files:**
-- Create: `app/lib/engine/models/download_auth.dart`
-- Modify: `app/lib/engine/native_bindings.dart`
-- Modify: `app/lib/engine/engine_host.dart`
 - Modify: `app/lib/providers/engine_repository.dart`
 - Modify: `app/test/fakes/fake_engine_repository.dart`
-- Modify: 所有调用 `enqueueSingle` / `enqueueEpisodes` 的 Dart（添加页回调签名）
+- Modify: `app/lib/features/add/resolve_wizard.dart` typedef（可选 `DownloadAuth? auth`）
+- Test: `app/test/engine_repository_auth_test.dart`
 
 **Interfaces:**
-- Produces:
-  ```dart
-  class DownloadAuth {
-    const DownloadAuth({this.cookies, this.referer});
-    final String? cookies;
-    final String? referer;
-    Map<String, dynamic> toJson() => {
-      if (cookies != null) 'cookies': cookies,
-      if (referer != null) 'referer': referer,
-    };
-  }
-  ```
-  ```dart
-  String enqueueSingle({required String title, required String url, String? qualityLabel, DownloadAuth? auth});
-  EnqueueEpisodesResult enqueueEpisodes({..., DownloadAuth? auth});
-  List<ResourceCandidate> sniffUrls(List<SniffEvent> events, {String? pageUrl});
-  ```
+- Consumes: Task 3 的 `EngineHost.enqueueSingle(..., auth:)` 与已有 `sniffUrls`
+- Produces: `EngineRepository` 上 `sniffUrls`、`enqueue*` 的 `DownloadAuth?`；Fake `lastEnqueueAuth` / `lastResolveOpts`
+
+Dart `DownloadAuth` 已在 Task 3 创建则本任务只引用，勿重复定义。
+
+**不要**再改 `native_bindings` C 签名（已在 Task 3）。
 
 - [ ] **Step 1: 扩展 Fake 并写一个纯 Dart 测试**
 
@@ -664,39 +630,17 @@ void main() {
 
 Expected: FAIL（无 `auth` 参数 / 无 `lastEnqueueAuth`）。
 
-- [ ] **Step 3: 实现绑定**
+- [ ] **Step 3: 实现 Repository / Fake / typedef**
 
-`EngineEnqueueSingleNative` 增加第 5 个 `Pointer<Utf8> optsJson`（可为 nullptr）。
+`EngineHostRepository.enqueueSingle` 把 `auth` 传给 Task 3 的 `EngineHost`。`sniffUrls` 转调已有 `EngineHost.sniffUrls`。
 
-`EngineHost.enqueueSingle`：`auth == null` 传 nullptr，否则 `jsonEncode(auth.toJson()).toNativeUtf8()` 并 `malloc.free`。
+`ResolveWizard` typedef 增加可选 `DownloadAuth? auth`。**添加页不传 auth**。
 
-`enqueueEpisodes` 现有 args map 增加：
+Fake：`lastEnqueueAuth`；`sniffUrls` 默认 `const []`。
 
-```dart
-    if (auth?.cookies != null) 'cookies': auth!.cookies,
-    if (auth?.referer != null) 'referer': auth!.referer,
-```
+- [ ] **Step 4: `cd app && flutter test`** PASS
 
-`EngineRepository` / `EngineHostRepository`：`sniffUrls` 转调已有 `EngineHost.sniffUrls`。
-
-`ResolveWizard` 的 typedef 为 `enqueueSingle` / `enqueueEpisodes` 增加可选命名参数 `DownloadAuth? auth`（默认 `null`）。**添加页不传 auth**。
-
-Fake：实现新方法；`lastEnqueueAuth`；`sniffUrls` 默认返回 `const []`，可在测试里赋值 `sniffResult`。
-
-- [ ] **Step 4: `cd app && flutter test`**
-
-Expected: 既有测试全绿 + 新测试 PASS。
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add app/lib app/test
-git commit -m "$(cat <<'EOF'
-feat(app): EngineRepository 支持嗅探与入队鉴权
-
-EOF
-)"
-```
+- [ ] **Step 5: Commit** `feat(app): EngineRepository 支持嗅探与入队鉴权`
 
 ---
 
@@ -759,32 +703,27 @@ Expected: FAIL。
 ### Task 6: 五栏 Shell、路由、TV 开关（W3'）
 
 **Files:**
-- Create: `app/lib/providers/device_profile.dart`
-- Modify: `app/lib/shell/app_shell.dart`
-- Modify: `app/lib/router.dart`
-- Create: `app/lib/features/browse/browse_unavailable_screen.dart`
-- Create: `app/lib/features/browse/browse_screen.dart`（本任务可先占位 Scaffold「浏览」，WebView 在 Task 9/11 接入）
-- Test: `app/test/app_shell_test.dart`
+- Create: `app/lib/platform/television.dart`（`Future<bool> detectIsTelevision()` → MethodChannel `webview_sniff/device` 方法 `isTelevision`；非 Android 直接 `false`）
+- Create: `app/lib/providers/device_profile.dart`（`isTelevisionProvider` 以 `detectIsTelevision` 为源；测试 override）
+- Modify: `platforms/webview_sniff` 或 `app/android/.../MainActivity.kt`：实现 Channel，`uiMode & UI_MODE_TYPE_MASK == UI_MODE_TYPE_TELEVISION`
+- Test: `app/test/app_shell_test.dart` **必须** `ProviderScope`；TV 用例 `overrideWithValue(true)`
 
 **Interfaces:**
-- Produces: `isTelevisionProvider = Provider<bool>((ref) => false);` 测试 override 为 `true`
-- Destinations 顺序文案：`片库`,`浏览`,`任务`,`添加`,`设置`
-- Branch 顺序与 destination **一致**
-- `/browse`、`/browse/wizard`（wizard 用 `parentNavigatorKey: _rootNavigatorKey`）
+- 生产路径：`isTelevisionProvider` **读取检测结果**，禁止 `Provider((ref) => false)` 作为唯一实现
+- Destinations：`片库`,`浏览`,`任务`,`添加`,`设置`
+- TV：无「浏览」destination；`/browse` → `BrowseUnavailableScreen`（无 WebView）
 
 - [ ] **Step 1: 改 `app_shell_test.dart`**
 
-五个 `StatefulShellBranch`（library, browse, tasks, add, settings）。断言 `find.text('浏览')`。再写一条：`ProviderScope(overrides: [isTelevisionProvider.overrideWithValue(true)])` 下 **找不到** 文案 `浏览`。
+五个 `StatefulShellBranch`。断言 `find.text('浏览')`。`ProviderScope(overrides: [isTelevisionProvider.overrideWith((ref) async => true)])`（若为 `FutureProvider`）或 `overrideWithValue(true)` 下找不到 `浏览`。
 
-若 AppShell 目前无 Riverpod，改为 `ConsumerWidget` 并 `ref.watch(isTelevisionProvider)`。
+若 AppShell 无 Riverpod，改为 `ConsumerWidget`。测试路由器与生产 `router.dart` 分支顺序一致。
 
 - [ ] **Step 2: `cd app && flutter test test/app_shell_test.dart`** → FAIL（仍四栏）
 
-- [ ] **Step 3: 实现五栏；TV 时 destinations 与 `goBranch` 索引去掉浏览（4 项：片库/任务/添加/设置），`/browse` 仍指向 `BrowseUnavailableScreen`（文案：`请在手机或电脑使用内置浏览`）**
+- [ ] **Step 3: 实现五栏 + 真实 `detectIsTelevision`。** 本任务创建最小 `platforms/webview_sniff`（可先只有 `isTelevision`）。占位 `BrowseScreen` 可无 WebView。`/browse/wizard` 用根 Navigator。
 
-占位 `BrowseScreen`：`Scaffold(appBar: AppBar(title: Text('浏览')), body: BrowseChrome(...))` 即可，WebView 用 `SizedBox.shrink()` 占位。
-
-`/browse/wizard`：读 `browseResolveProvider`，为 null 则 `pop`；否则嵌 `ResolveWizard`。本任务可用空 provider。
+Channel 未绑定时 Android 返回 `false`，不得 crash。测试用 override，不必 mock Channel。
 
 - [ ] **Step 4: `cd app && flutter test`** PASS
 
@@ -882,31 +821,29 @@ TV：`ref.watch(isTelevisionProvider)` 为 true 则不传 `onOpenBrowser`。
 - Modify: `app/lib/features/browse/browse_screen.dart`
 - Modify: `app/lib/router.dart` `/browse/wizard`
 - Modify: `app/lib/features/add/resolve_wizard.dart` 入队调用处传 `auth`
-- Test: `app/test/browse_resolve_test.dart`
+- Test: `app/test/browse_resolve_test.dart`（**禁止** pump 真实 `WebViewWidget`）
 
 **Interfaces:**
-- `browseResolveProvider`：`StateProvider<BrowseResolveArgs?>`  
-  `class BrowseResolveArgs { ResolveOutcome outcome; DownloadAuth auth; ResolveOptions resolveOpts; }`
 - `CookieExporter`：`Future<String?> cookieHeaderFor(Uri page)`
-- 解析本页：`page_url = referer = currentUrl`；`resolveUrl(currentUrl, opts)`；成功 `browseResolveProvider.notifier.state = args` 然后 `context.push('/browse/wizard')`
-- 向导入队：`enqueueSingle(..., auth: args.auth)`；HLS `resolveQualities(url, opts: args.resolveOpts)`
-- 添加页路径：auth 仍为 null（W9 后半）
+- 生产实现类名 `PluginCookieExporter`，内部调 `WebViewSniff.cookieHeaderFor`（插件可在 Task 10 落地；本任务测试只用 Fake）
+- W8：只测 `BrowseSession.resolveThisPage` / Notifier：给定 `currentUrl` + Fake exporter + Fake repo
 
-- [ ] **Step 1: W8/W9 widget 测试**
-
-使用 `ProviderScope(overrides: [engineRepositoryProvider.overrideWithValue(fake)])`。`BrowseScreen` 构造注入 `CookieExporter`（测试返回 `'sid=ok'`）和假 `WebView` 导航状态（`currentUrl` 设为 `http://x/page`）。点 `Key('browse_resolve_page')` 后：
+- [ ] **Step 1: W8/W9 不依赖 WebView**
 
 ```dart
-expect(fake.lastResolveOpts?.cookies, 'sid=ok');
+  test('W8 resolveThisPage passes cookies', () async {
+    final fake = FakeEngineRepository();
+    final session = BrowseSession(
+      repo: fake,
+      cookies: FakeCookieExporter('sid=ok'),
+    );
+    session.currentUrl = Uri.parse('http://x/page');
+    await session.resolveThisPage();
+    expect(fake.lastResolveOpts?.cookies, 'sid=ok');
+  });
 ```
 
-入队：让 fake `resolveUrl` 返回 Single mp4，向导点下载后：
-
-```dart
-expect(fake.lastEnqueueAuth?.cookies, 'sid=ok');
-```
-
-另写：直接泵 `AddScreen` 流程（可只调 fake.enqueueSingle 不经浏览）`lastEnqueueAuth == null`。若 Add 集成过重，则单测 `EngineHostRepository` 不强制；W9 用 Fake 在「模拟添加页回调」`enqueueSingle(auth: null)`。
+入队 W9：`session` 设置 outcome 后调用与向导相同的 `enqueueSingle(..., auth: session.auth)` 断言 `lastEnqueueAuth`。添加页：`enqueueSingle` 不传 auth。
 
 - [ ] **Step 2: 测试失败**
 
@@ -924,159 +861,125 @@ Wizard 页：`NeedsBrowser` **不**传 `onOpenBrowser`。
 
 ---
 
-### Task 10: 设置清除浏览 Cookie
+### Task 10: 插件 Cookie 仓 + 设置清除
 
 **Files:**
+- Modify: `platforms/webview_sniff/`（Task 6 已有 `isTelevision`）增加：
+  - `cookieHeaderFor(url: String) -> String?`（Android `CookieManager.getCookie`；iOS/macOS `WKHTTPCookieStore` 拼 `name=value; ...`；Windows WebView2 cookie manager）
+  - `clearCookies()`
+- Create: `app/lib/features/browse/cookie_store.dart`（`CookieExporter` + `BrowseCookieStore`；生产 `PluginCookieExporter`）
 - Modify: `app/lib/features/settings/settings_screen.dart`
-- Create: `app/lib/features/browse/cookie_store.dart`（对 `WebViewCookieManager.clearCookies` 的薄封装，测试可 fake）
 - Test: `app/test/settings_clear_cookies_test.dart`
 
 **Interfaces:**
-- `abstract class BrowseCookieStore { Future<void> clearAll(); }`
-- `browseCookieStoreProvider`
-- 按钮 `Key('settings_clear_browse_cookies')` 文案 **清除浏览 Cookie**；成功 SnackBar **已清除浏览 Cookie**
+- 按钮 `Key('settings_clear_browse_cookies')`；SnackBar **已清除浏览 Cookie**
 - **不**清任务库快照；无 Cookie 文本框
+- 钩子 payload 禁止带 Cookie
 
-- [ ] **Step 1: 测试 tap 后 fake.clearAll 被调用且 SnackBar 文案正确**
+- [ ] **Step 1: 设置页 tap 后 fake `clearAll` + SnackBar；另测 `cookieHeaderFrom` 拼接（已在 Task 5 则可复用）**
 
 - [ ] **Step 2: FAIL**
 
-- [ ] **Step 3: 实现**；生产实现调用 `WebViewCookieManager().clearCookies()`（依赖 Task 11 的 webview_flutter 时：若本任务先于插件，先提供 in-memory fake 生产实现，Task 11 再换成真实 CookieManager）
+- [ ] **Step 3: 插件四端实现 Cookie 读写。某端读不到时 `cookieHeaderFor` 返回 null，「解析本页」仍可调用 `resolveUrl`（opts.cookies 为空），不得抛未捕获异常。**
 
-- [ ] **Step 4: PASS**
+- [ ] **Step 4: PASS `cd app && flutter test`**
 
-- [ ] **Step 5: Commit** `feat(app): 设置页可清除浏览 Cookie`
+- [ ] **Step 5: Commit** `feat(app): 浏览 Cookie 导出与设置清除`
 
 ---
 
-### Task 11: webview_flutter + Android/iOS 钩子插件
+### Task 11: webview_flutter 浏览页 + 策略 B 嗅探（Android/iOS）
 
 **Files:**
-- Modify: `app/pubspec.yaml` 增加：
-  ```yaml
-    webview_flutter: ^4.10.0
-    webview_sniff:
-      path: ../platforms/webview_sniff
-  ```
-- Create: `platforms/webview_sniff/` 标准 Flutter 插件（Android + iOS；macOS/Windows 先 method 未实现返回空流）
-- Create: `platforms/webview_sniff/lib/webview_sniff.dart`
-- Modify: `app/lib/features/browse/browse_screen.dart` 接入 `WebViewWidget`
-- Test: `platforms/webview_sniff/test/hook_to_sniff_test.dart` 可省略（映射已在 app 测）；app 侧用 fake stream
+- Modify: `app/pubspec.yaml`：`webview_flutter: ^4.10.0`（若未加）
+- Modify: `app/lib/features/browse/browse_screen.dart`
+- Create: `app/lib/features/browse/sniff_script.dart`（注入脚本字符串，Dart 单测可断言包含 `fetch`）
+- Test: 不强制真实 WebView widget 测试
 
 **Interfaces:**
-- ```dart
-  class WebViewSniff {
-    static Stream<HookRequest> attach(WebViewController controller);
-  }
-  ```
-- Android：对 **同一** WebView `shouldInterceptRequest` 观察后原样放行（返回 `null` 让系统继续）。EventChannel 事件 JSON：`url`,`page_url`,`is_main_frame`,`mime`。**禁止**把 Cookie 头放进 payload。
-- iOS：`WKNavigationDelegate` + 注入脚本监听 `fetch`/`XHR`/`HTMLMediaElement.src`，同样 JSON。不保证 MSE。
-- UA：`EngineSettings.user_agent` 非空则 `controller.setUserAgent`
+- 使用 **同一** `WebViewController`：`NavigationDelegate`（主框架 → `HookRequest(isMainFrame: true)`）+ `runJavaScript` 注入 + `JavaScriptChannel`（子资源）
+- **禁止** `shouldInterceptRequest`、禁止搜 PlatformView 里的 `WebView`
+- UA：`settings.user_agent` 非空则 `setUserAgent`
+- 加载失败：页内错误 + 刷新；不崩溃
+- 「解析本页」走 `BrowseSession` + `PluginCookieExporter`
 
-- [ ] **Step 1: 用 `flutter create --template=plugin --platforms=android,ios,macos,windows platforms/webview_sniff` 后立刻改名为现有目录结构（若目录已存在则手写 `pubspec.yaml` `android/` `ios/`）**
-
-插件 `pubspec.yaml` `name: webview_sniff`。
-
-- [ ] **Step 2: Dart API + Android Kotlin 观察**
-
-Kotlin 伪实现要点：`FlutterPlugin` + `EventChannel("webview_sniff/events")`；`attach` 通过 `webview_flutter_android` 拿到 `WebView` 或 `WebViewClient` 包装。若官方 API 无法挂钩，使用 `WebViewCompat`/`WebViewClientCompat` 在 Activity 的 platform view 创建后查找 `WebView` 实例。
-
-iOS：`WKUserScript` atDocumentStart：
+注入脚本（`sniff_script.dart` 常量）：
 
 ```javascript
 (function() {
-  const post = (url) => {
-    try { webkit.messageHandlers.sniff.postMessage({url: String(url)}); } catch (e) {}
+  const post = (url, mime) => {
+    try {
+      SniffChannel.postMessage(JSON.stringify({url: String(url), mime: mime || '', is_main_frame: false}));
+    } catch (e) {}
   };
   const origFetch = window.fetch;
-  window.fetch = function() { try { post(arguments[0]); } catch (e) {} return origFetch.apply(this, arguments); };
+  window.fetch = function() { try { post(arguments[0], ''); } catch (e) {} return origFetch.apply(this, arguments); };
+  const origOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function(method, url) { try { post(url, ''); } catch (e) {} return origOpen.apply(this, arguments); };
 })();
 ```
 
-原生把 message 转 `HookRequest`（`is_main_frame: false`，mime 未知则空）。导航回调 `is_main_frame: true`。
+Channel 名与 `JavaScriptChannel` 注册名必须一致。`page_url` 由 Dart 填当前主框架 URL。
 
-- [ ] **Step 3: `BrowseScreen` `WebViewController` + `loadRequest`；订阅 `WebViewSniff.attach` → accumulator**
+- [ ] **Step 1: `sniff_script.dart` 含 `fetch` / `XMLHttpRequest` 的单测**
 
-加载失败：body 显示错误 + 刷新按钮，不崩溃。
+- [ ] **Step 2: FAIL 然后实现 BrowseScreen `WebViewWidget`**
 
-钩子未实现：列表空，「解析本页」仍可用。首次可用 `SnackBar` 一次：**本端嗅探能力有限**（用 `shared_preferences` 过重则 `static bool _hinted` 进程内一次即可）。
+- [ ] **Step 3: `cd app && flutter test`；能则 `flutter build apk --debug` 或 `flutter build ios --debug --no-codesign`（缺环境如实记录）**
 
-- [ ] **Step 4: `cd app && flutter test`；`cd app && flutter build apk --debug` 或至少 `flutter build ios --debug --no-codesign`（环境缺一则记录，不得伪称通过）**
-
-- [ ] **Step 5: Commit** `feat(app): 接入 WebView 与 Android/iOS 请求钩子`
+- [ ] **Step 4: Commit** `feat(app): 内置浏览 WebView 与脚本嗅探`
 
 ---
 
-### Task 12: macOS / Windows 钩子
+### Task 12: 桌面 WebView 同一套 Dart 观察
 
 **Files:**
-- Modify: `platforms/webview_sniff/macos/`
-- Modify: `platforms/webview_sniff/windows/`
-- `app/macos` / `app/windows` 插件登记（`flutter pub get` 生成文件可提交 **本插件相关** 行）
+- `app/macos` / `app/windows`：启用 `webview_flutter` 所需权限/Entitlements（若构建报错再补，不要无故改无关 plist）
+- 嗅探逻辑复用 Task 11 Dart，**不要**实现 WebView2 `WebResourceRequested`
 
-**Interfaces:** 与 Task 11 相同 `HookRequest` 流。Windows：WebView2 `WebResourceRequested` 只观察。macOS：同 iOS WK 脚本 + navigation delegate。
+- [ ] **Step 1: `flutter build macos --debug` 与/或 `flutter build windows --debug`（当前 OS 能编哪个编哪个）**
 
-- [ ] **Step 1: 为 Windows 写一个原生侧单元难以自动化时，在 Dart 增加 `HookRequest.fromJson` 测试（已有则跳过）；Windows 实现后用本地 `flutter run -d windows` 手工打开 `https://example.com` 确认无崩溃**
-
-- [ ] **Step 2: 实现两平台；未实现时 attach 返回 empty stream，不抛错**
+- [ ] **Step 2: 桌面 `NavigationDelegate` + 同一注入脚本；失败不崩溃；解析本页可用**
 
 - [ ] **Step 3: `cd app && flutter test`**
 
-- [ ] **Step 4: Commit** `feat(app): macOS/Windows WebView 嗅探钩子`
+- [ ] **Step 4: Commit** `feat(app): 桌面浏览使用同一套 NavigationDelegate 嗅探`
 
 ---
 
-### Task 13: U6 集成、文档、全量验证
+### Task 13: U6 门禁、U7 可选、文档
 
 **Files:**
-- Modify: `app/integration_test/ui_test.dart` 或新建 `app/integration_test/browse_test.dart`
+- Create: `app/integration_test/browse_test.dart`
 - Modify: `README.md`、`platforms/README.md`
-- 规格状态行可改为「已完成」仅在全部绿之后（本任务文档）
 
-**Interfaces:** U6：应用内浏览打开需 Cookie 的本地 HTML，点解析本页，得到非 `NeedsBrowser` **或** 明确 `Single`/`Candidates`（与 fixture 设计一致）。U7 可选：页面 `<video src=".../sample.mp4">`；macOS 钩不到则 skip，注释写明。
+**U6（必须绿）：** 本地 `HttpServer` 提供 HTML，内含 `http://127.0.0.1:port/clip.mp4`（与 U1 同源字节）。浏览加载 HTML → 点解析本页 → 向导出现「下载」。**不**要求嗅探列表有条目。
 
-- [ ] **Step 1: fixture HTTP**（可复用引擎 fixture 思路，在 Dart `HttpServer.bind`）：
+**U7（skip 合法）：** `<video src=".../clip.mp4">` 后候选出现；`markTestSkipped` 若 5s 内没有。
 
-  - `GET /gate` 无 Cookie → 200 HTML 无媒体
-  - `GET /gate` 有 `sid=ok` → 200 HTML 含 `http://127.0.0.1:port/clip.mp4` 或直接 mp4 链接
-  - 测试里无法方便种 WebView Cookie 时：先 `javascript` 禁止；改为 gate **不**需 Cookie、仅验证「解析本页」对本地 HTML 调 `resolveUrl` 且 fake 已被集成测试里的真引擎替代。
-
-  **U6 真引擎路径：** HTML 含直接 `http://127.0.0.1:port/sample.mp4`（与 Plan 5 U1 同源文件）。浏览 load 该 HTML → 解析本页 → 向导出现「下载」。Cookie fixture 作为加分：通过 `CookieManager.setCookie` 种 `sid=ok` 再解析需 Cookie 的页。
-
-- [ ] **Step 2: 本地运行**
+可选加分：种 Cookie 后再解析需 Cookie 页；失败不挡 U6。
 
 ```bash
 cd app && flutter test integration_test/browse_test.dart -d macos
 ```
 
-CI 无 GUI 不稳定则与 U3 一样提供 `INTEGRATION_SKIP_BROWSE`；**默认文档要求本地 U6 绿**。
+CI 可用 `INTEGRATION_SKIP_BROWSE`；文档写明本地应交 U6。
 
-- [ ] **Step 3: README** 主流程增加：添加失败 `NeedsBrowser` → 浏览登录 → 解析本页 / 候选。`platforms/README.md` 改为指向 `webview_sniff` 插件，并写明 Share 仍未实现。
+README：NeedsBrowser → 浏览 → 解析本页。`platforms/README.md`：插件职责为 Cookie + `isTelevision`，Share 未做。
 
-- [ ] **Step 4: 全量**
-
-```bash
-cargo fmt --manifest-path engine/Cargo.toml --all -- --check
-cargo test --manifest-path engine/Cargo.toml --workspace
-cargo clippy --manifest-path engine/Cargo.toml --all-targets --all-features -- -D warnings
-cd app && flutter test
-```
-
-Expected: 全部 PASS。
-
-- [ ] **Step 5: Commit** `docs: 补充 Plan 6a 浏览主路径与 U6 集成测试`
+全量 fmt / test / clippy / `flutter test`。Commit：`docs: 补充 Plan 6a 浏览主路径与 U6`
 
 ---
 
 ## 任务依赖
 
 ```
-1 schema/脱敏 → 2 worker HTTP → 3 enqueue/FFI → 4 Dart repository
-4 → 5 chrome → 6 shell → 7 NeedsBrowser
-4 → 8 sniff UI
-6 + 8 + 7 → 9 resolve/enqueue UI
-9 → 10 settings（可与 11 并行）
-9 → 11 WebView Android/iOS → 12 desktop hooks → 13 U6/docs
+1 schema → 2 HTTP with_auth → 3 enqueue+FFI+Dart Host → 4 Repository
+4 → 5 chrome → 6 shell+isTelevision → 7 NeedsBrowser
+4 → 8 sniff 映射 UI
+6+7+8 → 9 BrowseSession
+6 → 10 Cookie 插件 + 设置
+9+10 → 11 WebView+脚本（Android/iOS）→ 12 桌面同一套 → 13 U6
 ```
 
 ---
@@ -1085,16 +988,14 @@ Expected: 全部 PASS。
 
 | 规格 | 任务 |
 |------|------|
-| 五栏浏览、TV 隐藏 | 6 |
-| 地址栏 http(s)、拒绝 javascript/file/data | 5 W6 |
-| NeedsBrowser CTA | 7 W5 |
-| 解析本页 Cookie/Referer/page_url | 9 W8 |
-| 向导 Riverpod 不传 Cookie query | 9 |
-| 嗅探 500/300ms/顶层清空 | 8+9 |
-| 任务快照 + JSON 脱敏 | 1 T2 |
-| worker 带头、无 auth 旧行为 | 2 T1/T3 |
-| enqueue FFI / episodes JSON | 3 T4 |
-| 清除浏览 Cookie | 10 |
-| 四端钩子、不改 body、无 Cookie payload | 11–12 |
-| U6、README | 13 |
-| 无 Share/LAN/TV 浏览/抓包 | Global Constraints |
+| 五栏、生产 TV 检测 | 6 |
+| 地址栏校验 | 5 W6 |
+| NeedsBrowser CTA | 7 |
+| 解析本页 + 生产 Cookie 导出接口 | 9 + 10 W8 |
+| HookRequest → SniffEvent | 8 |
+| 策略 B NavigationDelegate+脚本 | 11–12 |
+| 任务快照脱敏 / worker 头 / FFI 同提交 | 1–3 |
+| T4 回滚 | 3 |
+| 清除 Cookie | 10 |
+| U6 门禁 / U7 非门禁 | 13 |
+
