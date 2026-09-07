@@ -4,9 +4,17 @@ abstract class CookieExporter {
   Future<String?> cookieHeaderFor(Uri page);
 }
 
-class PluginCookieExporter implements CookieExporter {
+abstract class BrowseCookieStore {
+  Future<void> clearAll();
+}
+
+class PluginCookieExporter implements CookieExporter, BrowseCookieStore {
   const PluginCookieExporter();
 
   @override
-  Future<String?> cookieHeaderFor(Uri page) => WebViewSniff.cookieHeaderFor(page);
+  Future<String?> cookieHeaderFor(Uri page) =>
+      WebViewSniff.cookieHeaderFor(page);
+
+  @override
+  Future<void> clearAll() => WebViewSniff.clearCookies();
 }

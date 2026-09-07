@@ -15,6 +15,10 @@ final cookieExporterProvider = Provider<CookieExporter>(
   (ref) => const PluginCookieExporter(),
 );
 
+final browseCookieStoreProvider = Provider<BrowseCookieStore>(
+  (ref) => const PluginCookieExporter(),
+);
+
 final browseSessionProvider = ChangeNotifierProvider<BrowseSession>((ref) {
   return BrowseSession(
     repo: ref.watch(engineRepositoryProvider),
@@ -23,10 +27,7 @@ final browseSessionProvider = ChangeNotifierProvider<BrowseSession>((ref) {
 });
 
 class BrowseSession extends ChangeNotifier {
-  BrowseSession({
-    required this.repo,
-    required this.cookies,
-  });
+  BrowseSession({required this.repo, required this.cookies});
 
   static const sniffDebounce = Duration(milliseconds: 300);
 

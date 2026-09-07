@@ -30,7 +30,10 @@ class _SniffRecordingRepo extends FakeEngineRepository {
   List<ResourceCandidate> sniffResult = const [];
 
   @override
-  List<ResourceCandidate> sniffUrls(List<SniffEvent> events, {String? pageUrl}) {
+  List<ResourceCandidate> sniffUrls(
+    List<SniffEvent> events, {
+    String? pageUrl,
+  }) {
     lastSniffEvents = List.of(events);
     lastSniffPageUrl = pageUrl;
     return sniffResult;
@@ -49,6 +52,18 @@ void main() {
     expect(fake.lastResolveOpts?.cookies, 'sid=ok');
   });
 
+  test('resolveThisPage with null cookies still calls resolveUrl', () async {
+    final fake = FakeEngineRepository();
+    final session = BrowseSession(
+      repo: fake,
+      cookies: FakeCookieExporter(null),
+    );
+    session.currentUrl = Uri.parse('http://x/page');
+    await session.resolveThisPage();
+    expect(fake.lastResolveOpts?.cookies, isNull);
+    expect(fake.lastResolveOpts?.referer, 'http://x/page');
+  });
+
   test('W9 browse enqueueSingle receives session auth', () async {
     final fake = FakeEngineRepository();
     final session = BrowseSession(
@@ -58,11 +73,7 @@ void main() {
     session.currentUrl = Uri.parse('http://x/page');
     await session.resolveThisPage();
 
-    fake.enqueueSingle(
-      title: 't',
-      url: 'http://x/v.mp4',
-      auth: session.auth,
-    );
+    fake.enqueueSingle(title: 't', url: 'http://x/v.mp4', auth: session.auth);
 
     expect(fake.lastEnqueueAuth?.cookies, 'sid=ok');
     expect(fake.lastEnqueueAuth?.referer, 'http://x/page');
@@ -132,10 +143,7 @@ void main() {
     );
     session.currentUrl = Uri.parse('http://x/page');
     session.onHookEvent(
-      const SniffEvent(
-        url: 'http://x/a.m3u8',
-        initiator: SniffInitiator.media,
-      ),
+      const SniffEvent(url: 'http://x/a.m3u8', initiator: SniffInitiator.media),
     );
 
     session.onTopLevelNavigation(Uri.parse('http://x/other'));
@@ -148,11 +156,7 @@ void main() {
   testWidgets('hook events debounce 300ms then sniffUrls', (tester) async {
     final fake = _SniffRecordingRepo();
     fake.sniffResult = const [
-      ResourceCandidate(
-        id: '1',
-        url: 'http://x/a.m3u8',
-        kind: MediaKind.hls,
-      ),
+      ResourceCandidate(id: '1', url: 'http://x/a.m3u8', kind: MediaKind.hls),
     ];
     final session = BrowseSession(
       repo: fake,
@@ -160,10 +164,7 @@ void main() {
     );
     session.currentUrl = Uri.parse('http://x/page');
     session.onHookEvent(
-      const SniffEvent(
-        url: 'http://x/a.m3u8',
-        initiator: SniffInitiator.media,
-      ),
+      const SniffEvent(url: 'http://x/a.m3u8', initiator: SniffInitiator.media),
     );
 
     await tester.pump(const Duration(milliseconds: 299));
