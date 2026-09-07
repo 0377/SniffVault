@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:video_sniffing/engine/engine_host.dart';
 import 'package:video_sniffing/features/add/resolve_wizard.dart';
+import 'package:video_sniffing/providers/device_profile.dart';
 import 'package:video_sniffing/providers/download_coordinator.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
 import 'package:video_sniffing/providers/settings_provider.dart';
@@ -40,6 +41,8 @@ class _AddScreenState extends ConsumerState<AddScreen> {
 
     setState(() => _errorMessage = null);
     final repo = ref.read(engineRepositoryProvider);
+    final isTelevision = await ref.read(isTelevisionProvider.future);
+    if (!mounted) return;
 
     try {
       final outcome = await LoadingOverlay.run(
@@ -59,6 +62,11 @@ class _AddScreenState extends ConsumerState<AddScreen> {
               resolveQualities: repo.resolveQualities,
               enqueueSingle: repo.enqueueSingle,
               enqueueEpisodes: repo.enqueueEpisodes,
+              onOpenBrowser: isTelevision
+                  ? null
+                  : () => context.go(
+                      '/browse?url=${Uri.encodeQueryComponent(url)}',
+                    ),
               onEnqueue: (_) async {
                 ref.read(downloadCoordinatorProvider).ensureDownloads();
                 if (!mounted) return;
@@ -83,6 +91,7 @@ class _AddScreenState extends ConsumerState<AddScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(isTelevisionProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('添加')),
       body: Padding(

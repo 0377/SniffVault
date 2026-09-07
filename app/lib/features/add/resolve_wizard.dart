@@ -29,6 +29,7 @@ class ResolveWizard extends StatefulWidget {
     this.enqueueSingle,
     this.enqueueEpisodes,
     this.defaultQualityLabel,
+    this.onOpenBrowser,
   });
 
   final ResolveOutcome outcome;
@@ -37,6 +38,7 @@ class ResolveWizard extends StatefulWidget {
   final EnqueueSingleCallback? enqueueSingle;
   final EnqueueEpisodesCallback? enqueueEpisodes;
   final String? defaultQualityLabel;
+  final VoidCallback? onOpenBrowser;
 
   @override
   State<ResolveWizard> createState() => _ResolveWizardState();
@@ -281,12 +283,13 @@ class _ResolveWizardState extends State<ResolveWizard> {
   }
 
   Widget _buildNeedsBrowser(BuildContext context, String reason) {
+    final onOpenBrowser = widget.onOpenBrowser;
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('此站点需登录浏览，内置浏览器将在后续版本支持'),
+          const Text('此站点需要在内置浏览中打开并登录后再解析。'),
           if (reason.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
@@ -295,6 +298,13 @@ class _ResolveWizardState extends State<ResolveWizard> {
             ),
           ],
           const Spacer(),
+          if (onOpenBrowser != null) ...[
+            FilledButton(
+              onPressed: onOpenBrowser,
+              child: const Text('打开内置浏览'),
+            ),
+            const SizedBox(height: 8),
+          ],
           FilledButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('返回'),

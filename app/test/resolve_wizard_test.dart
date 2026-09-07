@@ -57,6 +57,25 @@ void main() {
     await tester.pumpWidget(
       _wrap(const ResolveOutcomeNeedsBrowser(reason: 'auth_required')),
     );
-    expect(find.textContaining('内置浏览器'), findsOneWidget);
+    expect(find.textContaining('需要在内置浏览中打开'), findsOneWidget);
+    expect(find.text('打开内置浏览'), findsNothing);
+    expect(find.text('返回'), findsOneWidget);
+  });
+
+  testWidgets('W5 open browse button when callback set', (tester) async {
+    var opened = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ResolveWizard(
+            outcome: const ResolveOutcomeNeedsBrowser(reason: 'auth_required'),
+            onEnqueue: (_) async {},
+            onOpenBrowser: () => opened = true,
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('打开内置浏览'));
+    expect(opened, isTrue);
   });
 }
