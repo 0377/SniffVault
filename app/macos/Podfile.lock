@@ -12,6 +12,11 @@ PODS:
     - FlutterMacOS
   - wakelock_plus (0.0.1):
     - FlutterMacOS
+  - webview_flutter_wkwebview (0.0.1):
+    - Flutter
+    - FlutterMacOS
+  - webview_sniff (0.0.1):
+    - FlutterMacOS
 
 DEPENDENCIES:
   - FlutterMacOS (from `Flutter/ephemeral`)
@@ -21,6 +26,8 @@ DEPENDENCIES:
   - rust_lib_video_sniffing (from `Flutter/ephemeral/.symlinks/plugins/rust_lib_video_sniffing/macos`)
   - volume_controller (from `Flutter/ephemeral/.symlinks/plugins/volume_controller/macos`)
   - wakelock_plus (from `Flutter/ephemeral/.symlinks/plugins/wakelock_plus/macos`)
+  - webview_flutter_wkwebview (from `Flutter/ephemeral/.symlinks/plugins/webview_flutter_wkwebview/darwin`)
+  - webview_sniff (from `Flutter/ephemeral/.symlinks/plugins/webview_sniff/macos`)
 
 EXTERNAL SOURCES:
   FlutterMacOS:
@@ -37,6 +44,10 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral/.symlinks/plugins/volume_controller/macos
   wakelock_plus:
     :path: Flutter/ephemeral/.symlinks/plugins/wakelock_plus/macos
+  webview_flutter_wkwebview:
+    :path: Flutter/ephemeral/.symlinks/plugins/webview_flutter_wkwebview/darwin
+  webview_sniff:
+    :path: Flutter/ephemeral/.symlinks/plugins/webview_sniff/macos
 
 SPEC CHECKSUMS:
   FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
@@ -46,6 +57,8 @@ SPEC CHECKSUMS:
   rust_lib_video_sniffing: 4a5a9534217fd1ee955ac6a8169b86b6bfebada0
   volume_controller: 5c068e6d085c80dadd33fc2c918d2114b775b3dd
   wakelock_plus: 917609be14d812ddd9e9528876538b2263aaa03b
+  webview_flutter_wkwebview: 8ebf4fded22593026f7dbff1fbff31ea98573c8d
+  webview_sniff: ebdf64608a44677c956dae90fa6d6cdba979d78b
 
 PODFILE CHECKSUM: 54d867c82ac51cbd61b565781b9fada492027009
 
