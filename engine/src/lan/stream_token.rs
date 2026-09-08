@@ -24,21 +24,25 @@ impl StreamTokenStore {
         }
     }
 
-    pub fn issue(&mut self, episode_id: &str, now_secs: i64) -> String {
+    pub fn register(&mut self, token: &str, episode_id: &str, now_secs: i64) {
         if let Some(old) = self.by_episode.remove(episode_id) {
             self.by_token.remove(&old);
         }
-        let token = Uuid::new_v4().to_string();
         let expires_at_secs = now_secs + LAN_STREAM_TOKEN_TTL_SECS;
         self.by_token.insert(
-            token.clone(),
+            token.to_string(),
             TokenRecord {
                 episode_id: episode_id.to_string(),
                 expires_at_secs,
             },
         );
         self.by_episode
-            .insert(episode_id.to_string(), token.clone());
+            .insert(episode_id.to_string(), token.to_string());
+    }
+
+    pub fn issue(&mut self, episode_id: &str, now_secs: i64) -> String {
+        let token = Uuid::new_v4().to_string();
+        self.register(&token, episode_id, now_secs);
         token
     }
 
