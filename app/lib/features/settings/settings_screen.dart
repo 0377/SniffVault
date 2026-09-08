@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:video_sniffing/engine/engine_host.dart';
 import 'package:video_sniffing/engine/models/engine_settings.dart';
 import 'package:video_sniffing/providers/browse_session.dart';
+import 'package:video_sniffing/providers/device_profile.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
+import 'package:video_sniffing/providers/lan_settings_coordinator.dart';
 import 'package:video_sniffing/providers/settings_provider.dart';
 import 'package:video_sniffing/ui/error_presenter.dart';
 
@@ -58,12 +61,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     ).showSnackBar(const SnackBar(content: Text('已清除浏览 Cookie')));
   }
 
-  void _save() {
+  Future<void> _save() async {
     setState(() => _errorMessage = null);
     final repo = ref.read(engineRepositoryProvider);
     try {
       repo.saveSettings(_draft);
       ref.invalidate(settingsProvider);
+      final isTv = await ref.read(isTelevisionProvider.future);
+      await applyLanSettings(ref, isReceiver: isTv);
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -142,6 +147,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
             controller: _deviceNameController,
             onChanged: (value) => _draft = _draft.copyWith(deviceName: value),
+          ),
+          const SizedBox(height: 16),
+          SwitchListTile(
+            key: const Key('settings_lan_enabled'),
+            title: const Text('局域网投送'),
+            value: _draft.lanEnabled,
+            onChanged: (value) {
+              setState(() => _draft = _draft.copyWith(lanEnabled: value));
+            },
+          ),
+          ListTile(
+            key: const Key('settings_trusted_devices'),
+            title: const Text('已信任设备'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/settings/trusted-devices'),
           ),
           const SizedBox(height: 24),
           if (_errorMessage != null)

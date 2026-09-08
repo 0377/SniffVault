@@ -6,6 +6,7 @@ import 'package:video_sniffing/features/browse/browse_screen.dart';
 import 'package:video_sniffing/features/library/library_detail_screen.dart';
 import 'package:video_sniffing/features/library/library_screen.dart';
 import 'package:video_sniffing/features/player/player_screen.dart';
+import 'package:video_sniffing/features/cast/trusted_devices_screen.dart';
 import 'package:video_sniffing/features/settings/settings_screen.dart';
 import 'package:video_sniffing/features/tasks/tasks_screen.dart';
 import 'package:video_sniffing/shell/app_shell.dart';
@@ -72,6 +73,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: '/settings',
                 builder: (_, __) => const SettingsScreen(),
+                routes: [
+                  GoRoute(
+                    parentNavigatorKey: _rootNavigatorKey,
+                    path: 'trusted-devices',
+                    builder: (_, __) => const TrustedDevicesScreen(),
+                  ),
+                ],
               ),
             ],
           ),

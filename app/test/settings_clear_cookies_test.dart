@@ -7,6 +7,7 @@ import 'package:video_sniffing/features/browse/cookie_store.dart';
 import 'package:video_sniffing/features/browse/hook_to_sniff.dart';
 import 'package:video_sniffing/features/settings/settings_screen.dart';
 import 'package:video_sniffing/providers/browse_session.dart';
+import 'package:video_sniffing/providers/device_profile.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
 import 'package:video_sniffing/providers/settings_provider.dart';
 
@@ -37,6 +38,11 @@ void main() {
   testWidgets('settings tap clears browse cookies and shows snackbar', (
     tester,
   ) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     final fake = FakeEngineRepository(tasks: [_task()]);
     final cookies = FakeBrowseCookieStore();
     await tester.pumpWidget(
@@ -45,6 +51,7 @@ void main() {
           engineRepositoryProvider.overrideWithValue(fake),
           settingsProvider.overrideWith((ref) => fake.settings()),
           browseCookieStoreProvider.overrideWithValue(cookies),
+          isTelevisionProvider.overrideWith((ref) async => false),
         ],
         child: const MaterialApp(home: SettingsScreen()),
       ),
