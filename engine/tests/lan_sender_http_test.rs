@@ -86,7 +86,9 @@ async fn l6_head_request_returns_content_length_without_body() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(
-        resp.headers().get("content-length").and_then(|v| v.to_str().ok()),
+        resp.headers()
+            .get("content-length")
+            .and_then(|v| v.to_str().ok()),
         Some("10")
     );
     assert!(resp.bytes().await.unwrap().is_empty());
