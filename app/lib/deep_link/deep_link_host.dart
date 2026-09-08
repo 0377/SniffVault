@@ -47,51 +47,37 @@ class DeepLinkHost extends ConsumerStatefulWidget {
 }
 
 class _DeepLinkHostState extends ConsumerState<DeepLinkHost> {
-  String? _lastHandledUri;
-  StreamSubscription<Uri>? _subscription;
+  String? _lastHandledSuccessUri;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _flushPending();
-      _subscribeStream();
-    });
-  }
-
-  @override
-  void dispose() {
-    _subscription?.cancel();
-    super.dispose();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _flushPending());
   }
 
   void _flushPending() {
     final pending = ref.read(pendingIngressUriProvider);
-    if (pending != null) {
-      ref.read(pendingIngressUriProvider.notifier).state = null;
-      _handleUri(pending);
+    if (pending == null) {
+      return;
     }
-  }
-
-  void _subscribeStream() {
-    final stream = ref.read(ingressUriStreamProvider);
-    _subscription = stream.listen(_handleUri);
+    ref.read(pendingIngressUriProvider.notifier).state = null;
+    _handleUri(pending);
   }
 
   void _handleUri(Uri uri) {
-    final key = uri.toString();
-    if (_lastHandledUri == key) {
-      return;
-    }
     final parsed = parseSniffVaultIngress(uri);
     if (parsed == null) {
       return;
     }
-    _lastHandledUri = key;
     final router = ref.read(appRouterProvider);
     final messenger = ScaffoldMessenger.maybeOf(context);
 
     if (parsed is IngressNavigateSuccess) {
+      final key = uri.toString();
+      if (_lastHandledSuccessUri == key) {
+        return;
+      }
+      _lastHandledSuccessUri = key;
       final encoded = Uri.encodeQueryComponent(parsed.url);
       router.go('/add?url=$encoded');
       return;
@@ -105,5 +91,14 @@ class _DeepLinkHostState extends ConsumerState<DeepLinkHost> {
   }
 
   @override
-  Widget build(BuildContext context) => widget.child;
+  Widget build(BuildContext context) {
+    ref.listen<Uri?>(pendingIngressUriProvider, (previous, next) {
+      if (next == null) {
+        return;
+      }
+      ref.read(pendingIngressUriProvider.notifier).state = null;
+      _handleUri(next);
+    });
+    return widget.child;
+  }
 }

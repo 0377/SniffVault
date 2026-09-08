@@ -58,4 +58,34 @@ void main() {
     final field = tester.widget<TextField>(find.byKey(const Key('add_url_field')));
     expect(field.controller?.text, 'https://example.com');
   });
+
+  testWidgets('W11 shows snackbar for invalid javascript scheme', (tester) async {
+    setBootstrapIngressUri(
+      Uri.parse(
+        'sniffvault://add?url=${Uri.encodeComponent('javascript:alert(1)')}',
+      ),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          engineHostProvider.overrideWith((ref) async {
+            final host = FakeReadyEngineHost();
+            ref.onDispose(host.dispose);
+            return host;
+          }),
+          engineRepositoryProvider.overrideWithValue(FakeEngineRepository()),
+          ingressUriStreamProvider.overrideWithValue(const Stream.empty()),
+        ],
+        child: const VideoSniffingApp(),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(find.text('仅支持 http/https 链接'), findsOneWidget);
+    final field = tester.widget<TextField>(find.byKey(const Key('add_url_field')));
+    expect(field.controller?.text, isEmpty);
+  });
 }
