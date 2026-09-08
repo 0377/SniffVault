@@ -337,6 +337,10 @@ impl Engine {
         self.library.list_episodes(item_id)
     }
 
+    pub fn get_episode(&self, episode_id: &str) -> Result<Option<LibraryEpisode>, EngineError> {
+        self.library.get_episode(episode_id)
+    }
+
     pub fn set_episode_position(
         &self,
         episode_id: &str,
