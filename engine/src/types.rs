@@ -125,26 +125,34 @@ pub struct DownloadAuth {
     pub referer: Option<String>,
 }
 
-/// 设置。LAN 信任设备列表留到 Plan 7，本期不预留半截字段。
+/// 设置。
 /// `media_dir`：相对 `data_dir` 的子目录名，默认 `"media"`；`Engine::open` 必须按此创建目录。
 /// `default_quality_label`：`"highest"` 表示选最高可用清晰度；具体如 `"1080p"` 则精确匹配 label。
+/// `device_id`：本机 UUID v4，首次 `Engine::open` 生成并持久化。
+/// `lan_enabled`：是否启用局域网投送；默认 `false`。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EngineSettings {
+    #[serde(default)]
+    pub device_id: String,
     pub media_dir: String,
     pub max_concurrency: u32,
     pub default_quality_label: Option<String>,
     pub user_agent: Option<String>,
     pub device_name: String,
+    #[serde(default)]
+    pub lan_enabled: bool,
 }
 
 impl Default for EngineSettings {
     fn default() -> Self {
         Self {
+            device_id: String::new(),
             media_dir: "media".into(),
             max_concurrency: 2,
             default_quality_label: Some("highest".into()),
             user_agent: None,
             device_name: "VideoSniffing".into(),
+            lan_enabled: false,
         }
     }
 }

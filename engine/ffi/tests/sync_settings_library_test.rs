@@ -19,14 +19,18 @@ fn settings_roundtrip_json() {
     let parsed: serde_json::Value = serde_json::from_str(settings_str).unwrap();
     assert_eq!(parsed["ok"], true);
     assert_eq!(parsed["data"]["media_dir"], "media");
+    let device_id = parsed["data"]["device_id"].as_str().unwrap();
+    assert!(!device_id.is_empty());
     unsafe { engine_free_string(settings_ptr) };
 
     let new_settings = serde_json::json!({
+        "device_id": device_id,
         "media_dir": "videos",
         "max_concurrency": 4,
         "default_quality_label": "1080p",
         "user_agent": null,
-        "device_name": "TestDevice"
+        "device_name": "TestDevice",
+        "lan_enabled": true
     });
     let json = CString::new(new_settings.to_string()).unwrap();
     let save_ptr = unsafe { engine_save_settings(handle, json.as_ptr()) };
@@ -41,6 +45,8 @@ fn settings_roundtrip_json() {
     let parsed2: serde_json::Value = serde_json::from_str(settings_str2).unwrap();
     assert_eq!(parsed2["data"]["device_name"], "TestDevice");
     assert_eq!(parsed2["data"]["media_dir"], "videos");
+    assert_eq!(parsed2["data"]["device_id"], device_id);
+    assert_eq!(parsed2["data"]["lan_enabled"], true);
     unsafe { engine_free_string(settings_ptr2) };
 
     unsafe { engine_destroy(handle) };
