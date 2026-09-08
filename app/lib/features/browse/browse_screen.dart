@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -14,6 +15,8 @@ import 'package:video_sniffing/features/browse/browse_webview.dart';
 import 'package:video_sniffing/features/browse/hook_to_sniff.dart';
 import 'package:video_sniffing/features/browse/sniff_candidate_list.dart';
 import 'package:video_sniffing/features/browse/sniff_script.dart';
+import 'package:video_sniffing/providers/batch_sniff_coordinator.dart';
+import 'package:video_sniffing/providers/batch_sniff_parent_provider.dart';
 import 'package:video_sniffing/providers/browse_resolve_provider.dart';
 import 'package:video_sniffing/providers/browse_session.dart';
 import 'package:video_sniffing/providers/device_profile.dart';
@@ -46,6 +49,13 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
   String? _appliedUserAgent;
   bool _canGoBack = false;
   bool _canGoForward = false;
+  bool _batchSniffStarted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeStartBatchSniff());
+  }
 
   @override
   void didChangeDependencies() {
@@ -197,6 +207,34 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
     }
   }
 
+  Future<void> _loadUrlForBatchSniff(Uri uri) async {
+    final session = _resolvedSession(watch: false);
+    session.onTopLevelNavigation(uri);
+    await _loadUrl(uri);
+  }
+
+  void _maybeStartBatchSniff() {
+    if (_batchSniffStarted || widget.session != null) {
+      return;
+    }
+    final parentId = ref.read(batchSniffParentIdProvider);
+    if (parentId == null) {
+      return;
+    }
+    _batchSniffStarted = true;
+    final coordinator = ref.read(batchSniffCoordinatorProvider);
+    unawaited(
+      coordinator.start(
+        parentId: parentId,
+        loadUrl: _loadUrlForBatchSniff,
+        onComplete: () {
+          ref.read(batchSniffParentIdProvider.notifier).state = null;
+          _batchSniffStarted = false;
+        },
+      ),
+    );
+  }
+
   Future<void> _retryLoad() async {
     setState(() => _loadError = null);
     final controller = _controller;
@@ -292,6 +330,11 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(batchSniffParentIdProvider, (previous, next) {
+      if (next != null) {
+        _maybeStartBatchSniff();
+      }
+    });
     final tvAsync = ref.watch(isTelevisionProvider);
     if (!tvAsync.hasValue) {
       return const Scaffold(body: SizedBox.shrink());
