@@ -2,10 +2,21 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:video_sniffing/cast_receiver/cast_providers.dart';
 import 'package:video_sniffing/engine/models/cast_types.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
 import 'package:video_sniffing/router.dart';
+
+void applyIncomingCastPlay({
+  required ProviderContainer container,
+  required GoRouter router,
+  required CastPlayRequest request,
+}) {
+  container.read(activeCastRequestProvider.notifier).state = request;
+  final sessionId = Uri.encodeComponent(request.sessionId);
+  router.go('/play/cast?session_id=$sessionId');
+}
 
 class CastReceiverHost extends ConsumerStatefulWidget {
   const CastReceiverHost({super.key, required this.child});
@@ -30,9 +41,11 @@ class _CastReceiverHostState extends ConsumerState<CastReceiverHost> {
     final router = ref.read(appRouterProvider);
     switch (event) {
       case CastEventIncomingPlay(:final request):
-        ref.read(activeCastRequestProvider.notifier).state = request;
-        final sessionId = Uri.encodeComponent(request.sessionId);
-        router.push('/play/cast?session_id=$sessionId');
+        applyIncomingCastPlay(
+          container: ProviderScope.containerOf(context),
+          router: router,
+          request: request,
+        );
       case CastEventSessionEnded(:final sessionId):
         final active = ref.read(activeCastRequestProvider);
         if (active?.sessionId == sessionId) {
