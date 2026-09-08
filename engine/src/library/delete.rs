@@ -53,6 +53,7 @@ pub(crate) fn collect_deletion_paths(
     Ok(paths)
 }
 
+/// 按顺序删除；中途失败则 DB 不变，已删文件不回滚（规格 L9-5 允许）。
 pub(crate) fn delete_files(paths: &[PathBuf]) -> Result<(), EngineError> {
     for path in paths {
         match std::fs::remove_file(path) {

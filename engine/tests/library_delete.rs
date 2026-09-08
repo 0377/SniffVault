@@ -1,7 +1,8 @@
-mod support;
+#[path = "support/library_dirty.rs"]
+mod library_dirty;
 
+use library_dirty::inject_outside_file_path;
 use std::fs;
-use support::library_dirty::inject_outside_file_path;
 use tempfile::tempdir;
 use video_sniffing_engine::Engine;
 
