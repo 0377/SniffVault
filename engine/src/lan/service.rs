@@ -31,6 +31,7 @@ pub struct LanTestConfig {
 struct ActiveCastSession {
     session_id: String,
     stream_token: String,
+    episode_id: String,
     peer_device_id: String,
     peer_host: String,
     peer_port: u16,
@@ -363,10 +364,26 @@ impl LanService {
         self.active_cast = Some(ActiveCastSession {
             session_id,
             stream_token: token,
+            episode_id: episode_id.to_string(),
             peer_device_id: peer.peer_device_id,
             peer_host: peer.peer_host,
             peer_port: peer.peer_port,
         });
+        Ok(())
+    }
+
+    pub fn finalize_episode_removal(&mut self, episode_id: &str) -> Result<(), EngineError> {
+        {
+            let mut store = self.stream_tokens.lock().map_err(|_| lock_err())?;
+            store.revoke_for_episode(episode_id);
+        }
+        if self
+            .active_cast
+            .as_ref()
+            .is_some_and(|s| s.episode_id == episode_id)
+        {
+            self.stop_cast_internal(false)?;
+        }
         Ok(())
     }
 

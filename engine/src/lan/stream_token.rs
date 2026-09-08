@@ -52,6 +52,12 @@ impl StreamTokenStore {
         }
     }
 
+    pub fn revoke_for_episode(&mut self, episode_id: &str) {
+        if let Some(token) = self.by_episode.remove(episode_id) {
+            self.by_token.remove(&token);
+        }
+    }
+
     pub fn resolve_path<F>(
         &self,
         token: &str,
