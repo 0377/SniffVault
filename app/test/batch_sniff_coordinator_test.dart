@@ -223,6 +223,67 @@ void main() {
     expect(repo.setTaskMediaUrlCalls.length, 1);
     expect(downloads.ensureDownloadsCalls, 1);
   });
+
+  test('restart after cancel starts a new run', () async {
+    const parentId = 'parent-1';
+    final repo = _RecordingRepo(
+      tasks: [
+        _needsSniffChild(
+          id: 'child-1',
+          parentId: parentId,
+          episodeIndex: 1,
+          sourceUrl: 'http://x/ep1',
+        ),
+      ],
+    );
+    final session = BrowseSession(
+      repo: repo,
+      cookies: FakeCookieExporter(null),
+    );
+    final downloads = _RecordingDownloadCoordinator(repo);
+    repo.sniffResults = const [
+      ResourceCandidate(
+        id: 'm',
+        url: 'http://x/media.m3u8',
+        kind: MediaKind.hls,
+      ),
+    ];
+
+    final coordinator = BatchSniffCoordinator.forTest(
+      repo: repo,
+      session: session,
+      ensureDownloads: downloads.ensureDownloads,
+      debounce: Duration.zero,
+      pollInterval: Duration.zero,
+      episodeTimeout: const Duration(seconds: 1),
+    );
+
+    final first = coordinator.start(
+      parentId: parentId,
+      loadUrl: (uri) async {
+        session.onTopLevelNavigation(uri);
+        coordinator.cancel();
+      },
+    );
+    await first;
+
+    final second = coordinator.start(
+      parentId: parentId,
+      loadUrl: (uri) async {
+        session.onTopLevelNavigation(uri);
+        session.onHookEvent(
+          const SniffEvent(
+            url: 'http://x/media.m3u8',
+            initiator: SniffInitiator.media,
+          ),
+        );
+      },
+    );
+    await second;
+
+    expect(repo.setTaskMediaUrlCalls.length, 1);
+    expect(downloads.ensureDownloadsCalls, 1);
+  });
 }
 
 class FakeCookieExporter implements CookieExporter {

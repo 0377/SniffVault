@@ -413,9 +413,13 @@ async fn run_one_task(
                 url
             }
             Err(_) => {
-                if let Err(e) =
-                    tasks.set_task_status(&task.id, TaskStatus::NeedsSniff, Some("needs_sniff"))
-                {
+                if let Err(e) = worker_set_task_status(
+                    &tasks,
+                    config,
+                    &task.id,
+                    TaskStatus::NeedsSniff,
+                    Some("needs_sniff"),
+                ) {
                     return TaskRunOutcome::Failed(e);
                 }
                 if let Some(parent_id) = &task.parent_id {
@@ -716,20 +720,28 @@ fn output_contains_ftyp(bytes: &[u8]) -> bool {
 }
 
 fn validate_download_output(path: &Path, is_hls: bool) -> Result<(), EngineError> {
-    let bytes = std::fs::read(path)?;
-    if looks_like_html(&bytes) {
+    use std::io::Read;
+
+    let file_len = std::fs::metadata(path)?.len();
+    const HEAD_READ_MAX: u64 = 64 * 1024;
+    let read_len = file_len.min(HEAD_READ_MAX) as usize;
+    let mut head = vec![0u8; read_len];
+    let mut file = std::fs::File::open(path)?;
+    file.read_exact(&mut head)?;
+
+    if looks_like_html(&head) {
         return Err(EngineError::Message("invalid_media".into()));
     }
     if is_hls {
-        if !output_contains_ftyp(&bytes) {
+        if !output_contains_ftyp(&head) {
             return Err(EngineError::Message("invalid_media".into()));
         }
         return Ok(());
     }
-    if bytes.len() < MIN_VALID_MP4_BYTES as usize {
+    if file_len < MIN_VALID_MP4_BYTES {
         return Err(EngineError::Message("invalid_media".into()));
     }
-    if !output_contains_ftyp(&bytes) {
+    if !output_contains_ftyp(&head) {
         return Err(EngineError::Message("invalid_media".into()));
     }
     Ok(())

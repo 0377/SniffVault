@@ -107,19 +107,30 @@ class BatchSniffCoordinator {
     required BatchSniffLoadUrl loadUrl,
     VoidCallback? onComplete,
     BatchSniffProgress? onProgress,
-  }) {
-    if (_runFuture != null) {
-      return _runFuture!;
+  }) async {
+    final previous = _runFuture;
+    if (previous != null) {
+      if (!_cancelled) {
+        return previous;
+      }
+      await previous;
     }
-    _runFuture = _run(
+
+    _cancelled = false;
+    final run = _run(
       parentId: parentId,
       loadUrl: loadUrl,
       onComplete: onComplete,
       onProgress: onProgress,
     );
-    return _runFuture!.whenComplete(() {
-      _runFuture = null;
-    });
+    _runFuture = run;
+    try {
+      await run;
+    } finally {
+      if (identical(_runFuture, run)) {
+        _runFuture = null;
+      }
+    }
   }
 
   Future<void> _run({
@@ -128,7 +139,6 @@ class BatchSniffCoordinator {
     VoidCallback? onComplete,
     BatchSniffProgress? onProgress,
   }) async {
-    _cancelled = false;
     final children = _needsSniffChildren(parentId);
     final total = children.length;
     for (var index = 0; index < children.length; index++) {
