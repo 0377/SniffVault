@@ -9,7 +9,7 @@ import 'package:video_sniffing/features/player/player_screen.dart';
 import 'package:video_sniffing/features/cast/trusted_devices_screen.dart';
 import 'package:video_sniffing/features/settings/settings_screen.dart';
 import 'package:video_sniffing/features/tasks/tasks_screen.dart';
-import 'package:video_sniffing/shell/app_shell.dart';
+import 'package:video_sniffing/shell/shell_selector.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -20,7 +20,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     routes: [
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) =>
-            AppShell(navigationShell: navigationShell),
+            ShellSelector(navigationShell: navigationShell),
         branches: [
           StatefulShellBranch(
             routes: [
