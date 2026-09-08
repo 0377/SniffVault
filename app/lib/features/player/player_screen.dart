@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:video_sniffing/engine/models/library_episode.dart';
+import 'package:video_sniffing/features/cast/cast_actions.dart';
 import 'package:video_sniffing/features/player/player_controller.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
 import 'package:video_sniffing/providers/engine_repository.dart';
@@ -177,13 +178,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               fill: Colors.black,
             ),
             SafeArea(
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: IconButton(
-                  key: const Key('player_back'),
-                  icon: const Icon(Icons.arrow_back, color: Colors.white),
-                  onPressed: _handleBack,
-                ),
+              child: Row(
+                children: [
+                  IconButton(
+                    key: const Key('player_back'),
+                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                    onPressed: _handleBack,
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    key: const Key('player_cast'),
+                    icon: const Icon(Icons.cast, color: Colors.white),
+                    tooltip: '投送到 TV',
+                    onPressed: () => requestCast(context, ref, widget.episodeId),
+                  ),
+                ],
               ),
             ),
           ],
