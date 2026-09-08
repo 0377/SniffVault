@@ -43,6 +43,8 @@ dependencies:
     path: rust_builder
   webview_sniff:
     path: ../platforms/webview_sniff
+  share_ingress:
+    path: ../platforms/share_ingress
   webview_flutter: ^4.10.0
   app_links: ^6.3.2
 
