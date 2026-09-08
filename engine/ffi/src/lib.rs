@@ -13,12 +13,12 @@ pub use handle::{
 };
 pub use sync_dispatch::{
     engine_apply_lan_settings, engine_begin_pairing, engine_cancel_task, engine_cast_episode,
-    engine_discover_peers, engine_enqueue_episodes, engine_enqueue_single, engine_list_episodes,
-    engine_list_library, engine_list_tasks, engine_list_trusted_peers, engine_pair_peer,
-    engine_pairing_pin, engine_pause_task, engine_remove_trusted_peer, engine_resume_task,
-    engine_save_settings, engine_set_episode_position, engine_settings, engine_sniff_urls,
-    engine_spawn_download_worker, engine_start_downloads, engine_start_lan, engine_stop_cast,
-    engine_stop_downloads, engine_stop_lan,
+    engine_discover_peers, engine_enqueue_episodes, engine_enqueue_single, engine_lan_http_port,
+    engine_list_episodes, engine_list_library, engine_list_tasks, engine_list_trusted_peers,
+    engine_pair_peer, engine_pairing_pin, engine_pause_task, engine_remove_trusted_peer,
+    engine_resume_task, engine_save_settings, engine_set_episode_position, engine_settings,
+    engine_sniff_urls, engine_spawn_download_worker, engine_start_downloads, engine_start_lan,
+    engine_stop_cast, engine_stop_downloads, engine_stop_lan,
 };
 
 #[cfg(test)]

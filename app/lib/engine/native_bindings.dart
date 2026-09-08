@@ -178,6 +178,9 @@ typedef EngineStartLan = Pointer<Char> Function(
 typedef EngineStopLanNative = Pointer<Char> Function(Pointer<Void> handle);
 typedef EngineStopLan = Pointer<Char> Function(Pointer<Void> handle);
 
+typedef EngineLanHttpPortNative = Pointer<Char> Function(Pointer<Void> handle);
+typedef EngineLanHttpPort = Pointer<Char> Function(Pointer<Void> handle);
+
 typedef EngineApplyLanSettingsNative = Pointer<Char> Function(
   Pointer<Void> handle,
   Uint8 isReceiver,
@@ -333,6 +336,10 @@ class NativeBindings {
             lib.lookupFunction<EngineStopLanNative, EngineStopLan>(
           'engine_stop_lan',
         ),
+        engineLanHttpPort = lib.lookupFunction<
+            EngineLanHttpPortNative, EngineLanHttpPort>(
+          'engine_lan_http_port',
+        ),
         engineApplyLanSettings = lib.lookupFunction<
             EngineApplyLanSettingsNative,
             EngineApplyLanSettings>('engine_apply_lan_settings'),
@@ -398,6 +405,7 @@ class NativeBindings {
   final EngineUnsubscribeTaskEvents engineUnsubscribeTaskEvents;
   final EngineStartLan engineStartLan;
   final EngineStopLan engineStopLan;
+  final EngineLanHttpPort engineLanHttpPort;
   final EngineApplyLanSettings engineApplyLanSettings;
   final EngineDiscoverPeers engineDiscoverPeers;
   final EngineBeginPairing engineBeginPairing;

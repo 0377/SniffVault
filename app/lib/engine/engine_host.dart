@@ -363,6 +363,13 @@ class EngineHost {
     _callSyncVoid((handle) => _bindings.engineStopLan(handle));
   }
 
+  int? get lanHttpPort {
+    return _callSync(
+      (handle) => _bindings.engineLanHttpPort(handle),
+      (json) => json as int?,
+    );
+  }
+
   List<LanPeer> discoverPeers() {
     return _callSync(
       (handle) => _bindings.engineDiscoverPeers(handle),
@@ -373,12 +380,10 @@ class EngineHost {
   }
 
   String beginPairing() {
-    final pin = _callSync(
+    return _callSync(
       (handle) => _bindings.engineBeginPairing(handle),
       (json) => json as String,
     );
-    _subscribeCastEvents();
-    return pin;
   }
 
   String? pairingPin() {

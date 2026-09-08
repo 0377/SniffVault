@@ -357,9 +357,7 @@ fn parse_is_receiver(is_receiver: u8) -> Result<bool, EngineError> {
     match is_receiver {
         0 => Ok(false),
         1 => Ok(true),
-        _ => Err(EngineError::InvalidArg(
-            "is_receiver must be 0 or 1".into(),
-        )),
+        _ => Err(EngineError::InvalidArg("is_receiver must be 0 or 1".into())),
     }
 }
 
@@ -381,6 +379,11 @@ pub unsafe extern "C" fn engine_stop_lan(handle: *mut EngineHandle) -> *mut c_ch
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn engine_lan_http_port(handle: *mut EngineHandle) -> *mut c_char {
+    ffi_call(handle, |engine| Ok(engine.lan_http_port()))
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn engine_apply_lan_settings(
     handle: *mut EngineHandle,
     is_receiver: u8,
@@ -389,7 +392,9 @@ pub unsafe extern "C" fn engine_apply_lan_settings(
         Ok(v) => v,
         Err(err) => return rust_to_c_string(err_json(err)),
     };
-    ffi_call_mut(handle, |engine| engine.apply_lan_settings(is_receiver).map(|_| ()))
+    ffi_call_mut(handle, |engine| {
+        engine.apply_lan_settings(is_receiver).map(|_| ())
+    })
 }
 
 #[no_mangle]

@@ -8,8 +8,9 @@ use video_sniffing_engine_ffi::cast_events::{
 };
 use video_sniffing_engine_ffi::handle::{engine_destroy, engine_free_string, engine_open};
 use video_sniffing_engine_ffi::sync_dispatch::{
-    engine_apply_lan_settings, engine_discover_peers, engine_list_trusted_peers,
-    engine_pairing_pin, engine_save_settings, engine_settings, engine_stop_lan,
+    engine_apply_lan_settings, engine_discover_peers, engine_lan_http_port,
+    engine_list_trusted_peers, engine_pairing_pin, engine_save_settings, engine_settings,
+    engine_stop_lan,
 };
 
 static LAN_TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -58,6 +59,23 @@ fn open_handle_with_lan_enabled(
     unsafe { engine_free_string(apply_ptr) };
 
     handle
+}
+
+#[test]
+fn lan_http_port_exposes_bound_receiver_port() {
+    let _guard = lan_test_guard();
+    let dir = tempdir().unwrap();
+    let handle = open_handle_with_lan_enabled(&dir, 1);
+
+    let port_ptr = unsafe { engine_lan_http_port(handle) };
+    let port_parsed = parse_response(port_ptr);
+    assert_eq!(port_parsed["ok"], true);
+    assert!(port_parsed["data"].as_u64().unwrap() > 0);
+    unsafe { engine_free_string(port_ptr) };
+
+    let stop_ptr = unsafe { engine_stop_lan(handle) };
+    unsafe { engine_free_string(stop_ptr) };
+    unsafe { engine_destroy(handle) };
 }
 
 #[test]
