@@ -2,6 +2,8 @@ use crate::download::runtime::{worker_config, DownloadRuntime};
 use crate::download::worker::DownloadCommand;
 use crate::error::EngineError;
 use crate::ingest;
+use crate::lan::{sanitize_episode, GetEpisodeFn, LanService, LanTestConfig};
+use crate::lan::{CastEvent, LanPeer, TrustedPeer};
 use crate::library::LibraryStore;
 use crate::settings;
 use crate::tasks::TaskStore;
@@ -10,7 +12,7 @@ use crate::types::{
     ResolveOptions, ResolveOutcome, ResourceCandidate, SniffEvent, TaskEvent, TaskStatus,
 };
 use std::path::{Path, PathBuf};
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
@@ -20,6 +22,7 @@ pub struct Engine {
     settings_path: PathBuf,
     library: LibraryStore,
     tasks: TaskStore,
+    lan: Option<LanService>,
     download: Option<DownloadRuntime>,
     task_event_rx: Option<mpsc::Receiver<TaskEvent>>,
     pending_task_event_tx: Option<mpsc::Sender<TaskEvent>>,
@@ -54,6 +57,7 @@ impl Engine {
             settings_path,
             library,
             tasks,
+            lan: None,
             download: None,
             task_event_rx: None,
             pending_task_event_tx: None,
@@ -384,10 +388,171 @@ impl Engine {
             source_url,
         )
     }
+
+    #[doc(hidden)]
+    pub fn set_lan_test_config(&mut self, config: LanTestConfig) {
+        if let Some(lan) = &mut self.lan {
+            lan.set_test_config(config);
+        } else {
+            let mut lan = LanService::open(&self.data_dir.join("lan.db"))
+                .expect("lan.db open for test config");
+            lan.set_test_config(config);
+            self.lan = Some(lan);
+        }
+    }
+
+    fn ensure_lan(&mut self) -> Result<&mut LanService, EngineError> {
+        if self.lan.is_none() {
+            let mut lan = LanService::open(&self.data_dir.join("lan.db"))?;
+            lan.set_device_identity(&self.settings.device_id, &self.settings.device_name);
+            self.lan = Some(lan);
+        }
+        Ok(self.lan.as_mut().expect("lan initialized"))
+    }
+
+    pub fn lan_http_port(&self) -> Option<u16> {
+        self.lan.as_ref().and_then(|lan| lan.lan_http_port())
+    }
+
+    pub fn start_lan(&mut self, is_receiver: bool) -> Result<(), EngineError> {
+        let device_id = self.settings.device_id.clone();
+        let device_name = self.settings.device_name.clone();
+        let media_dir = self.media_dir();
+        let get_episode = if is_receiver {
+            None
+        } else {
+            Some(self.sender_get_episode_fn())
+        };
+        let lan = self.ensure_lan()?;
+        lan.set_device_identity(&device_id, &device_name);
+        lan.start(
+            is_receiver,
+            &device_id,
+            &device_name,
+            &media_dir,
+            get_episode,
+        )
+    }
+
+    pub fn stop_lan(&mut self) -> Result<(), EngineError> {
+        match self.lan.as_mut() {
+            Some(lan) => lan.stop(),
+            None => Ok(()),
+        }
+    }
+
+    pub fn apply_lan_settings(&mut self, is_receiver: bool) -> Result<(), EngineError> {
+        if self.settings.lan_enabled {
+            self.start_lan(is_receiver)?;
+            if is_receiver {
+                self.begin_pairing()?;
+            }
+        } else {
+            self.stop_lan()?;
+        }
+        Ok(())
+    }
+
+    pub fn discover_peers(&mut self) -> Result<Vec<LanPeer>, EngineError> {
+        self.ensure_lan()?.discover_peers()
+    }
+
+    pub fn begin_pairing(&mut self) -> Result<String, EngineError> {
+        self.ensure_lan()?.begin_pairing()
+    }
+
+    pub fn pairing_pin(&self) -> Result<Option<String>, EngineError> {
+        match self.lan.as_ref() {
+            Some(lan) => lan.pairing_pin(),
+            None => Ok(None),
+        }
+    }
+
+    pub fn pair_peer(&mut self, host: &str, port: u16, pin: &str) -> Result<(), EngineError> {
+        if self.lan_http_port().is_none() {
+            self.start_lan(false)?;
+        }
+        let device_id = self.settings.device_id.clone();
+        let device_name = self.settings.device_name.clone();
+        self.ensure_lan()?
+            .pair_peer(host, port, pin, &device_id, &device_name)
+    }
+
+    pub fn list_trusted_peers(&self) -> Result<Vec<TrustedPeer>, EngineError> {
+        match self.lan.as_ref() {
+            Some(lan) => lan.list_trusted_peers(),
+            None => Ok(Vec::new()),
+        }
+    }
+
+    pub fn remove_trusted_peer(&self, peer_device_id: &str) -> Result<bool, EngineError> {
+        match self.lan.as_ref() {
+            Some(lan) => lan.remove_trusted_peer(peer_device_id),
+            None => Ok(false),
+        }
+    }
+
+    pub fn cast_episode(
+        &mut self,
+        episode_id: &str,
+        peer_device_id: &str,
+    ) -> Result<(), EngineError> {
+        if self.lan_http_port().is_none() {
+            self.start_lan(false)?;
+        }
+
+        let episode = self
+            .library
+            .get_episode(episode_id)?
+            .ok_or_else(|| EngineError::NotFound(format!("episode {episode_id}")))?;
+        ingest::ensure_path_in_media_dir(&self.media_dir(), &episode.file_path)?;
+
+        let item = self.library.get_item(&episode.item_id)?;
+        let metadata = sanitize_episode(&item, &episode);
+        let device_id = self.settings.device_id.clone();
+        let device_name = self.settings.device_name.clone();
+
+        self.ensure_lan()?.cast_episode(
+            episode_id,
+            peer_device_id,
+            metadata,
+            &device_id,
+            &device_name,
+        )
+    }
+
+    pub fn stop_cast(&mut self) -> Result<(), EngineError> {
+        match self.lan.as_mut() {
+            Some(lan) => lan.stop_cast(),
+            None => Ok(()),
+        }
+    }
+
+    pub fn take_cast_event_receiver(&mut self) -> Option<tokio::sync::mpsc::Receiver<CastEvent>> {
+        self.lan
+            .as_mut()
+            .and_then(|lan| lan.take_cast_event_receiver())
+    }
+
+    pub fn drain_cast_event(&mut self) -> Result<CastEvent, EngineError> {
+        self.ensure_lan()?.drain_cast_event()
+    }
+
+    fn sender_get_episode_fn(&self) -> GetEpisodeFn {
+        let data_dir = self.data_dir.clone();
+        Arc::new(move |episode_id| {
+            let library = LibraryStore::open(&data_dir.join("library.db")).ok()?;
+            library.get_episode(episode_id).ok().flatten()
+        })
+    }
 }
 
 impl Drop for Engine {
     fn drop(&mut self) {
+        if let Some(lan) = self.lan.as_mut() {
+            let _ = lan.stop_cast();
+            let _ = lan.stop();
+        }
         let _ = self.stop_downloads();
     }
 }

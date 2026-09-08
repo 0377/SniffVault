@@ -53,6 +53,14 @@ impl TrustStore {
         Ok(())
     }
 
+    pub fn remove_peer(&self, peer_device_id: &str) -> Result<bool, EngineError> {
+        let deleted = self.conn.execute(
+            "DELETE FROM trusted_peers WHERE peer_device_id = ?1",
+            params![peer_device_id],
+        )?;
+        Ok(deleted > 0)
+    }
+
     pub fn list_peers(&self) -> Result<Vec<TrustedPeer>, EngineError> {
         let mut stmt = self.conn.prepare(
             r#"SELECT peer_device_id, peer_name, peer_host, peer_port, paired_at_ms, session_secret

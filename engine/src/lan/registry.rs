@@ -91,7 +91,7 @@ pub fn discover_receivers(timeout: Duration) -> Result<Vec<LanPeer>, EngineError
         let wait = remaining.min(Duration::from_millis(200));
         match receiver.recv_timeout(wait) {
             Ok(ServiceEvent::ServiceResolved(info)) => {
-                if let Ok(peer) = parse_service_instance(&*info) {
+                if let Ok(peer) = parse_service_instance(&info) {
                     if seen.insert(peer.device_id.clone()) {
                         peers.push(peer);
                     }

@@ -1,4 +1,19 @@
-use std::net::Ipv4Addr;
+use std::net::{IpAddr, Ipv4Addr, UdpSocket};
+
+pub fn enumerate_local_ipv4() -> Vec<String> {
+    let mut ips = Vec::new();
+    if let Ok(socket) = UdpSocket::bind("0.0.0.0:0") {
+        if socket.connect("8.8.8.8:80").is_ok() {
+            if let Ok(addr) = socket.local_addr() {
+                if let IpAddr::V4(v4) = addr.ip() {
+                    ips.push(v4.to_string());
+                }
+            }
+        }
+    }
+    ips.push(Ipv4Addr::LOCALHOST.to_string());
+    ips
+}
 
 pub fn select_for_peer(peer_host: &str, local_ips: &[&str]) -> String {
     let peer = parse_ipv4(peer_host);
