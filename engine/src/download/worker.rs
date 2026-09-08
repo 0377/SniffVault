@@ -7,8 +7,9 @@ use crate::download::scheduler::Scheduler;
 use crate::error::EngineError;
 use crate::ingest;
 use crate::library::LibraryStore;
+use crate::resolve::resolve_media_url;
 use crate::tasks::TaskStore;
-use crate::types::{DownloadTask, TaskEvent, TaskEventKind, TaskStatus};
+use crate::types::{DownloadTask, ResolveOptions, TaskEvent, TaskEventKind, TaskStatus};
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -375,10 +376,15 @@ async fn run_one_task(
         }
     }
 
+    let download_referer = task
+        .referer
+        .clone()
+        .or_else(|| Some(task.source_url.clone()));
+
     let http = match HttpClient::new(config.user_agent.as_deref()) {
         Ok(c) => c
             .with_cancellation(cancel.clone())
-            .with_auth(task.cookie_header.clone(), task.referer.clone()),
+            .with_auth(task.cookie_header.clone(), download_referer.clone()),
         Err(e) => return TaskRunOutcome::Failed(e),
     };
 
@@ -387,7 +393,17 @@ async fn run_one_task(
         .as_deref()
         .or(config.default_quality_label.as_deref());
 
-    let download_result = if is_hls_url(&task.source_url) {
+    let resolve_opts = ResolveOptions {
+        cookies: task.cookie_header.clone(),
+        referer: download_referer.clone(),
+        page_url: task.referer.clone(),
+    };
+    let media_url = match resolve_media_url(&http, &task.source_url, &resolve_opts).await {
+        Ok(url) => url,
+        Err(e) => return TaskRunOutcome::Failed(e),
+    };
+
+    let download_result = if is_hls_url(&media_url) {
         let ffmpeg = match config.ffmpeg.resolve() {
             Ok(p) => p,
             Err(e) => return TaskRunOutcome::Failed(e),
@@ -404,7 +420,7 @@ async fn run_one_task(
         };
         download_hls_to_mp4(
             &ctx,
-            &task.source_url,
+            &media_url,
             &output_path,
             quality,
             checkpoint,
@@ -417,7 +433,7 @@ async fn run_one_task(
             http: &http,
             temp_dir: &temp_dir,
         };
-        download_mp4(&ctx, &task.source_url, &output_path, checkpoint).await
+        download_mp4(&ctx, &media_url, &output_path, checkpoint).await
     };
 
     if cancel.is_cancelled() {

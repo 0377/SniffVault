@@ -23,6 +23,37 @@ fn requeue_failed_task(data_dir: &std::path::Path, task_id: &str, new_url: &str)
 }
 
 #[test]
+fn player_page_resolves_and_downloads_mp4() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let mut fx = EngineFixture::open();
+        let (addr, _guard) = fixture_server::serve_dir(fixture_server::fixtures_dir()).await;
+        let page_url = format!("http://{addr}/html/player_page.html");
+
+        fx.engine
+            .enqueue_single("from-player", &page_url, None, None)
+            .unwrap();
+        fx.engine.start_downloads().unwrap();
+        wait_for_task(
+            &fx.engine,
+            &find_single_task_id(&fx.engine),
+            TaskStatus::Completed,
+            Duration::from_secs(30),
+        )
+        .await;
+        fx.engine.stop_downloads().unwrap();
+
+        assert_eq!(fx.engine.list_library().unwrap().len(), 1);
+        let tasks = fx.engine.list_tasks().unwrap();
+        let task = task_by_title(&tasks, "from-player");
+        assert!(task
+            .output_path
+            .as_ref()
+            .is_some_and(|p| output_contains_ftyp(std::path::Path::new(p))));
+    });
+}
+
+#[test]
 fn mp4_download_registers() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
