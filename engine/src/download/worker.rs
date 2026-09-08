@@ -707,8 +707,7 @@ fn is_hls_url(url: &str) -> bool {
 fn looks_like_html(bytes: &[u8]) -> bool {
     bytes
         .iter()
-        .skip_while(|b| b.is_ascii_whitespace())
-        .next()
+        .find(|b| !b.is_ascii_whitespace())
         .is_some_and(|b| *b == b'<')
 }
 

@@ -12,7 +12,7 @@ pub fn large_mp4_fixture_bytes(sample: &[u8]) -> Vec<u8> {
 /// 用于 pause/cancel 等需中断下载的测试：限速 HTTP + 约 4MB 文件。
 pub fn interruptible_mp4_fixture_bytes(sample: &[u8]) -> Vec<u8> {
     const TARGET_BYTES: usize = 4 * 1024 * 1024;
-    let repeat = (TARGET_BYTES + sample.len() - 1) / sample.len();
+    let repeat = TARGET_BYTES.div_ceil(sample.len());
     let mut bytes = sample.repeat(repeat);
     bytes.truncate(TARGET_BYTES);
     bytes

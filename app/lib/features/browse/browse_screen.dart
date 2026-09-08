@@ -50,6 +50,17 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
   bool _canGoBack = false;
   bool _canGoForward = false;
   bool _batchSniffStarted = false;
+  int? _batchSniffCurrent;
+  int? _batchSniffTotal;
+
+  @override
+  void dispose() {
+    if (_batchSniffStarted) {
+      ref.read(batchSniffCoordinatorProvider).cancel();
+      ref.read(batchSniffParentIdProvider.notifier).state = null;
+    }
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -227,13 +238,44 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
       coordinator.start(
         parentId: parentId,
         loadUrl: _loadUrlForBatchSniff,
+        onProgress: (current, total) {
+          if (mounted) {
+            setState(() {
+              _batchSniffCurrent = current;
+              _batchSniffTotal = total;
+            });
+          }
+        },
         onComplete: () {
-          ref.read(batchSniffParentIdProvider.notifier).state = null;
-          _batchSniffStarted = false;
+          if (mounted) {
+            _finishBatchSniff();
+          }
         },
       ),
     );
   }
+
+  void _cancelBatchSniff() {
+    ref.read(batchSniffCoordinatorProvider).cancel();
+    _finishBatchSniff();
+  }
+
+  void _finishBatchSniff() {
+    setState(() {
+      _batchSniffStarted = false;
+      _batchSniffCurrent = null;
+      _batchSniffTotal = null;
+    });
+    ref.read(batchSniffParentIdProvider.notifier).state = null;
+    if (context.mounted) {
+      context.go('/tasks');
+    }
+  }
+
+  bool get _batchSniffActive =>
+      _batchSniffStarted &&
+      _batchSniffCurrent != null &&
+      _batchSniffTotal != null;
 
   Future<void> _retryLoad() async {
     setState(() => _loadError = null);
@@ -367,34 +409,65 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
     final address =
         _pendingLoadUrl?.toString() ?? session.currentUrl?.toString();
     final controller = _controller;
-    return Scaffold(
-      body: Column(
-        children: [
-          BrowseChrome(
-            url: address,
-            canGoBack: _canGoBack,
-            canGoForward: _canGoForward,
-            onSubmit: (uri) {
-              session.applyRouteUrl(uri.toString());
-              _loadUrl(uri);
-            },
-            onBack: () => _controller?.goBack(),
-            onForward: () => _controller?.goForward(),
-            onReload: _retryLoad,
-            onResolvePage: _onResolvePage,
-          ),
-          Expanded(
-            child: _loadError != null
-                ? BrowseLoadError(message: _loadError!, onRetry: _retryLoad)
-                : controller == null
-                ? const SizedBox.shrink()
-                : WebViewWidget(controller: controller),
-          ),
-          SniffCandidateList(
-            candidates: session.candidates,
-            onSelect: _onSelectCandidate,
-          ),
-        ],
+    final batchSniffActive = _batchSniffActive;
+    return PopScope(
+      canPop: !batchSniffActive,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && batchSniffActive) {
+          _cancelBatchSniff();
+        }
+      },
+      child: Scaffold(
+        body: Column(
+          children: [
+            BrowseChrome(
+              url: address,
+              canGoBack: _canGoBack,
+              canGoForward: _canGoForward,
+              onSubmit: (uri) {
+                session.applyRouteUrl(uri.toString());
+                _loadUrl(uri);
+              },
+              onBack: () => _controller?.goBack(),
+              onForward: () => _controller?.goForward(),
+              onReload: _retryLoad,
+              onResolvePage: _onResolvePage,
+            ),
+            if (batchSniffActive)
+              Material(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '正在嗅探第 $_batchSniffCurrent/$_batchSniffTotal 集…',
+                          key: const Key('batch_sniff_progress'),
+                        ),
+                      ),
+                      TextButton(
+                        key: const Key('batch_sniff_cancel'),
+                        onPressed: _cancelBatchSniff,
+                        child: const Text('取消'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            Expanded(
+              child: _loadError != null
+                  ? BrowseLoadError(message: _loadError!, onRetry: _retryLoad)
+                  : controller == null
+                  ? const SizedBox.shrink()
+                  : WebViewWidget(controller: controller),
+            ),
+            SniffCandidateList(
+              candidates: session.candidates,
+              onSelect: _onSelectCandidate,
+            ),
+          ],
+        ),
       ),
     );
   }

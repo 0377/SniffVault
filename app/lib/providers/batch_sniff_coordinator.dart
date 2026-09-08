@@ -41,6 +41,7 @@ ResourceCandidate? pickSniffCandidate(
 
 typedef BatchSniffLoadUrl = Future<void> Function(Uri url);
 typedef BatchSniffEnsureDownloads = void Function();
+typedef BatchSniffProgress = void Function(int current, int total);
 
 class BatchSniffCoordinator {
   BatchSniffCoordinator._({
@@ -105,6 +106,7 @@ class BatchSniffCoordinator {
     required String parentId,
     required BatchSniffLoadUrl loadUrl,
     VoidCallback? onComplete,
+    BatchSniffProgress? onProgress,
   }) {
     if (_runFuture != null) {
       return _runFuture!;
@@ -113,6 +115,7 @@ class BatchSniffCoordinator {
       parentId: parentId,
       loadUrl: loadUrl,
       onComplete: onComplete,
+      onProgress: onProgress,
     );
     return _runFuture!.whenComplete(() {
       _runFuture = null;
@@ -123,14 +126,17 @@ class BatchSniffCoordinator {
     required String parentId,
     required BatchSniffLoadUrl loadUrl,
     VoidCallback? onComplete,
+    BatchSniffProgress? onProgress,
   }) async {
     _cancelled = false;
     final children = _needsSniffChildren(parentId);
-    for (final task in children) {
+    final total = children.length;
+    for (var index = 0; index < children.length; index++) {
       if (_cancelled) {
         break;
       }
-      await _processEpisode(task, loadUrl);
+      onProgress?.call(index + 1, total);
+      await _processEpisode(children[index], loadUrl);
     }
     onComplete?.call();
   }
