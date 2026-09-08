@@ -30,6 +30,16 @@ class _AddScreenState extends ConsumerState<AddScreen> {
   }
 
   @override
+  void didUpdateWidget(AddScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialUrl != oldWidget.initialUrl &&
+        widget.initialUrl != null &&
+        widget.initialUrl != _urlController.text) {
+      _urlController.text = widget.initialUrl!;
+    }
+  }
+
+  @override
   void dispose() {
     _urlController.dispose();
     super.dispose();
@@ -72,9 +82,9 @@ class _AddScreenState extends ConsumerState<AddScreen> {
                 if (!mounted) return;
                 Navigator.of(context).pop();
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('已加入下载队列')),
-                );
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('已加入下载队列')));
                 context.go('/tasks');
               },
             ),
