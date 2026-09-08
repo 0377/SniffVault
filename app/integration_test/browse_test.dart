@@ -106,6 +106,9 @@ void main() {
         timeout: const Duration(seconds: 15),
       );
       if (!showedDownload) {
+        if (Platform.isWindows) {
+          fail('U6w-cookie: Windows 上 cookie 解析本页必须出现「下载」');
+        }
         markTestSkipped('cookie-backed parse did not show download');
         return;
       }
