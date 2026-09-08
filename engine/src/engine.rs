@@ -289,6 +289,12 @@ impl Engine {
     }
 
     pub fn resume_task(&mut self, task_id: &str) -> Result<(), EngineError> {
+        let task = self.tasks.get(task_id)?;
+        if task.status == TaskStatus::NeedsSniff {
+            return Err(EngineError::InvalidArg(
+                "cannot resume task in needs_sniff status".into(),
+            ));
+        }
         if let Some(runtime) = &self.download {
             runtime.send_command(DownloadCommand::Resume {
                 task_id: task_id.to_string(),

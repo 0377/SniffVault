@@ -1,6 +1,6 @@
 use tempfile::tempdir;
 use video_sniffing_engine::tasks::TaskStore;
-use video_sniffing_engine::{DownloadTask, TaskStatus};
+use video_sniffing_engine::{DownloadTask, Engine, EngineError, TaskStatus};
 
 fn sample(id: &str, parent: Option<&str>, status: TaskStatus) -> DownloadTask {
     DownloadTask {
@@ -129,6 +129,44 @@ fn sync_parent_status_when_all_children_paused() {
 }
 
 #[test]
+fn list_runnable_tasks_excludes_needs_sniff() {
+    let dir = tempdir().unwrap();
+    let store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();
+
+    store
+        .upsert(&sample("sniff", None, TaskStatus::NeedsSniff))
+        .unwrap();
+    store
+        .upsert(&sample("queued", None, TaskStatus::Queued))
+        .unwrap();
+
+    let runnable = store.list_runnable_tasks(10).unwrap();
+    assert_eq!(runnable.len(), 1);
+    assert_eq!(runnable[0].id, "queued");
+}
+
+#[test]
+fn sync_parent_status_with_needs_sniff_child_not_completed() {
+    let dir = tempdir().unwrap();
+    let store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();
+
+    store
+        .upsert(&sample("parent", None, TaskStatus::Running))
+        .unwrap();
+    store
+        .upsert(&sample("c1", Some("parent"), TaskStatus::Completed))
+        .unwrap();
+    store
+        .upsert(&sample("c2", Some("parent"), TaskStatus::NeedsSniff))
+        .unwrap();
+
+    store.sync_parent_status("parent").unwrap();
+    let parent = store.get("parent").unwrap();
+    assert_ne!(parent.status, TaskStatus::Completed);
+    assert_eq!(parent.status, TaskStatus::Running);
+}
+
+#[test]
 fn upsert_parent_with_children_is_atomic() {
     let dir = tempdir().unwrap();
     let store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();
@@ -230,6 +268,21 @@ fn update_progress_preserves_resolved_media_url() {
         Some("https://cdn.example.com/v.m3u8")
     );
     assert_eq!(got.progress_bytes, 1024);
+}
+
+#[test]
+fn resume_task_rejects_needs_sniff() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("tasks.db");
+    {
+        let store = TaskStore::open(&path).unwrap();
+        store
+            .upsert(&sample("sniff", None, TaskStatus::NeedsSniff))
+            .unwrap();
+    }
+    let mut engine = Engine::open(dir.path()).unwrap();
+    let err = engine.resume_task("sniff").unwrap_err();
+    assert!(matches!(err, EngineError::InvalidArg(_)));
 }
 
 #[test]

@@ -76,6 +76,7 @@ pub enum TaskStatus {
     Queued,
     Running,
     Paused,
+    NeedsSniff,
     Completed,
     Failed,
     Cancelled,

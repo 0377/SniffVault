@@ -97,6 +97,15 @@ fn resolve_outcome_and_sniff_event_roundtrip_json() {
 }
 
 #[test]
+fn task_status_needs_sniff_roundtrip_json() {
+    let status = TaskStatus::NeedsSniff;
+    let json = serde_json::to_string(&status).unwrap();
+    assert_eq!(json, "\"needs_sniff\"");
+    let back: TaskStatus = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, TaskStatus::NeedsSniff);
+}
+
+#[test]
 fn download_task_json_omits_auth_snapshot() {
     let task = DownloadTask {
         id: "t1".into(),
