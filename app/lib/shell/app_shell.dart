@@ -5,6 +5,9 @@ import 'package:video_sniffing/providers/device_profile.dart';
 
 const kAppShellBreakpoint = 600.0;
 
+/// 「添加」分支在 [StatefulShellRoute] 中的索引（仅文档/测试引用）。
+const kAddShellBranchIndex = 3;
+
 class AppShell extends ConsumerWidget {
   const AppShell({super.key, required this.navigationShell});
 
