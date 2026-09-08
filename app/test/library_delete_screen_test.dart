@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:video_sniffing/engine/engine_host.dart';
+import 'package:video_sniffing/engine/models/ffi_response.dart';
 import 'package:video_sniffing/engine/models/library_episode.dart';
 import 'package:video_sniffing/engine/models/library_item.dart';
 import 'package:video_sniffing/engine/models/library_item_kind.dart';
@@ -67,6 +69,64 @@ void main() {
     expect(fake.episodesByItemId['series-1']!.first.id, 'ep-1');
     expect(libraryReads, greaterThan(1));
     expect(find.text('已删除'), findsOneWidget);
+  });
+
+  testWidgets('W9 delete item failure shows error SnackBar', (tester) async {
+    final fake = _setupSingleItemFake();
+    fake.removeLibraryItemError = EngineException(
+      const FfiError(kind: 'io', message: 'disk full'),
+    );
+    var libraryReads = 0;
+
+    await tester.pumpWidget(
+      _detailScope(
+        fake,
+        libraryReads: () => libraryReads++,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('library_detail_menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '删除'));
+    await tester.pumpAndSettle();
+
+    expect(fake.lastRemovedItemId, isNull);
+    expect(fake.libraryItems, hasLength(1));
+    expect(find.text('已删除'), findsNothing);
+    expect(find.text('本地存储异常：disk full'), findsOneWidget);
+    expect(find.text('片库列表'), findsNothing);
+  });
+
+  testWidgets('W9 delete episode failure shows error SnackBar', (tester) async {
+    final fake = _setupSeriesFake();
+    fake.removeEpisodeError = EngineException(
+      const FfiError(kind: 'io', message: 'disk full'),
+    );
+    var libraryReads = 0;
+
+    await tester.pumpWidget(
+      _detailScope(
+        fake,
+        itemId: 'series-1',
+        libraryReads: () => libraryReads++,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('episode_menu_ep-2')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除此分集'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '删除'));
+    await tester.pumpAndSettle();
+
+    expect(fake.lastRemovedEpisodeId, isNull);
+    expect(fake.episodesByItemId['series-1'], hasLength(2));
+    expect(find.text('已删除'), findsNothing);
+    expect(find.text('本地存储异常：disk full'), findsOneWidget);
   });
 }
 

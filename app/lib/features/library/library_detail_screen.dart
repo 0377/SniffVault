@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:video_sniffing/engine/engine_host.dart';
 import 'package:video_sniffing/engine/models/library_episode.dart';
 import 'package:video_sniffing/engine/models/library_item.dart';
 import 'package:video_sniffing/engine/models/library_item_kind.dart';
+import 'package:video_sniffing/ui/error_presenter.dart';
 import 'package:video_sniffing/features/cast/cast_actions.dart';
 import 'package:video_sniffing/features/library/widgets/confirm_delete_dialog.dart';
 import 'package:video_sniffing/features/library/widgets/episode_tile.dart';
@@ -161,16 +163,25 @@ Future<void> _confirmDeleteItem(
   }
 
   final repo = ref.read(engineRepositoryProvider);
-  repo.removeLibraryItem(item.id, deleteFiles: result.deleteFiles);
-  ref.invalidate(libraryProvider);
+  try {
+    repo.removeLibraryItem(item.id, deleteFiles: result.deleteFiles);
+    ref.invalidate(libraryProvider);
 
-  if (!context.mounted) {
-    return;
+    if (!context.mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已删除')),
+    );
+    context.pop();
+  } on EngineException catch (e) {
+    final message = presentEngineError(e);
+    if (message != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    }
   }
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(content: Text('已删除')),
-  );
-  context.pop();
 }
 
 Future<void> _confirmDeleteEpisode(
@@ -188,13 +199,22 @@ Future<void> _confirmDeleteEpisode(
   }
 
   final repo = ref.read(engineRepositoryProvider);
-  repo.removeEpisode(episode.id, deleteFiles: result.deleteFiles);
-  ref.invalidate(libraryProvider);
+  try {
+    repo.removeEpisode(episode.id, deleteFiles: result.deleteFiles);
+    ref.invalidate(libraryProvider);
 
-  if (!context.mounted) {
-    return;
+    if (!context.mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已删除')),
+    );
+  } on EngineException catch (e) {
+    final message = presentEngineError(e);
+    if (message != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    }
   }
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(content: Text('已删除')),
-  );
 }

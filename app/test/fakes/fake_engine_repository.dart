@@ -63,6 +63,8 @@ class FakeEngineRepository implements EngineRepository {
   bool? lastApplyLanIsReceiver;
   EngineException? pairPeerError;
   EngineException? castEpisodeError;
+  EngineException? removeLibraryItemError;
+  EngineException? removeEpisodeError;
   String? lastPairHost;
   int? lastPairPort;
   String? lastPairPin;
@@ -94,6 +96,9 @@ class FakeEngineRepository implements EngineRepository {
   @override
   void removeLibraryItem(String itemId, {bool deleteFiles = true}) {
     lastDeleteFiles = deleteFiles;
+    if (removeLibraryItemError != null) {
+      throw removeLibraryItemError!;
+    }
     lastRemovedItemId = itemId;
     libraryItems = libraryItems.where((i) => i.id != itemId).toList();
     episodesByItemId.remove(itemId);
@@ -102,6 +107,9 @@ class FakeEngineRepository implements EngineRepository {
   @override
   void removeEpisode(String episodeId, {bool deleteFiles = true}) {
     lastDeleteFiles = deleteFiles;
+    if (removeEpisodeError != null) {
+      throw removeEpisodeError!;
+    }
     lastRemovedEpisodeId = episodeId;
     for (final entry in episodesByItemId.entries.toList()) {
       final next = entry.value.where((e) => e.id != episodeId).toList();
