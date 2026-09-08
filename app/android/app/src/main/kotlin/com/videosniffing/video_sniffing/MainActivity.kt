@@ -12,8 +12,8 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
         rewriteIngressIntent(intent)
+        super.onNewIntent(getIntent())
     }
 
     private fun rewriteIngressIntent(source: Intent?) {
