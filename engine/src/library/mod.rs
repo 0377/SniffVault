@@ -1,3 +1,4 @@
+pub(crate) mod delete;
 mod schema;
 mod store;
 

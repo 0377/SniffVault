@@ -26,16 +26,22 @@ class QualityPicker extends StatelessWidget {
             child: LinearProgressIndicator(),
           )
         else
-          ...qualities.map(
-            (quality) => RadioListTile<Quality>(
-              title: Text(quality.label),
-              value: quality,
-              groupValue: selected,
-              onChanged: (value) {
-                if (value != null) {
-                  onSelected(value);
-                }
-              },
+          RadioGroup<Quality>(
+            groupValue: selected,
+            onChanged: (value) {
+              if (value != null) {
+                onSelected(value);
+              }
+            },
+            child: Column(
+              children: qualities
+                  .map(
+                    (quality) => RadioListTile<Quality>(
+                      title: Text(quality.label),
+                      value: quality,
+                    ),
+                  )
+                  .toList(),
             ),
           ),
       ],

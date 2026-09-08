@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import 'package:video_sniffing/features/browse/browse_screen.dart';
 import 'package:video_sniffing/providers/device_profile.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
-import 'package:video_sniffing/providers/engine_repository.dart';
 import 'package:video_sniffing/shell/shell_selector.dart';
 
 import 'fakes/fake_engine_repository.dart';

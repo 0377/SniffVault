@@ -41,8 +41,8 @@ class FakeEngineRepository implements EngineRepository {
     this.settingsValue = EngineSettings.defaults,
     this.libraryItems = const [],
     this.tasks = const [],
-    List<LanPeer> discoverPeerResults = const [],
-  }) : discoverPeerResults = discoverPeerResults;
+    this.discoverPeerResults = const [],
+  });
 
   EngineSettings settingsValue;
   List<LibraryItem> libraryItems;
@@ -56,10 +56,15 @@ class FakeEngineRepository implements EngineRepository {
   Map<String, List<LibraryEpisode>> episodesByItemId = {};
   String? lastCastEpisodeId;
   String? lastCastPeerDeviceId;
+  bool? lastDeleteFiles;
+  String? lastRemovedItemId;
+  String? lastRemovedEpisodeId;
   String pairingPinValue = '123456';
   bool? lastApplyLanIsReceiver;
   EngineException? pairPeerError;
   EngineException? castEpisodeError;
+  EngineException? removeLibraryItemError;
+  EngineException? removeEpisodeError;
   String? lastPairHost;
   int? lastPairPort;
   String? lastPairPin;
@@ -87,6 +92,37 @@ class FakeEngineRepository implements EngineRepository {
   @override
   List<LibraryEpisode> listEpisodes(String itemId) =>
       episodesByItemId[itemId] ?? [];
+
+  @override
+  void removeLibraryItem(String itemId, {bool deleteFiles = true}) {
+    lastDeleteFiles = deleteFiles;
+    if (removeLibraryItemError != null) {
+      throw removeLibraryItemError!;
+    }
+    lastRemovedItemId = itemId;
+    libraryItems = libraryItems.where((i) => i.id != itemId).toList();
+    episodesByItemId.remove(itemId);
+  }
+
+  @override
+  void removeEpisode(String episodeId, {bool deleteFiles = true}) {
+    lastDeleteFiles = deleteFiles;
+    if (removeEpisodeError != null) {
+      throw removeEpisodeError!;
+    }
+    lastRemovedEpisodeId = episodeId;
+    for (final entry in episodesByItemId.entries.toList()) {
+      final next = entry.value.where((e) => e.id != episodeId).toList();
+      if (next.length != entry.value.length) {
+        episodesByItemId[entry.key] = next;
+        if (next.isEmpty) {
+          libraryItems = libraryItems.where((i) => i.id != entry.key).toList();
+          episodesByItemId.remove(entry.key);
+        }
+        break;
+      }
+    }
+  }
 
   @override
   List<DownloadTask> listTasks() => tasks;

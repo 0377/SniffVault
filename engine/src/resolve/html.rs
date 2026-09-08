@@ -46,7 +46,10 @@ pub(crate) fn extract_episode_list(
             continue;
         }
 
-        let index = parse_episode_index(text, href)?;
+        let index = match parse_episode_index(text, href) {
+            Some(index) => index,
+            None => continue,
+        };
         if !seen_indices.insert(index) {
             continue;
         }
@@ -247,6 +250,31 @@ mod tests {
     fn extract_episode_list_requires_at_least_two_episodes() {
         let html = r#"<a href="/ep/1">第1集</a>"#;
         assert!(extract_episode_list(html, "http://example.com/", "剧").is_none());
+    }
+
+    #[test]
+    fn extract_episode_list_skips_non_episode_links_between_episodes() {
+        let html = r#"
+        <a href="/promo">APP秒播</a>
+        <a href="/ep/1">第1集</a>
+        <a href="/ep/2">第2集</a>
+        "#;
+        let list = extract_episode_list(html, "http://example.com/", "剧").expect("episode list");
+        assert_eq!(list.episodes.len(), 2);
+    }
+
+    #[test]
+    fn extract_episode_list_from_maccms_playlist_fixture() {
+        let html = include_str!("../../tests/fixtures/html/maccms_playlist.html");
+        let list = extract_episode_list(
+            html,
+            "https://www.tjtmsb.com/tjtvod/181785.html",
+            "花开锦绣",
+        )
+        .expect("episode list");
+        assert!(list.episodes.len() >= 2);
+        assert!(list.episodes.iter().any(|ep| ep.index == 1));
+        assert!(list.episodes[0].url.contains("tjtplayer/181785"));
     }
 
     #[test]

@@ -20,11 +20,13 @@ class EpisodeTile extends StatelessWidget {
     required this.episode,
     required this.onTap,
     this.onCast,
+    this.onDelete,
   });
 
   final LibraryEpisode episode;
   final VoidCallback onTap;
   final VoidCallback? onCast;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -49,7 +51,7 @@ class EpisodeTile extends StatelessWidget {
   }
 
   Widget? _buildTrailing(bool showResume) {
-    if (onCast == null && !showResume) {
+    if (onCast == null && !showResume && onDelete == null) {
       return null;
     }
     return Row(
@@ -67,6 +69,18 @@ class EpisodeTile extends StatelessWidget {
             label: Text('续播'),
             visualDensity: VisualDensity.compact,
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        if (onDelete != null)
+          PopupMenuButton<String>(
+            key: Key('episode_menu_${episode.id}'),
+            onSelected: (value) {
+              if (value == 'delete') {
+                onDelete!();
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'delete', child: Text('删除此分集')),
+            ],
           ),
       ],
     );

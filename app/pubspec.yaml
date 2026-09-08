@@ -46,6 +46,7 @@ dependencies:
   share_ingress:
     path: ../platforms/share_ingress
   webview_flutter: ^4.10.0
+  webview_flutter_platform_interface: ^2.15.0
   app_links: ^6.3.2
   webview_win_floating: ^3.0.3
 dev_dependencies:
@@ -60,7 +61,8 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
-  webview_flutter_platform_interface: ^2.15.0
+  path_provider_platform_interface: ^2.1.0
+  plugin_platform_interface: ^2.1.8
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
