@@ -231,3 +231,30 @@ fn update_progress_preserves_resolved_media_url() {
     );
     assert_eq!(got.progress_bytes, 1024);
 }
+
+#[test]
+fn upsert_preserves_resolved_media_url() {
+    let dir = tempdir().unwrap();
+    let store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();
+    store
+        .upsert(&sample("a", None, TaskStatus::Queued))
+        .unwrap();
+    store
+        .set_resolved_media_url("a", "https://cdn.example.com/v.m3u8")
+        .unwrap();
+    let updated = DownloadTask {
+        title: "updated".into(),
+        status: TaskStatus::Running,
+        progress_bytes: 512,
+        ..store.get("a").unwrap()
+    };
+    store.upsert(&updated).unwrap();
+    let got = store.get("a").unwrap();
+    assert_eq!(
+        got.resolved_media_url.as_deref(),
+        Some("https://cdn.example.com/v.m3u8")
+    );
+    assert_eq!(got.title, "updated");
+    assert_eq!(got.status, TaskStatus::Running);
+    assert_eq!(got.progress_bytes, 512);
+}

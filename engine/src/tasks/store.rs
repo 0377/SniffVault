@@ -279,7 +279,7 @@ impl TaskStore {
                 r#"SELECT id, parent_id, season, title, source_url, quality_label, status,
                           progress_bytes, total_bytes, error_message, output_path,
                           library_item_id, episode_index, created_at_ms, updated_at_ms,
-                          cookie_header, referer, resolved_media_url, resolved_media_url
+                          cookie_header, referer, resolved_media_url
                    FROM download_tasks WHERE id=?1"#,
                 params![id],
                 Self::row_to_task,
