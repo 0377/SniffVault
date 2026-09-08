@@ -27,7 +27,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/library',
-                builder: (_, __) => const LibraryScreen(),
+                builder: (_, _) => const LibraryScreen(),
                 routes: [
                   GoRoute(
                     path: ':itemId',
@@ -56,7 +56,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
           StatefulShellBranch(
             routes: [
-              GoRoute(path: '/tasks', builder: (_, __) => const TasksScreen()),
+              GoRoute(path: '/tasks', builder: (_, _) => const TasksScreen()),
             ],
           ),
           StatefulShellBranch(
@@ -73,12 +73,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/settings',
-                builder: (_, __) => const SettingsScreen(),
+                builder: (_, _) => const SettingsScreen(),
                 routes: [
                   GoRoute(
                     parentNavigatorKey: _rootNavigatorKey,
                     path: 'trusted-devices',
-                    builder: (_, __) => const TrustedDevicesScreen(),
+                    builder: (_, _) => const TrustedDevicesScreen(),
                   ),
                 ],
               ),

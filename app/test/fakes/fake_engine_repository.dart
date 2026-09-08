@@ -41,8 +41,8 @@ class FakeEngineRepository implements EngineRepository {
     this.settingsValue = EngineSettings.defaults,
     this.libraryItems = const [],
     this.tasks = const [],
-    List<LanPeer> discoverPeerResults = const [],
-  }) : discoverPeerResults = discoverPeerResults;
+    this.discoverPeerResults = const [],
+  });
 
   EngineSettings settingsValue;
   List<LibraryItem> libraryItems;

@@ -9,15 +9,14 @@ import 'package:video_sniffing/providers/engine_repository.dart';
 import 'package:video_sniffing/providers/library_provider.dart';
 import 'package:video_sniffing/providers/tasks_provider.dart';
 
-typedef _Invalidate = void Function();
+typedef InvalidateCallback = void Function();
 
 class DownloadCoordinator {
   DownloadCoordinator._(
     this._repo, {
-    required _Invalidate onInvalidateTasks,
-    required _Invalidate onInvalidateLibrary,
-  })  : _onInvalidateTasks = onInvalidateTasks,
-        _onInvalidateLibrary = onInvalidateLibrary {
+    required this._onInvalidateTasks,
+    required this._onInvalidateLibrary,
+  }) {
     _subscription = _repo.taskEvents.listen(_onEvent);
     _startQueuedDownloadsIfNeeded();
   }
@@ -32,8 +31,8 @@ class DownloadCoordinator {
 
   factory DownloadCoordinator.forTest(
     EngineRepository repo, {
-    required _Invalidate onInvalidateTasks,
-    required _Invalidate onInvalidateLibrary,
+    required InvalidateCallback onInvalidateTasks,
+    required InvalidateCallback onInvalidateLibrary,
   }) {
     return DownloadCoordinator._(
       repo,
@@ -43,8 +42,8 @@ class DownloadCoordinator {
   }
 
   final EngineRepository _repo;
-  final _Invalidate _onInvalidateTasks;
-  final _Invalidate _onInvalidateLibrary;
+  final InvalidateCallback _onInvalidateTasks;
+  final InvalidateCallback _onInvalidateLibrary;
   StreamSubscription<TaskEvent>? _subscription;
   var _workerActive = false;
 

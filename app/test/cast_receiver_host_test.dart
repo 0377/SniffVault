@@ -35,7 +35,7 @@ void main() {
       routes: [
         GoRoute(
           path: '/',
-          builder: (_, __) => CastReceiverHost(
+          builder: (_, _) => CastReceiverHost(
             child: const Scaffold(body: Text('home')),
           ),
         ),

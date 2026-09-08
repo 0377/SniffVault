@@ -14,7 +14,6 @@ import 'package:video_sniffing/providers/device_profile.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
 import 'package:video_sniffing/providers/settings_provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
-import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
 
 import 'fakes/fake_engine_repository.dart';
 import 'fakes/fake_webview_platform.dart';
