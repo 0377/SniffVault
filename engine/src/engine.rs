@@ -158,6 +158,7 @@ impl Engine {
                 updated_at_ms: now,
                 cookie_header: cookie_header.clone(),
                 referer: referer.clone(),
+                resolved_media_url: None,
             });
         }
         self.tasks.upsert_parent_with_children(
@@ -179,6 +180,7 @@ impl Engine {
                 updated_at_ms: now,
                 cookie_header,
                 referer,
+                resolved_media_url: None,
             },
             &child_tasks,
         )?;
@@ -215,6 +217,7 @@ impl Engine {
             updated_at_ms: now,
             cookie_header: auth.and_then(|a| a.cookies.clone()),
             referer: auth.and_then(|a| a.referer.clone()),
+            resolved_media_url: None,
         })?;
         Ok(id)
     }

@@ -117,6 +117,9 @@ pub struct DownloadTask {
     pub cookie_header: Option<String>,
     #[serde(default, skip_serializing)]
     pub referer: Option<String>,
+    /// L2/L3 解析出的媒体直链；Worker 下载时优先使用。
+    #[serde(default)]
+    pub resolved_media_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

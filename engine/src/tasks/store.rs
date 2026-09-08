@@ -1,7 +1,8 @@
 use crate::download::checkpoint::Checkpoint;
 use crate::error::EngineError;
 use crate::tasks::schema::{
-    DB_PRAGMAS, TASK_MIGRATION_V2, TASK_MIGRATION_V3, TASK_SCHEMA, TASK_SCHEMA_VERSION,
+    DB_PRAGMAS, TASK_MIGRATION_V2, TASK_MIGRATION_V3, TASK_MIGRATION_V4, TASK_SCHEMA,
+    TASK_SCHEMA_VERSION,
 };
 use crate::types::{DownloadTask, TaskStatus};
 use rusqlite::{params, Connection};
@@ -67,6 +68,13 @@ impl TaskStore {
             let tx = conn.unchecked_transaction()?;
             Self::apply_alter_statements(&tx, TASK_MIGRATION_V3)?;
             tx.execute("PRAGMA user_version = 3", [])?;
+            tx.commit()?;
+        }
+        let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        if version < 4 {
+            let tx = conn.unchecked_transaction()?;
+            Self::apply_alter_statements(&tx, TASK_MIGRATION_V4)?;
+            tx.execute("PRAGMA user_version = 4", [])?;
             tx.commit()?;
         }
         Ok(())
@@ -168,6 +176,7 @@ impl TaskStore {
             updated_at_ms: row.get(14)?,
             cookie_header: row.get(15)?,
             referer: row.get(16)?,
+            resolved_media_url: row.get(17)?,
         })
     }
 
@@ -270,7 +279,7 @@ impl TaskStore {
                 r#"SELECT id, parent_id, season, title, source_url, quality_label, status,
                           progress_bytes, total_bytes, error_message, output_path,
                           library_item_id, episode_index, created_at_ms, updated_at_ms,
-                          cookie_header, referer
+                          cookie_header, referer, resolved_media_url, resolved_media_url
                    FROM download_tasks WHERE id=?1"#,
                 params![id],
                 Self::row_to_task,
@@ -286,7 +295,7 @@ impl TaskStore {
             r#"SELECT id, parent_id, season, title, source_url, quality_label, status,
                       progress_bytes, total_bytes, error_message, output_path,
                       library_item_id, episode_index, created_at_ms, updated_at_ms,
-                      cookie_header, referer
+                      cookie_header, referer, resolved_media_url
                FROM download_tasks ORDER BY created_at_ms DESC"#,
         )?;
         let rows = stmt.query_map([], Self::row_to_task)?;
@@ -302,7 +311,7 @@ impl TaskStore {
             r#"SELECT id, parent_id, season, title, source_url, quality_label, status,
                       progress_bytes, total_bytes, error_message, output_path,
                       library_item_id, episode_index, created_at_ms, updated_at_ms,
-                      cookie_header, referer
+                      cookie_header, referer, resolved_media_url
                FROM download_tasks WHERE parent_id=?1 ORDER BY episode_index ASC"#,
         )?;
         let rows = stmt.query_map(params![parent_id], Self::row_to_task)?;
@@ -443,7 +452,7 @@ impl TaskStore {
             r#"SELECT id, parent_id, season, title, source_url, quality_label, status,
                       progress_bytes, total_bytes, error_message, output_path,
                       library_item_id, episode_index, created_at_ms, updated_at_ms,
-                      cookie_header, referer
+                      cookie_header, referer, resolved_media_url
                FROM download_tasks
                WHERE status='queued'
                  AND source_url != ''
@@ -497,6 +506,19 @@ impl TaskStore {
         let n = self.conn.execute(
             r#"UPDATE download_tasks SET library_item_id=?1, updated_at_ms=?2 WHERE id=?3"#,
             params![library_item_id, Self::now_ms(), id],
+        )?;
+        if n == 0 {
+            return Err(EngineError::NotFound(format!("task {id}")));
+        }
+        Ok(())
+    }
+
+    pub fn set_resolved_media_url(&self, id: &str, url: &str) -> Result<(), EngineError> {
+        let n = self.conn.execute(
+            r#"UPDATE download_tasks
+               SET resolved_media_url=?1, updated_at_ms=?2
+               WHERE id=?3"#,
+            params![url, Self::now_ms(), id],
         )?;
         if n == 0 {
             return Err(EngineError::NotFound(format!("task {id}")));

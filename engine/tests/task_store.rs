@@ -21,6 +21,7 @@ fn sample(id: &str, parent: Option<&str>, status: TaskStatus) -> DownloadTask {
         updated_at_ms: 1,
         cookie_header: None,
         referer: None,
+        resolved_media_url: None,
     }
 }
 
@@ -61,6 +62,7 @@ fn list_runnable_tasks_excludes_parent_container() {
             updated_at_ms: 2,
             cookie_header: None,
             referer: None,
+            resolved_media_url: None,
         })
         .unwrap();
 
@@ -186,4 +188,46 @@ fn auth_snapshot_survives_reopen() {
     let got = store.get("a").unwrap();
     assert_eq!(got.cookie_header.as_deref(), Some("sid=ok"));
     assert_eq!(got.referer.as_deref(), Some("http://x/page"));
+}
+
+#[test]
+fn set_resolved_media_url_survives_reopen() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("tasks.db");
+    {
+        let store = TaskStore::open(&path).unwrap();
+        store
+            .upsert(&sample("a", None, TaskStatus::Queued))
+            .unwrap();
+        store
+            .set_resolved_media_url("a", "https://cdn.example.com/v.m3u8")
+            .unwrap();
+    }
+    let store = TaskStore::open(&path).unwrap();
+    let got = store.get("a").unwrap();
+    assert_eq!(
+        got.resolved_media_url.as_deref(),
+        Some("https://cdn.example.com/v.m3u8")
+    );
+}
+
+#[test]
+fn update_progress_preserves_resolved_media_url() {
+    let dir = tempdir().unwrap();
+    let store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();
+    store
+        .upsert(&sample("a", None, TaskStatus::Queued))
+        .unwrap();
+    store
+        .set_resolved_media_url("a", "https://cdn.example.com/v.m3u8")
+        .unwrap();
+    store
+        .update_progress("a", 1024, Some(4096), TaskStatus::Running)
+        .unwrap();
+    let got = store.get("a").unwrap();
+    assert_eq!(
+        got.resolved_media_url.as_deref(),
+        Some("https://cdn.example.com/v.m3u8")
+    );
+    assert_eq!(got.progress_bytes, 1024);
 }

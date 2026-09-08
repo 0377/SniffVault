@@ -59,6 +59,7 @@ mod tests {
             updated_at_ms: 1,
             cookie_header: None,
             referer: None,
+            resolved_media_url: None,
         }
     }
 
