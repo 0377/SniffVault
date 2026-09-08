@@ -19,6 +19,8 @@ fn sample(id: &str, parent: Option<&str>, status: TaskStatus) -> DownloadTask {
         episode_index: if parent.is_some() { Some(1) } else { None },
         created_at_ms: 1,
         updated_at_ms: 1,
+        cookie_header: None,
+        referer: None,
     }
 }
 
@@ -57,6 +59,8 @@ fn list_runnable_tasks_excludes_parent_container() {
             episode_index: None,
             created_at_ms: 2,
             updated_at_ms: 2,
+            cookie_header: None,
+            referer: None,
         })
         .unwrap();
 
@@ -165,4 +169,21 @@ fn parent_child_progress_counts_completed() {
     let t = store.get("c3").unwrap();
     assert_eq!(t.status, TaskStatus::Failed);
     assert_eq!(t.error_message.as_deref(), Some("network error"));
+}
+
+#[test]
+fn auth_snapshot_survives_reopen() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("tasks.db");
+    {
+        let store = TaskStore::open(&path).unwrap();
+        let mut task = sample("a", None, TaskStatus::Queued);
+        task.cookie_header = Some("sid=ok".into());
+        task.referer = Some("http://x/page".into());
+        store.upsert(&task).unwrap();
+    }
+    let store = TaskStore::open(&path).unwrap();
+    let got = store.get("a").unwrap();
+    assert_eq!(got.cookie_header.as_deref(), Some("sid=ok"));
+    assert_eq!(got.referer.as_deref(), Some("http://x/page"));
 }

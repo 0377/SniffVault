@@ -6,14 +6,19 @@ import 'package:video_sniffing/engine/models/download_task.dart';
 import 'package:video_sniffing/engine/models/engine_settings.dart';
 import 'package:video_sniffing/engine/models/library_episode.dart';
 import 'package:video_sniffing/engine/models/library_item.dart';
+import 'package:video_sniffing/engine/models/download_auth.dart';
 import 'package:video_sniffing/engine/models/resolve_types.dart';
+import 'package:video_sniffing/engine/models/sniff_types.dart';
 import 'package:video_sniffing/engine/models/task_event.dart';
 import 'package:video_sniffing/providers/engine_repository.dart';
 
 void validateMediaDirForTest(String name) {
   if (name.isEmpty) {
     throw EngineException(
-      const FfiError(kind: 'invalid_arg', message: 'media_dir must not be empty'),
+      const FfiError(
+        kind: 'invalid_arg',
+        message: 'media_dir must not be empty',
+      ),
     );
   }
   if (name == '.' ||
@@ -40,6 +45,10 @@ class FakeEngineRepository implements EngineRepository {
   EngineSettings settingsValue;
   List<LibraryItem> libraryItems;
   List<DownloadTask> tasks;
+  DownloadAuth? lastEnqueueAuth;
+  ResolveOptions? lastResolveOpts;
+  ResolveOptions? lastResolveQualitiesOpts;
+  List<ResourceCandidate> sniffResults = const [];
   final _events = StreamController<TaskEvent>.broadcast();
 
   @override
@@ -68,8 +77,11 @@ class FakeEngineRepository implements EngineRepository {
     required String title,
     required String url,
     String? qualityLabel,
-  }) =>
-      'fake-task-id';
+    DownloadAuth? auth,
+  }) {
+    lastEnqueueAuth = auth;
+    return 'fake-task-id';
+  }
 
   @override
   EnqueueEpisodesResult enqueueEpisodes({
@@ -77,8 +89,11 @@ class FakeEngineRepository implements EngineRepository {
     int? season,
     required List<(int index, String title, String url)> episodes,
     String? qualityLabel,
-  }) =>
-      const EnqueueEpisodesResult(parentId: 'parent', childIds: ['c1']);
+    DownloadAuth? auth,
+  }) {
+    lastEnqueueAuth = auth;
+    return const EnqueueEpisodesResult(parentId: 'parent', childIds: ['c1']);
+  }
 
   @override
   void startDownloads() {}
@@ -97,12 +112,9 @@ class FakeEngineRepository implements EngineRepository {
 
   @override
   Future<ResolveOutcome> resolveUrl(String url, {ResolveOptions? opts}) async {
+    lastResolveOpts = opts;
     return ResolveOutcomeSingle(
-      ResourceCandidate(
-        id: '1',
-        url: url,
-        kind: MediaKind.mp4,
-      ),
+      ResourceCandidate(id: '1', url: url, kind: MediaKind.mp4),
     );
   }
 
@@ -110,8 +122,16 @@ class FakeEngineRepository implements EngineRepository {
   Future<List<Quality>> resolveQualities(
     String mediaUrl, {
     ResolveOptions? opts,
-  }) async =>
-      [const Quality(label: '1080p')];
+  }) async {
+    lastResolveQualitiesOpts = opts;
+    return [const Quality(label: '1080p')];
+  }
+
+  @override
+  List<ResourceCandidate> sniffUrls(
+    List<SniffEvent> events, {
+    String? pageUrl,
+  }) => sniffResults;
 
   void dispose() => _events.close();
 }

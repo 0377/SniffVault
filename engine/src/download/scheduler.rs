@@ -65,6 +65,8 @@ mod tests {
             episode_index: if parent.is_some() { Some(1) } else { None },
             created_at_ms: 1,
             updated_at_ms: 1,
+            cookie_header: None,
+            referer: None,
         }
     }
 

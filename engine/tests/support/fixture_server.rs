@@ -1,9 +1,9 @@
 use axum::{
     body::Body,
     extract::{Request, State},
-    http::{header, Method, StatusCode},
+    http::{header, HeaderMap, Method, StatusCode},
     response::{IntoResponse, Response},
-    routing::any,
+    routing::{any, get},
     Router,
 };
 use bytes::Bytes;
@@ -59,6 +59,42 @@ pub async fn serve_dir_with_options(
     let router = Router::new()
         .fallback(any(serve_file))
         .with_state((root, options));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let handle = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    (addr, ServerGuard(handle))
+}
+
+#[allow(dead_code)]
+pub async fn serve_cookie_mp4() -> (SocketAddr, ServerGuard) {
+    let sample_path = fixtures_dir().join("sample.mp4");
+    let router = Router::new().route(
+        "/secret.mp4",
+        get(move |headers: HeaderMap| {
+            let sample_path = sample_path.clone();
+            async move {
+                let cookie_ok = headers
+                    .get(header::COOKIE)
+                    .and_then(|value| value.to_str().ok())
+                    .map(|cookie| cookie.contains("sid=ok"))
+                    .unwrap_or(false);
+                if !cookie_ok {
+                    return StatusCode::FORBIDDEN.into_response();
+                }
+                match tokio::fs::read(&sample_path).await {
+                    Ok(bytes) => Response::builder()
+                        .status(StatusCode::OK)
+                        .header(header::CONTENT_TYPE, "video/mp4")
+                        .header(header::CONTENT_LENGTH, bytes.len().to_string())
+                        .body(Body::from(bytes))
+                        .unwrap(),
+                    Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                }
+            }
+        }),
+    );
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let handle = tokio::spawn(async move {

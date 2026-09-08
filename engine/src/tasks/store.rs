@@ -1,6 +1,8 @@
 use crate::download::checkpoint::Checkpoint;
 use crate::error::EngineError;
-use crate::tasks::schema::{DB_PRAGMAS, TASK_MIGRATION_V2, TASK_SCHEMA, TASK_SCHEMA_VERSION};
+use crate::tasks::schema::{
+    DB_PRAGMAS, TASK_MIGRATION_V2, TASK_MIGRATION_V3, TASK_SCHEMA, TASK_SCHEMA_VERSION,
+};
 use crate::types::{DownloadTask, TaskStatus};
 use rusqlite::{params, Connection};
 use std::path::Path;
@@ -47,19 +49,43 @@ impl TaskStore {
                 "unsupported tasks.db schema version {version}, expected <= {TASK_SCHEMA_VERSION}"
             )));
         }
-        if version < TASK_SCHEMA_VERSION {
-            if version == 0 {
-                Self::ensure_v1_columns(conn)?;
-            }
+        if version == 0 {
+            Self::ensure_v1_columns(conn)?;
+        }
+        if version < 2 {
             let tx = conn.unchecked_transaction()?;
             if let Err(e) = tx.execute_batch(TASK_MIGRATION_V2) {
-                let msg = e.to_string();
-                if !msg.contains("duplicate column name") {
+                if !e.to_string().contains("duplicate column name") {
                     return Err(EngineError::Db(e));
                 }
             }
-            tx.execute(&format!("PRAGMA user_version = {TASK_SCHEMA_VERSION}"), [])?;
+            tx.execute("PRAGMA user_version = 2", [])?;
             tx.commit()?;
+        }
+        let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        if version < 3 {
+            let tx = conn.unchecked_transaction()?;
+            Self::apply_alter_statements(&tx, TASK_MIGRATION_V3)?;
+            tx.execute("PRAGMA user_version = 3", [])?;
+            tx.commit()?;
+        }
+        Ok(())
+    }
+
+    fn apply_alter_statements(
+        tx: &rusqlite::Transaction<'_>,
+        sql: &str,
+    ) -> Result<(), EngineError> {
+        for stmt in sql.split(';') {
+            let stmt = stmt.trim();
+            if stmt.is_empty() {
+                continue;
+            }
+            if let Err(e) = tx.execute_batch(stmt) {
+                if !e.to_string().contains("duplicate column name") {
+                    return Err(EngineError::Db(e));
+                }
+            }
         }
         Ok(())
     }
@@ -140,6 +166,8 @@ impl TaskStore {
             episode_index: row.get::<_, Option<i64>>(12)?.map(|v| v as u32),
             created_at_ms: row.get(13)?,
             updated_at_ms: row.get(14)?,
+            cookie_header: row.get(15)?,
+            referer: row.get(16)?,
         })
     }
 
@@ -152,8 +180,9 @@ impl TaskStore {
             r#"INSERT INTO download_tasks (
                  id, parent_id, season, title, source_url, quality_label, status,
                  progress_bytes, total_bytes, error_message, output_path,
-                 library_item_id, episode_index, created_at_ms, updated_at_ms
-               ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)
+                 library_item_id, episode_index, created_at_ms, updated_at_ms,
+                 cookie_header, referer
+               ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)
                ON CONFLICT(id) DO UPDATE SET
                  parent_id=excluded.parent_id,
                  season=excluded.season,
@@ -167,7 +196,9 @@ impl TaskStore {
                  output_path=excluded.output_path,
                  library_item_id=excluded.library_item_id,
                  episode_index=excluded.episode_index,
-                 updated_at_ms=excluded.updated_at_ms"#,
+                 updated_at_ms=excluded.updated_at_ms,
+                 cookie_header=excluded.cookie_header,
+                 referer=excluded.referer"#,
             params![
                 task.id,
                 task.parent_id,
@@ -184,6 +215,8 @@ impl TaskStore {
                 task.episode_index.map(|v| v as i64),
                 task.created_at_ms,
                 task.updated_at_ms,
+                task.cookie_header,
+                task.referer,
             ],
         )?;
         Ok(())
@@ -197,6 +230,9 @@ impl TaskStore {
         let tx = self.conn.unchecked_transaction()?;
         Self::upsert_conn(&tx, parent)?;
         for child in children {
+            if child.id.is_empty() {
+                return Err(EngineError::InvalidArg("task id must not be empty".into()));
+            }
             Self::upsert_conn(&tx, child)?;
         }
         tx.commit()?;
@@ -233,7 +269,8 @@ impl TaskStore {
             .query_row(
                 r#"SELECT id, parent_id, season, title, source_url, quality_label, status,
                           progress_bytes, total_bytes, error_message, output_path,
-                          library_item_id, episode_index, created_at_ms, updated_at_ms
+                          library_item_id, episode_index, created_at_ms, updated_at_ms,
+                          cookie_header, referer
                    FROM download_tasks WHERE id=?1"#,
                 params![id],
                 Self::row_to_task,
@@ -248,7 +285,8 @@ impl TaskStore {
         let mut stmt = self.conn.prepare(
             r#"SELECT id, parent_id, season, title, source_url, quality_label, status,
                       progress_bytes, total_bytes, error_message, output_path,
-                      library_item_id, episode_index, created_at_ms, updated_at_ms
+                      library_item_id, episode_index, created_at_ms, updated_at_ms,
+                      cookie_header, referer
                FROM download_tasks ORDER BY created_at_ms DESC"#,
         )?;
         let rows = stmt.query_map([], Self::row_to_task)?;
@@ -263,7 +301,8 @@ impl TaskStore {
         let mut stmt = self.conn.prepare(
             r#"SELECT id, parent_id, season, title, source_url, quality_label, status,
                       progress_bytes, total_bytes, error_message, output_path,
-                      library_item_id, episode_index, created_at_ms, updated_at_ms
+                      library_item_id, episode_index, created_at_ms, updated_at_ms,
+                      cookie_header, referer
                FROM download_tasks WHERE parent_id=?1 ORDER BY episode_index ASC"#,
         )?;
         let rows = stmt.query_map(params![parent_id], Self::row_to_task)?;
@@ -403,7 +442,8 @@ impl TaskStore {
         let mut stmt = self.conn.prepare(
             r#"SELECT id, parent_id, season, title, source_url, quality_label, status,
                       progress_bytes, total_bytes, error_message, output_path,
-                      library_item_id, episode_index, created_at_ms, updated_at_ms
+                      library_item_id, episode_index, created_at_ms, updated_at_ms,
+                      cookie_header, referer
                FROM download_tasks
                WHERE status='queued'
                  AND source_url != ''

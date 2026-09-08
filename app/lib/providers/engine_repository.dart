@@ -1,4 +1,5 @@
 import 'package:video_sniffing/engine/engine_host.dart';
+import 'package:video_sniffing/engine/models/download_auth.dart';
 import 'package:video_sniffing/engine/models/download_task.dart';
 import 'package:video_sniffing/engine/models/engine_settings.dart';
 import 'package:video_sniffing/engine/models/library_episode.dart';
@@ -20,6 +21,7 @@ abstract class EngineRepository {
     required String title,
     required String url,
     String? qualityLabel,
+    DownloadAuth? auth,
   });
 
   EnqueueEpisodesResult enqueueEpisodes({
@@ -27,6 +29,7 @@ abstract class EngineRepository {
     int? season,
     required List<(int index, String title, String url)> episodes,
     String? qualityLabel,
+    DownloadAuth? auth,
   });
 
   void startDownloads();
@@ -37,6 +40,7 @@ abstract class EngineRepository {
 
   Future<ResolveOutcome> resolveUrl(String url, {ResolveOptions? opts});
   Future<List<Quality>> resolveQualities(String mediaUrl, {ResolveOptions? opts});
+  List<ResourceCandidate> sniffUrls(List<SniffEvent> events, {String? pageUrl});
 }
 
 class EngineHostRepository implements EngineRepository {
@@ -67,8 +71,14 @@ class EngineHostRepository implements EngineRepository {
     required String title,
     required String url,
     String? qualityLabel,
+    DownloadAuth? auth,
   }) =>
-      _host.enqueueSingle(title: title, url: url, qualityLabel: qualityLabel);
+      _host.enqueueSingle(
+        title: title,
+        url: url,
+        qualityLabel: qualityLabel,
+        auth: auth,
+      );
 
   @override
   EnqueueEpisodesResult enqueueEpisodes({
@@ -76,12 +86,14 @@ class EngineHostRepository implements EngineRepository {
     int? season,
     required List<(int index, String title, String url)> episodes,
     String? qualityLabel,
+    DownloadAuth? auth,
   }) =>
       _host.enqueueEpisodes(
         listTitle: listTitle,
         season: season,
         episodes: episodes,
         qualityLabel: qualityLabel,
+        auth: auth,
       );
 
   @override
@@ -110,4 +122,8 @@ class EngineHostRepository implements EngineRepository {
     ResolveOptions? opts,
   }) =>
       _host.resolveQualities(mediaUrl, opts: opts);
+
+  @override
+  List<ResourceCandidate> sniffUrls(List<SniffEvent> events, {String? pageUrl}) =>
+      _host.sniffUrls(events, pageUrl: pageUrl);
 }

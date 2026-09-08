@@ -13,7 +13,9 @@ fn start_downloads_emits_task_updated() {
         let (addr, _guard) = fixture_server::serve_dir(fixture_server::fixtures_dir()).await;
         let url = format!("http://{addr}/sample.mp4");
 
-        fx.engine.enqueue_single("sample", &url, None).unwrap();
+        fx.engine
+            .enqueue_single("sample", &url, None, None)
+            .unwrap();
         fx.engine.start_downloads().unwrap();
         let rx = fx.engine.take_task_event_receiver().unwrap();
 

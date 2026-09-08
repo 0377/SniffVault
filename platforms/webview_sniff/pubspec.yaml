@@ -1,0 +1,28 @@
+name: webview_sniff
+description: Cookie store and Android isTelevision detection for Video Sniffing.
+version: 0.0.1
+publish_to: none
+
+environment:
+  sdk: ^3.12.2
+  flutter: ">=3.3.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.videosniffing.webview_sniff
+        pluginClass: WebviewSniffPlugin
+      ios:
+        pluginClass: WebviewSniffPlugin
+      macos:
+        pluginClass: WebviewSniffPlugin
+      windows:
+        pluginClass: WebviewSniffPluginCApi

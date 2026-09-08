@@ -5,6 +5,7 @@ import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
 
+import 'models/download_auth.dart';
 import 'models/download_task.dart';
 import 'models/engine_settings.dart';
 import 'models/ffi_response.dart';
@@ -172,19 +173,24 @@ class EngineHost {
     required String title,
     required String url,
     String? qualityLabel,
+    DownloadAuth? auth,
   }) {
+    final optsJson = auth == null ? null : jsonEncode(auth.toJson());
     return _withOptionalUtf8(qualityLabel, (qualityLabelPtr) {
       return _withUtf8(title, (titlePtr) {
         return _withUtf8(url, (urlPtr) {
-          return _callSync(
-            (handle) => _bindings.engineEnqueueSingle(
-              handle,
-              titlePtr,
-              urlPtr,
-              qualityLabelPtr ?? nullptr.cast<Utf8>(),
-            ),
-            (json) => json as String,
-          );
+          return _withOptionalUtf8(optsJson, (optsJsonPtr) {
+            return _callSync(
+              (handle) => _bindings.engineEnqueueSingle(
+                handle,
+                titlePtr,
+                urlPtr,
+                qualityLabelPtr ?? nullptr.cast<Utf8>(),
+                optsJsonPtr ?? nullptr.cast<Utf8>(),
+              ),
+              (json) => json as String,
+            );
+          });
         });
       });
     });
@@ -195,6 +201,7 @@ class EngineHost {
     int? season,
     required List<(int index, String title, String url)> episodes,
     String? qualityLabel,
+    DownloadAuth? auth,
   }) {
     final args = <String, dynamic>{
       'list_title': listTitle,
@@ -203,6 +210,7 @@ class EngineHost {
           .map((episode) => [episode.$1, episode.$2, episode.$3])
           .toList(),
       'quality_label': ?qualityLabel,
+      if (auth != null) ...auth.toJson(),
     };
     final argsPtr = jsonEncode(args).toNativeUtf8();
     try {

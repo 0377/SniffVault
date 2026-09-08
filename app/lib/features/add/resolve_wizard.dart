@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:video_sniffing/engine/engine_host.dart';
+import 'package:video_sniffing/engine/models/download_auth.dart';
 import 'package:video_sniffing/engine/models/resolve_types.dart';
 import 'package:video_sniffing/features/add/widgets/episode_multi_select.dart';
 import 'package:video_sniffing/features/add/widgets/quality_picker.dart';
@@ -9,12 +10,14 @@ typedef EnqueueSingleCallback = String Function({
   required String title,
   required String url,
   String? qualityLabel,
+  DownloadAuth? auth,
 });
 typedef EnqueueEpisodesCallback = EnqueueEpisodesResult Function({
   required String listTitle,
   int? season,
   required List<(int index, String title, String url)> episodes,
   String? qualityLabel,
+  DownloadAuth? auth,
 });
 
 class ResolveWizard extends StatefulWidget {
@@ -26,6 +29,8 @@ class ResolveWizard extends StatefulWidget {
     this.enqueueSingle,
     this.enqueueEpisodes,
     this.defaultQualityLabel,
+    this.onOpenBrowser,
+    this.auth,
   });
 
   final ResolveOutcome outcome;
@@ -34,6 +39,8 @@ class ResolveWizard extends StatefulWidget {
   final EnqueueSingleCallback? enqueueSingle;
   final EnqueueEpisodesCallback? enqueueEpisodes;
   final String? defaultQualityLabel;
+  final VoidCallback? onOpenBrowser;
+  final DownloadAuth? auth;
 
   @override
   State<ResolveWizard> createState() => _ResolveWizardState();
@@ -116,6 +123,7 @@ class _ResolveWizardState extends State<ResolveWizard> {
             : _titleController.text.trim(),
         url: candidate.url,
         qualityLabel: _selectedQuality?.label ?? widget.defaultQualityLabel,
+        auth: widget.auth,
       );
       await widget.onEnqueue(context);
     } finally {
@@ -140,6 +148,7 @@ class _ResolveWizardState extends State<ResolveWizard> {
             .map((e) => (e.index, e.title, e.url))
             .toList(),
         qualityLabel: widget.defaultQualityLabel,
+        auth: widget.auth,
       );
       await widget.onEnqueue(context);
     } finally {
@@ -278,12 +287,13 @@ class _ResolveWizardState extends State<ResolveWizard> {
   }
 
   Widget _buildNeedsBrowser(BuildContext context, String reason) {
+    final onOpenBrowser = widget.onOpenBrowser;
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('此站点需登录浏览，内置浏览器将在后续版本支持'),
+          const Text('此站点需要在内置浏览中打开并登录后再解析。'),
           if (reason.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
@@ -292,6 +302,13 @@ class _ResolveWizardState extends State<ResolveWizard> {
             ),
           ],
           const Spacer(),
+          if (onOpenBrowser != null) ...[
+            FilledButton(
+              onPressed: onOpenBrowser,
+              child: const Text('打开内置浏览'),
+            ),
+            const SizedBox(height: 8),
+          ],
           FilledButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('返回'),

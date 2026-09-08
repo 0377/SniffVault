@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_sniffing/engine/engine_host.dart';
 import 'package:video_sniffing/engine/models/engine_settings.dart';
+import 'package:video_sniffing/providers/browse_session.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
 import 'package:video_sniffing/providers/settings_provider.dart';
 import 'package:video_sniffing/ui/error_presenter.dart';
@@ -47,6 +48,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     super.dispose();
   }
 
+  Future<void> _clearBrowseCookies() async {
+    await ref.read(browseCookieStoreProvider).clearAll();
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('已清除浏览 Cookie')));
+  }
+
   void _save() {
     setState(() => _errorMessage = null);
     final repo = ref.read(engineRepositoryProvider);
@@ -54,9 +65,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       repo.saveSettings(_draft);
       ref.invalidate(settingsProvider);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('设置已保存')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('设置已保存')));
       }
     } on EngineException catch (e) {
       final message = presentEngineError(e);
@@ -139,6 +150,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               key: const Key('settings_error'),
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
+          const SizedBox(height: 16),
+          OutlinedButton(
+            key: const Key('settings_clear_browse_cookies'),
+            onPressed: _clearBrowseCookies,
+            child: const Text('清除浏览 Cookie'),
+          ),
           const SizedBox(height: 16),
           FilledButton(
             key: const Key('settings_save'),

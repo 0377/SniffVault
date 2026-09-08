@@ -63,6 +63,8 @@ fn episode_list_and_task_status_defaults() {
         episode_index: Some(1),
         created_at_ms: 0,
         updated_at_ms: 0,
+        cookie_header: None,
+        referer: None,
     };
 }
 
@@ -91,4 +93,32 @@ fn resolve_outcome_and_sniff_event_roundtrip_json() {
     };
     let json = serde_json::to_string(&outcome).unwrap();
     assert!(json.contains("needs_browser"));
+}
+
+#[test]
+fn download_task_json_omits_auth_snapshot() {
+    let task = DownloadTask {
+        id: "t1".into(),
+        parent_id: None,
+        season: None,
+        title: "ep".into(),
+        source_url: "https://example.com/v.mp4".into(),
+        quality_label: None,
+        status: TaskStatus::Queued,
+        progress_bytes: 0,
+        total_bytes: None,
+        error_message: None,
+        output_path: None,
+        library_item_id: None,
+        episode_index: None,
+        created_at_ms: 0,
+        updated_at_ms: 0,
+        cookie_header: Some("sid=secret".into()),
+        referer: Some("https://example.com/page".into()),
+    };
+    let value = serde_json::to_value(&task).unwrap();
+    assert!(value.get("cookie_header").is_none());
+    assert!(value.get("referer").is_none());
+    assert_eq!(value["source_url"], "https://example.com/v.mp4");
+    assert!(!serde_json::to_string(&task).unwrap().contains("sid=secret"));
 }

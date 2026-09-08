@@ -162,6 +162,8 @@ async fn worker_downloads_mp4_and_registers_library() {
             episode_index: None,
             created_at_ms: now,
             updated_at_ms: now,
+            cookie_header: None,
+            referer: None,
         })
         .unwrap();
 
@@ -184,6 +186,8 @@ async fn worker_downloads_mp4_and_registers_library() {
             episode_index: None,
             created_at_ms: now,
             updated_at_ms: now,
+            cookie_header: None,
+            referer: None,
         })
         .unwrap();
 
@@ -264,6 +268,8 @@ async fn worker_downloads_hls_and_registers_library() {
             episode_index: None,
             created_at_ms: now,
             updated_at_ms: now,
+            cookie_header: None,
+            referer: None,
         })
         .unwrap();
 
@@ -318,6 +324,8 @@ async fn worker_cancel_cleans_temp_dir() {
             episode_index: None,
             created_at_ms: now,
             updated_at_ms: now,
+            cookie_header: None,
+            referer: None,
         })
         .unwrap();
 
@@ -378,6 +386,8 @@ async fn worker_pause_preserves_temp_dir() {
             episode_index: None,
             created_at_ms: now,
             updated_at_ms: now,
+            cookie_header: None,
+            referer: None,
         })
         .unwrap();
 

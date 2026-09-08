@@ -7,7 +7,7 @@ use support::engine_download::{
 };
 use support::fixture_server;
 use video_sniffing_engine::test_api::TaskStore;
-use video_sniffing_engine::{Engine, TaskStatus};
+use video_sniffing_engine::{DownloadAuth, Engine, TaskStatus};
 
 fn fixtures_hls_dir() -> std::path::PathBuf {
     fixture_server::fixtures_dir().join("hls")
@@ -30,7 +30,9 @@ fn mp4_download_registers() {
         let (addr, _guard) = fixture_server::serve_dir(fixture_server::fixtures_dir()).await;
         let url = format!("http://{addr}/sample.mp4");
 
-        fx.engine.enqueue_single("sample", &url, None).unwrap();
+        fx.engine
+            .enqueue_single("sample", &url, None, None)
+            .unwrap();
         fx.engine.start_downloads().unwrap();
         wait_for_task(
             &fx.engine,
@@ -66,7 +68,7 @@ fn mp4_resume_after_stop() {
 
         let (addr, _guard) = fixture_server::serve_dir(fixture_dir).await;
         let url = format!("http://{addr}/large.mp4");
-        let task_id = fx.engine.enqueue_single("large", &url, None).unwrap();
+        let task_id = fx.engine.enqueue_single("large", &url, None, None).unwrap();
 
         fx.engine.start_downloads().unwrap();
 
@@ -157,7 +159,9 @@ fn hls_plain_registers() {
         let (addr, _guard) = fixture_server::serve_dir(fixtures_hls_dir()).await;
         let url = format!("http://{addr}/media.m3u8");
 
-        fx.engine.enqueue_single("hls-plain", &url, None).unwrap();
+        fx.engine
+            .enqueue_single("hls-plain", &url, None, None)
+            .unwrap();
         fx.engine.start_downloads().unwrap();
         wait_for_task(
             &fx.engine,
@@ -186,7 +190,9 @@ fn hls_aes128_registers() {
         let (addr, _guard) = fixture_server::serve_dir(fixtures_hls_dir()).await;
         let url = format!("http://{addr}/encrypted.m3u8");
 
-        fx.engine.enqueue_single("hls-aes128", &url, None).unwrap();
+        fx.engine
+            .enqueue_single("hls-aes128", &url, None, None)
+            .unwrap();
         fx.engine.start_downloads().unwrap();
         wait_for_task(
             &fx.engine,
@@ -215,7 +221,7 @@ fn hls_master_highest_registers() {
         let url = format!("http://{addr}/master.m3u8");
 
         fx.engine
-            .enqueue_single("hls-master", &url, Some("highest"))
+            .enqueue_single("hls-master", &url, Some("highest"), None)
             .unwrap();
         fx.engine.start_downloads().unwrap();
         wait_for_task(
@@ -256,6 +262,7 @@ fn series_partial_failure_resume() {
                     (2, "第2集".into(), bad_url),
                     (3, "第3集".into(), good_mp4.clone()),
                 ],
+                None,
                 None,
             )
             .unwrap();
@@ -328,7 +335,10 @@ fn pause_and_cancel() {
         let url = format!("http://{addr}/large.mp4");
 
         // Pause path: interrupt mid-download, resume, complete.
-        let pause_task_id = fx.engine.enqueue_single("pause-me", &url, None).unwrap();
+        let pause_task_id = fx
+            .engine
+            .enqueue_single("pause-me", &url, None, None)
+            .unwrap();
         fx.engine.start_downloads().unwrap();
 
         if wait_for_any_running_or_progress(&fx.engine, &pause_task_id, Duration::from_secs(5))
@@ -362,7 +372,10 @@ fn pause_and_cancel() {
         }
 
         // Cancel path: start another download and cancel it.
-        let cancel_task_id = fx.engine.enqueue_single("cancel-me", &url, None).unwrap();
+        let cancel_task_id = fx
+            .engine
+            .enqueue_single("cancel-me", &url, None, None)
+            .unwrap();
         if wait_for_any_running_or_progress(&fx.engine, &cancel_task_id, Duration::from_secs(5))
             .await
         {
@@ -382,6 +395,32 @@ fn pause_and_cancel() {
         }
 
         fx.engine.stop_downloads().unwrap();
+    });
+}
+
+#[test]
+fn mp4_download_sends_enqueued_cookie() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let mut fx = EngineFixture::open();
+        let (addr, _guard) = fixture_server::serve_cookie_mp4().await;
+        let url = format!("http://{addr}/secret.mp4");
+        let auth = DownloadAuth {
+            cookies: Some("sid=ok".into()),
+            referer: Some(format!("http://{addr}/page")),
+        };
+        let id = fx
+            .engine
+            .enqueue_single("authed", &url, None, Some(&auth))
+            .unwrap();
+        fx.engine.start_downloads().unwrap();
+        wait_for_task(
+            &fx.engine,
+            &id,
+            TaskStatus::Completed,
+            Duration::from_secs(30),
+        )
+        .await;
     });
 }
 

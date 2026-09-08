@@ -376,7 +376,9 @@ async fn run_one_task(
     }
 
     let http = match HttpClient::new(config.user_agent.as_deref()) {
-        Ok(c) => c.with_cancellation(cancel.clone()),
+        Ok(c) => c
+            .with_cancellation(cancel.clone())
+            .with_auth(task.cookie_header.clone(), task.referer.clone()),
         Err(e) => return TaskRunOutcome::Failed(e),
     };
 
@@ -714,6 +716,8 @@ mod tests {
             episode_index: Some(3),
             created_at_ms: 1,
             updated_at_ms: 1,
+            cookie_header: None,
+            referer: None,
         };
         assert_eq!(output_filename(&task), "第1集_S1E3.mp4");
     }
