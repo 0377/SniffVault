@@ -7,11 +7,13 @@ void main() {
   group('EngineSettings', () {
     test('roundtrip through JSON', () {
       final original = EngineSettings(
+        deviceId: 'device-1',
         mediaDir: 'videos',
         maxConcurrency: 4,
         defaultQualityLabel: '1080p',
         userAgent: 'TestAgent/1.0',
         deviceName: 'MyDevice',
+        lanEnabled: true,
       );
 
       final json = original.toJson();

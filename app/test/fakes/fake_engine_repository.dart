@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:video_sniffing/engine/engine_host.dart';
+import 'package:video_sniffing/engine/models/cast_types.dart';
 import 'package:video_sniffing/engine/models/ffi_response.dart';
 import 'package:video_sniffing/engine/models/download_task.dart';
 import 'package:video_sniffing/engine/models/engine_settings.dart';
@@ -49,10 +50,18 @@ class FakeEngineRepository implements EngineRepository {
   ResolveOptions? lastResolveOpts;
   ResolveOptions? lastResolveQualitiesOpts;
   List<ResourceCandidate> sniffResults = const [];
+  List<LanPeer> discoverPeerResults = const [];
+  List<TrustedPeer> trustedPeers = const [];
+  String pairingPinValue = '123456';
+  bool? lastApplyLanIsReceiver;
   final _events = StreamController<TaskEvent>.broadcast();
+  final _castEvents = StreamController<CastEvent>.broadcast();
 
   @override
   Stream<TaskEvent> get taskEvents => _events.stream;
+
+  @override
+  Stream<CastEvent> get castEvents => _castEvents.stream;
 
   @override
   EngineSettings settings() => settingsValue;
@@ -133,5 +142,47 @@ class FakeEngineRepository implements EngineRepository {
     String? pageUrl,
   }) => sniffResults;
 
-  void dispose() => _events.close();
+  @override
+  void applyLanSettings({required bool isReceiver}) {
+    lastApplyLanIsReceiver = isReceiver;
+  }
+
+  @override
+  void stopLan() {}
+
+  @override
+  List<LanPeer> discoverPeers() => discoverPeerResults;
+
+  @override
+  String beginPairing() => pairingPinValue;
+
+  @override
+  String? pairingPin() => pairingPinValue;
+
+  @override
+  void pairPeer({
+    required String host,
+    required int port,
+    required String pin,
+  }) {}
+
+  @override
+  List<TrustedPeer> listTrustedPeers() => trustedPeers;
+
+  @override
+  bool removeTrustedPeer(String peerDeviceId) => false;
+
+  @override
+  void castEpisode({
+    required String episodeId,
+    required String peerDeviceId,
+  }) {}
+
+  @override
+  void stopCast() {}
+
+  void dispose() {
+    _events.close();
+    _castEvents.close();
+  }
 }
