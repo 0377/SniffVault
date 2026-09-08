@@ -25,7 +25,7 @@ pub fn validate_media_dir(name: &str) -> Result<(), EngineError> {
     Ok(())
 }
 
-fn ensure_device_id(settings: &mut EngineSettings) -> bool {
+pub(crate) fn ensure_device_id(settings: &mut EngineSettings) -> bool {
     if settings.device_id.is_empty() {
         settings.device_id = Uuid::new_v4().to_string();
         true

@@ -2,6 +2,7 @@ pub(crate) mod download;
 pub mod engine;
 pub mod error;
 pub mod ingest;
+pub mod lan;
 pub mod library;
 pub(crate) mod resolve;
 mod resolve_facade;

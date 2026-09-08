@@ -75,8 +75,15 @@ impl Engine {
         self.settings.clone()
     }
 
-    pub fn save_settings(&mut self, settings: EngineSettings) -> Result<(), EngineError> {
+    pub fn save_settings(&mut self, mut settings: EngineSettings) -> Result<(), EngineError> {
         settings::validate_media_dir(&settings.media_dir)?;
+        if settings.device_id.is_empty() {
+            if !self.settings.device_id.is_empty() {
+                settings.device_id = self.settings.device_id.clone();
+            } else {
+                settings::ensure_device_id(&mut settings);
+            }
+        }
         std::fs::create_dir_all(self.data_dir.join(&settings.media_dir))?;
         settings::save(&self.settings_path, &settings)?;
         self.settings = settings;
