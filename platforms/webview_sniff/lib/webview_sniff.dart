@@ -33,4 +33,33 @@ class WebViewSniff {
       return;
     }
   }
+
+  /// Configures the Windows WebView2 user data folder for cookie export.
+  ///
+  /// Returns `false` when the path is empty or the platform channel fails.
+  static Future<bool> setUserDataFolder(String path) async {
+    if (path.isEmpty) {
+      return false;
+    }
+    try {
+      await _cookies.invokeMethod<void>('setUserDataFolder', path);
+      return true;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  /// Probes whether WebView2 Runtime can be created (Windows only).
+  static Future<bool> isWebView2Available() async {
+    try {
+      final available = await _cookies.invokeMethod<bool>('isWebView2Available');
+      return available ?? false;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
+    }
+  }
 }

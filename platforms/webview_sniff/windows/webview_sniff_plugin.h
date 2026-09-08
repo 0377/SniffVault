@@ -36,6 +36,10 @@ class WebviewSniffPlugin : public flutter::Plugin {
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
   void ClearCookies(
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+  void SetUserDataFolder(const std::string &folder);
+  void ProbeWebView2(
+      std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+  void ResetEnvironment();
 
   HWND hwnd_ = nullptr;
   bool owns_hwnd_ = false;
@@ -44,6 +48,7 @@ class WebviewSniffPlugin : public flutter::Plugin {
   enum class InitState { kIdle, kPending, kReady, kFailed };
   InitState init_state_ = InitState::kIdle;
   std::vector<std::function<void(ICoreWebView2CookieManager *)>> pending_;
+  std::wstring user_data_folder_;
 };
 
 }  // namespace webview_sniff

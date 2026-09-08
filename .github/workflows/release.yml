@@ -41,9 +41,187 @@ jobs:
           run-test: "true"
           run-clippy: "true"
 
+  flutter-test:
+    name: flutter-test
+    needs: fmt
+    runs-on: macos-14
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Fetch bundled ffmpeg for HLS tests
+        run: bash engine/scripts/fetch_ffmpeg.sh
+
+      - name: Verify Rust FFI symlink
+        run: test -L app/rust || test -d app/rust_builder/rust
+
+      - name: Configure Flutter for macOS
+        run: |
+          flutter config --enable-macos-desktop
+          flutter config --no-enable-swift-package-manager
+
+      - name: Flutter widget tests
+        timeout-minutes: 15
+        run: |
+          cd app
+          flutter pub get
+          flutter test
+
+  flutter-integration:
+    name: flutter-integration (${{ matrix.suite }})
+    needs: fmt
+    runs-on: macos-14
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [engine, ui, deeplink, cast, browse]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Fetch bundled ffmpeg for HLS tests
+        run: bash engine/scripts/fetch_ffmpeg.sh
+
+      - name: Verify Rust FFI symlink
+        run: test -L app/rust || test -d app/rust_builder/rust
+
+      - name: Configure Flutter for macOS integration tests
+        run: |
+          flutter config --enable-macos-desktop
+          flutter config --no-enable-swift-package-manager
+
+      - name: Flutter macOS integration test (${{ matrix.suite }})
+        timeout-minutes: 30
+        run: |
+          cd app
+          flutter pub get
+          pkill -9 -f video_sniffing.app 2>/dev/null || true
+          if [ "${{ matrix.suite }}" = "engine" ]; then
+            flutter test integration_test/engine_smoke_test.dart -d macos
+          elif [ "${{ matrix.suite }}" = "deeplink" ]; then
+            flutter test integration_test/deep_link_test.dart -d macos
+          elif [ "${{ matrix.suite }}" = "cast" ]; then
+            flutter test integration_test/cast_test.dart -d macos
+          elif [ "${{ matrix.suite }}" = "browse" ]; then
+            flutter test integration_test/browse_test.dart -d macos
+          else
+            flutter test integration_test/ui_test.dart -d macos \
+              --dart-define=INTEGRATION_SKIP_PLAYER=true
+          fi
+
+  build-android:
+    name: build-android
+    needs: [test-clippy, flutter-test, flutter-integration]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - run: bash engine/scripts/fetch_ffmpeg.sh
+
+      - run: test -L app/rust || test -d app/rust_builder/rust
+
+      - run: cd app && flutter pub get
+
+      - run: yes | flutter doctor --android-licenses || true
+
+      - run: cd app && flutter build apk --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: app/build/app/outputs/flutter-apk/app-release.apk
+
+  build-macos:
+    name: build-macos
+    needs: [test-clippy, flutter-test, flutter-integration]
+    runs-on: macos-14
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - run: bash engine/scripts/fetch_ffmpeg.sh
+
+      - run: test -L app/rust || test -d app/rust_builder/rust
+
+      - run: cd app && flutter pub get
+
+      - run: |
+          flutter config --enable-macos-desktop
+          flutter config --no-enable-swift-package-manager
+          cd app && flutter build macos --release
+
+      - run: |
+          cd app/build/macos/Build/Products/Release
+          ditto -c -k --sequesterRsrc --keepParent video_sniffing.app macos-app.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-zip
+          path: app/build/macos/Build/Products/Release/macos-app.zip
+
+  build-windows:
+    name: build-windows
+    needs: [test-clippy, flutter-test, flutter-integration]
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - run: bash engine/scripts/fetch_ffmpeg.sh
+
+      - run: test -L app/rust || test -d app/rust_builder/rust
+
+      - run: cd app && flutter pub get
+
+      - name: Verify Windows WebView plugin registration
+        run: Select-String -Path app/windows/flutter/generated_plugin_registrant.cc -Pattern webview_win_floating
+
+      - run: cd app && flutter build windows --release
+
+      - shell: pwsh
+        run: |
+          Compress-Archive -Path app/build/windows/x64/runner/Release/* `
+            -DestinationPath app/sniffvault-windows.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-zip
+          path: app/sniffvault-windows.zip
+
   publish:
     name: publish
-    needs: test-clippy
+    needs: [test-clippy, flutter-test, flutter-integration, build-android, build-macos, build-windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -72,10 +250,26 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Rename release assets
+        run: |
+          TAG="${{ github.ref_name }}"
+          cp artifacts/android-apk/app-release.apk "sniffvault-${TAG}-android.apk"
+          cp artifacts/macos-zip/macos-app.zip "sniffvault-${TAG}-macos.zip"
+          cp artifacts/windows-zip/sniffvault-windows.zip "sniffvault-${TAG}-windows.zip"
+          sha256sum sniffvault-${TAG}-* > SHA256SUMS.txt
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           body: ${{ steps.changelog.outputs.body }}
-          generate_release_notes: false
+          files: |
+            sniffvault-${{ github.ref_name }}-android.apk
+            sniffvault-${{ github.ref_name }}-macos.zip
+            sniffvault-${{ github.ref_name }}-windows.zip
+            SHA256SUMS.txt

@@ -7,14 +7,18 @@
 #include "generated_plugin_registrant.h"
 
 #include <app_links/app_links_plugin_c_api.h>
+#include <fullscreen_window/fullscreen_window_plugin_c_api.h>
 #include <media_kit_libs_windows_video/media_kit_libs_windows_video_plugin_c_api.h>
 #include <media_kit_video/media_kit_video_plugin_c_api.h>
 #include <volume_controller/volume_controller_plugin_c_api.h>
 #include <webview_sniff/webview_sniff_plugin_c_api.h>
+#include <webview_win_floating/webview_win_floating_plugin_c_api.h>
 
 void RegisterPlugins(flutter::PluginRegistry* registry) {
   AppLinksPluginCApiRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("AppLinksPluginCApi"));
+  FullscreenWindowPluginCApiRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("FullscreenWindowPluginCApi"));
   MediaKitLibsWindowsVideoPluginCApiRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("MediaKitLibsWindowsVideoPluginCApi"));
   MediaKitVideoPluginCApiRegisterWithRegistrar(
@@ -23,4 +27,6 @@ void RegisterPlugins(flutter::PluginRegistry* registry) {
       registry->GetRegistrarForPlugin("VolumeControllerPluginCApi"));
   WebviewSniffPluginCApiRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("WebviewSniffPluginCApi"));
+  WebviewWinFloatingPluginCApiRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("WebviewWinFloatingPluginCApi"));
 }

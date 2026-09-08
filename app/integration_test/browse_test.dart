@@ -9,9 +9,11 @@ import 'package:video_sniffing/app.dart';
 import 'package:video_sniffing/engine/engine_host.dart';
 import 'package:video_sniffing/engine/native_bindings.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
+import 'package:video_sniffing/providers/webview_bootstrap_provider.dart';
 
 import 'support/playable_mp4.dart';
 import 'support/test_pump.dart';
+import 'support/windows_webview_launch.dart';
 
 const _skipBrowse = bool.fromEnvironment(
   'INTEGRATION_SKIP_BROWSE',
@@ -106,6 +108,9 @@ void main() {
         timeout: const Duration(seconds: 15),
       );
       if (!showedDownload) {
+        if (Platform.isWindows) {
+          fail('U6w-cookie: Windows 上 cookie 解析本页必须出现「下载」');
+        }
         markTestSkipped('cookie-backed parse did not show download');
         return;
       }
@@ -232,6 +237,7 @@ Future<void> _launchApp(
   );
   await dir.create(recursive: true);
 
+  final webviewReady = await bootstrapWebViewForIntegrationTest();
   openNativeLibrary();
 
   tester.view.physicalSize = const Size(800, 800);
@@ -247,6 +253,7 @@ Future<void> _launchApp(
           ref.onDispose(host.dispose);
           return host;
         }),
+        webviewBootstrapReadyProvider.overrideWith((ref) => webviewReady),
       ],
       child: const VideoSniffingApp(),
     ),

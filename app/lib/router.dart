@@ -89,9 +89,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         parentNavigatorKey: _rootNavigatorKey,
         path: '/play/cast',
-        builder: (_, state) => CastPlayerScreen(
-          sessionId: state.uri.queryParameters['session_id'] ?? '',
-        ),
+        builder: (_, state) {
+          final sessionId = state.uri.queryParameters['session_id'] ?? '';
+          return CastPlayerScreen(
+            key: ValueKey(sessionId),
+            sessionId: sessionId,
+          );
+        },
       ),
       GoRoute(
         parentNavigatorKey: _rootNavigatorKey,

@@ -9,4 +9,10 @@ void main() {
   testWidgets('U10 pair cast metadata has no source_url', (tester) async {
     await runPairCastMetadataFlow(tester);
   }, timeout: const Timeout(Duration(minutes: 3)));
+
+  testWidgets('U10b second cast replaces first session on receiver', (
+    tester,
+  ) async {
+    await runDoubleCastReplacementFlow(tester);
+  }, timeout: const Timeout(Duration(minutes: 4)));
 }

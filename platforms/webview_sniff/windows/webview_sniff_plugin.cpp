@@ -107,7 +107,65 @@ void WebviewSniffPlugin::HandleMethodCall(
     ClearCookies(std::move(result));
     return;
   }
+  if (method_call.method_name() == "setUserDataFolder") {
+    const auto *folder = std::get_if<std::string>(method_call.arguments());
+    if (folder != nullptr) {
+      SetUserDataFolder(*folder);
+    }
+    result->Success();
+    return;
+  }
+  if (method_call.method_name() == "isWebView2Available") {
+    ProbeWebView2(std::move(result));
+    return;
+  }
   result->NotImplemented();
+}
+
+void WebviewSniffPlugin::ProbeWebView2(
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  auto *raw_result = result.release();
+  const wchar_t *udf =
+      user_data_folder_.empty() ? nullptr : user_data_folder_.c_str();
+  const HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
+      nullptr, udf, nullptr,
+      Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
+          [raw_result](HRESULT error_code,
+                       ICoreWebView2Environment *env) -> HRESULT {
+            std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                reply(raw_result);
+            reply->Success(
+                flutter::EncodableValue(SUCCEEDED(error_code) && env != nullptr));
+            return S_OK;
+          })
+          .Get());
+  if (FAILED(hr)) {
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> reply(
+        raw_result);
+    reply->Success(flutter::EncodableValue(false));
+  }
+}
+
+void WebviewSniffPlugin::SetUserDataFolder(const std::string &folder) {
+  if (folder.empty()) {
+    return;
+  }
+  const std::wstring next = Utf16FromUtf8(folder);
+  if (user_data_folder_ == next && init_state_ != InitState::kFailed) {
+    return;
+  }
+  ResetEnvironment();
+  user_data_folder_ = std::move(next);
+}
+
+void WebviewSniffPlugin::ResetEnvironment() {
+  if (controller_) {
+    controller_->Close();
+    controller_.Reset();
+  }
+  cookie_manager_.Reset();
+  init_state_ = InitState::kIdle;
+  pending_.clear();
 }
 
 void WebviewSniffPlugin::EnsureCookieManager(
@@ -125,8 +183,10 @@ void WebviewSniffPlugin::EnsureCookieManager(
     return;
   }
   init_state_ = InitState::kPending;
+  const wchar_t *udf =
+      user_data_folder_.empty() ? nullptr : user_data_folder_.c_str();
   const HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
-      nullptr, nullptr, nullptr,
+      nullptr, udf, nullptr,
       Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
           [this](HRESULT error_code, ICoreWebView2Environment *env) -> HRESULT {
             auto finish = [this](ICoreWebView2CookieManager *manager) {

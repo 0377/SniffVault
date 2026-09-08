@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -17,10 +19,13 @@ import 'package:video_sniffing/providers/browse_session.dart';
 import 'package:video_sniffing/providers/device_profile.dart';
 import 'package:video_sniffing/providers/download_coordinator.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
+import 'package:video_sniffing/bootstrap/windows_webview_bootstrap.dart';
 import 'package:video_sniffing/providers/settings_provider.dart';
+import 'package:video_sniffing/providers/webview_bootstrap_provider.dart';
 import 'package:video_sniffing/ui/error_presenter.dart';
 import 'package:video_sniffing/ui/loading_overlay.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_win_floating/webview_plugin.dart';
 
 class BrowseScreen extends ConsumerStatefulWidget {
   const BrowseScreen({super.key, this.session, this.webViewAvailable});
@@ -84,12 +89,24 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
     controller.setUserAgent(userAgent);
   }
 
+  WebViewController _createWebViewController() {
+    if (Platform.isWindows) {
+      final path = windowsWebViewUserDataPath;
+      if (path != null && path.isNotEmpty) {
+        return WebViewController.fromPlatformCreationParams(
+          WindowsWebViewControllerCreationParams(userDataFolder: path),
+        );
+      }
+    }
+    return WebViewController();
+  }
+
   void _ensureController(BrowseSession session, String? userAgent) {
     if (_controller != null) {
       _applyUserAgent(_controller!, userAgent);
       return;
     }
-    final controller = WebViewController()
+    final controller = _createWebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..addJavaScriptChannel(
         sniffChannelName,
@@ -284,6 +301,16 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
     }
     if (!(widget.webViewAvailable ?? browseWebViewAvailable())) {
       return const BrowseUnavailableScreen(message: '此平台尚未提供内置浏览');
+    }
+    final bootstrapReady = ref.watch(webviewBootstrapReadyProvider);
+    if (!bootstrapReady) {
+      return BrowseUnavailableScreen(
+        message: '此设备无法启动内置浏览',
+        detail: '请安装 Microsoft Edge WebView2 Runtime 后重试。',
+        helpUrl: Uri.parse(
+          'https://developer.microsoft.com/microsoft-edge/webview2/',
+        ),
+      );
     }
     final session = _resolvedSession(watch: true);
     String? userAgent;
