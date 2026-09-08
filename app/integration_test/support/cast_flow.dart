@@ -97,7 +97,13 @@ Future<void> waitForTaskCompleted(
     }
   });
 
-  host.startDownloads();
+  try {
+    host.startDownloads();
+  } on EngineException catch (e) {
+    if (!e.error.message.toLowerCase().contains('downloads already running')) {
+      rethrow;
+    }
+  }
   host.spawnDownloadWorker();
 
   final end = DateTime.now().add(timeout);
@@ -191,6 +197,49 @@ Future<void> runPairCastMetadataFlow(WidgetTester tester) async {
 
     final json = jsonEncode(event.request.metadata.toJson());
     expect(json.contains('source_url'), isFalse);
+  } finally {
+    sender.stopCast();
+    sender.stopLan();
+    receiver.stopLan();
+    sender.dispose();
+    receiver.dispose();
+    await _stopFixtureServer();
+  }
+}
+
+Future<void> runDoubleCastReplacementFlow(WidgetTester tester) async {
+  final base = await getTemporaryDirectory();
+  final ts = DateTime.now().millisecondsSinceEpoch;
+  final receiverDir = '${base.path}/cast_rx2_$ts';
+  final senderDir = '${base.path}/cast_tx2_$ts';
+
+  final receiver = await EngineHost.open(receiverDir);
+  final sender = await EngineHost.open(senderDir);
+  try {
+    final ep1 = await seedCachedEpisode(tester, sender);
+    final ep2 = await seedCachedEpisode(tester, sender);
+
+    enableLan(receiver);
+    enableLan(sender);
+    receiver.applyLanSettings(isReceiver: true);
+    final pin = receiver.beginPairing();
+    final receiverPort = receiver.lanHttpPort!;
+    sender.applyLanSettings(isReceiver: false);
+    sender.pairPeer(host: '127.0.0.1', port: receiverPort, pin: pin);
+
+    final rxId = receiver.settings().deviceId;
+
+    final firstFuture = waitForIncomingCast(tester, receiver);
+    sender.castEpisode(episodeId: ep1.id, peerDeviceId: rxId);
+    final first = await firstFuture;
+    expect(first.request.sessionId, isNotEmpty);
+
+    final secondFuture = waitForIncomingCast(tester, receiver);
+    sender.castEpisode(episodeId: ep2.id, peerDeviceId: rxId);
+    final second = await secondFuture;
+
+    expect(second.request.sessionId, isNot(first.request.sessionId));
+    expect(second.request.metadata.episodeTitle, ep2.title);
   } finally {
     sender.stopCast();
     sender.stopLan();
