@@ -70,3 +70,25 @@ async fn l6_range_request_returns_partial_content() {
     assert_eq!(resp.bytes().await.unwrap().as_ref(), b"0123");
     server.stop().await;
 }
+
+#[tokio::test]
+async fn l6_head_request_returns_content_length_without_body() {
+    let tmp = tempfile::tempdir().unwrap();
+    let file = tmp.path().join("clip.mp4");
+    std::fs::write(&file, b"0123456789").unwrap();
+    let token = "test-token";
+    let (server, port) = start_test_sender_with_token(token, &file).await;
+    let client = reqwest::Client::new();
+    let resp = client
+        .head(format!("http://127.0.0.1:{port}/v1/stream/{token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(
+        resp.headers().get("content-length").and_then(|v| v.to_str().ok()),
+        Some("10")
+    );
+    assert!(resp.bytes().await.unwrap().is_empty());
+    server.stop().await;
+}

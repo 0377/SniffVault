@@ -93,3 +93,46 @@ async fn l5_untrusted_sender_cast_play_returns_403() {
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     server.stop().await;
 }
+
+#[tokio::test]
+async fn pairing_pin_cannot_be_replayed() {
+    let dir = tempfile::tempdir().unwrap();
+    let session = begin_pairing(now_ms());
+    let pin = session.pin.clone();
+    let trust_store = TrustStore::open(&dir.path().join("lan.db")).unwrap();
+    let (event_tx, _event_rx) = mpsc::channel(8);
+    let state = ReceiverState {
+        device_id: "tv-test".into(),
+        trust_store: Arc::new(Mutex::new(trust_store)),
+        pairing_session: Arc::new(Mutex::new(Some(session))),
+        event_tx,
+    };
+    let (server, port) = ReceiverHttp::start("127.0.0.1:0".parse().unwrap(), state)
+        .await
+        .unwrap();
+
+    let client = reqwest::Client::new();
+    let pair_body = serde_json::json!({
+        "device_id": "phone-1",
+        "device_name": "Phone",
+        "pin": pin,
+    });
+
+    let first = client
+        .post(format!("http://127.0.0.1:{port}/v1/pair"))
+        .json(&pair_body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(first.status(), StatusCode::OK);
+
+    let second = client
+        .post(format!("http://127.0.0.1:{port}/v1/pair"))
+        .json(&pair_body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(second.status(), StatusCode::BAD_REQUEST);
+
+    server.stop().await;
+}

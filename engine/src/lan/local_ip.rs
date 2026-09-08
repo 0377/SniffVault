@@ -6,12 +6,13 @@ pub fn enumerate_local_ipv4() -> Vec<String> {
         if socket.connect("8.8.8.8:80").is_ok() {
             if let Ok(addr) = socket.local_addr() {
                 if let IpAddr::V4(v4) = addr.ip() {
-                    ips.push(v4.to_string());
+                    if !v4.is_loopback() {
+                        ips.push(v4.to_string());
+                    }
                 }
             }
         }
     }
-    ips.push(Ipv4Addr::LOCALHOST.to_string());
     ips
 }
 
@@ -19,6 +20,9 @@ pub fn select_for_peer(peer_host: &str, local_ips: &[&str]) -> String {
     let peer = parse_ipv4(peer_host);
 
     if let Some(peer_ip) = peer {
+        if peer_ip.is_loopback() {
+            return Ipv4Addr::LOCALHOST.to_string();
+        }
         for ip in local_ips {
             if let Some(local_ip) = parse_ipv4(ip) {
                 if same_subnet_24(peer_ip, local_ip) {
@@ -36,10 +40,7 @@ pub fn select_for_peer(peer_host: &str, local_ips: &[&str]) -> String {
         }
     }
 
-    local_ips
-        .first()
-        .map(|ip| (*ip).to_string())
-        .unwrap_or_default()
+    String::new()
 }
 
 fn parse_ipv4(value: &str) -> Option<Ipv4Addr> {
@@ -62,5 +63,17 @@ mod tests {
     fn selects_ip_in_same_subnet_as_peer() {
         let ip = select_for_peer("192.168.1.20", &["192.168.1.5", "10.0.0.2"]);
         assert_eq!(ip, "192.168.1.5");
+    }
+
+    #[test]
+    fn loopback_peer_returns_loopback() {
+        let ip = select_for_peer("127.0.0.1", &[]);
+        assert_eq!(ip, "127.0.0.1");
+    }
+
+    #[test]
+    fn does_not_fallback_to_loopback_for_lan_peer() {
+        let ip = select_for_peer("192.168.1.20", &[]);
+        assert!(ip.is_empty());
     }
 }

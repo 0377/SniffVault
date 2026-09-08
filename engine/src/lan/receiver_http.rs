@@ -159,6 +159,13 @@ async fn pair(
         .upsert_peer(&peer)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    state
+        .receiver
+        .pairing_session
+        .lock()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .take();
+
     Ok(Json(PairResponse {
         session_secret: hex::encode(session_secret),
     }))

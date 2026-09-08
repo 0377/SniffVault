@@ -75,7 +75,7 @@ struct AppState {
 fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
-        .route("/v1/stream/:token", get(stream))
+        .route("/v1/stream/:token", get(stream).head(stream_head))
         .with_state(state)
 }
 
@@ -97,36 +97,74 @@ async fn stream(
     AxumPath(token): AxumPath<String>,
     headers: HeaderMap,
 ) -> Result<Response, StatusCode> {
+    stream_response(state, token, headers, false).await
+}
+
+async fn stream_head(
+    State(state): State<AppState>,
+    AxumPath(token): AxumPath<String>,
+    headers: HeaderMap,
+) -> Result<Response, StatusCode> {
+    stream_response(state, token, headers, true).await
+}
+
+async fn stream_response(
+    state: AppState,
+    token: String,
+    headers: HeaderMap,
+    head_only: bool,
+) -> Result<Response, StatusCode> {
     let path = resolve_stream_path(&state, &token)?;
-    let data = tokio::fs::read(&path)
+    let metadata = tokio::fs::metadata(&path)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
+    let total = metadata.len() as usize;
     let content_type = content_type_for_path(&path);
 
     if let Some(range) = headers
         .get(header::RANGE)
         .and_then(|value| value.to_str().ok())
     {
-        if let Some((start, end)) = parse_range(range, data.len()) {
-            let slice = data[start..=end].to_vec();
-            return Response::builder()
+        if let Some((start, end)) = parse_range(range, total) {
+            let body_len = end - start + 1;
+            let builder = Response::builder()
                 .status(StatusCode::PARTIAL_CONTENT)
                 .header(header::CONTENT_TYPE, content_type)
                 .header(header::ACCEPT_RANGES, "bytes")
                 .header(
                     header::CONTENT_RANGE,
-                    format!("bytes {start}-{end}/{}", data.len()),
+                    format!("bytes {start}-{end}/{total}"),
                 )
-                .body(Body::from(slice))
+                .header(header::CONTENT_LENGTH, body_len);
+            let body = if head_only {
+                Body::empty()
+            } else {
+                let data = tokio::fs::read(&path)
+                    .await
+                    .map_err(|_| StatusCode::NOT_FOUND)?;
+                Body::from(data[start..=end].to_vec())
+            };
+            return builder
+                .body(body)
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR);
         }
     }
 
-    Response::builder()
+    let builder = Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, content_type)
         .header(header::ACCEPT_RANGES, "bytes")
-        .body(Body::from(data))
+        .header(header::CONTENT_LENGTH, total);
+    let body = if head_only {
+        Body::empty()
+    } else {
+        let data = tokio::fs::read(&path)
+            .await
+            .map_err(|_| StatusCode::NOT_FOUND)?;
+        Body::from(data)
+    };
+    builder
+        .body(body)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 

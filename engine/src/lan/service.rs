@@ -302,6 +302,11 @@ impl LanService {
             .sender_port
             .ok_or_else(|| EngineError::Message("sender port unavailable".into()))?;
         let advertise_ip = self.advertise_ip(&peer.peer_host);
+        if advertise_ip.is_empty() {
+            return Err(EngineError::Message(
+                "no suitable LAN IP for stream URL".into(),
+            ));
+        }
         let stream_url = format!("http://{advertise_ip}:{sender_port}/v1/stream/{token}");
         let session_id = Uuid::new_v4().to_string();
         let request = CastPlayRequest {
