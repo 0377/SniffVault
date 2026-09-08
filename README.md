@@ -99,7 +99,7 @@ flutter test integration_test/ui_test.dart -d macos
 
 主路径：添加页粘贴 URL → 解析返回 **NeedsBrowser** →「打开内置浏览」→ 浏览页加载该页 →「解析本页」→ 向导「下载」。也可直接点「浏览」，在地址栏打开页面后点「解析本页」（带着当前页 Cookie / Referer）。
 
-Android / iOS / macOS 使用官方 `webview_flutter`（NavigationDelegate + 注入脚本）。官方包 **没有 Windows 实现**，Windows 上浏览页不可用。Android TV 隐藏浏览入口。
+Android / iOS / macOS 使用官方 `webview_flutter`（NavigationDelegate + 注入脚本）。Windows 使用 `webview_win_floating`（WebView2）。Android TV 隐藏浏览入口。
 
 ```bash
 # 本地交付必须通过 U6（不要加 INTEGRATION_SKIP_BROWSE）
@@ -138,6 +138,20 @@ cd app && flutter test integration_test/cast_test.dart -d macos
 ```
 
 规格见 `docs/superpowers/specs/2026-09-08-lan-cast-tv-design.md`。
+
+## 可交付 v0.1（Plan 8）
+
+- Windows 内置浏览需 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
+- 推送 `v0.1.0` 等 `v*` tag 后，GitHub Release 提供 Android APK、macOS zip（解压得 `video_sniffing.app`）、Windows zip 与 `SHA256SUMS.txt`。
+- iOS 需本地自编译：`cd app && flutter build ios --release`（本仓库 CI 不产出 ipa）。
+- Android APK 为默认 debug/未商店签名，侧载需允许「未知来源」。
+
+```bash
+# Windows 浏览门禁（本地交付必须通过，含 U6w-cookie）
+cd app && flutter test integration_test/browse_test.dart -d windows
+```
+
+**U12 真机 QA（非 CI 阻塞，发版前建议）：** 双设备 mDNS 发现、非 loopback `stream_url` 拉流、TV 播放与投送顶替。
 
 ## 许可证
 
