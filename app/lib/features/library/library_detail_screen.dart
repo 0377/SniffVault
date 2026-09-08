@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:video_sniffing/engine/models/library_episode.dart';
 import 'package:video_sniffing/engine/models/library_item.dart';
 import 'package:video_sniffing/engine/models/library_item_kind.dart';
 import 'package:video_sniffing/features/cast/cast_actions.dart';
+import 'package:video_sniffing/features/library/widgets/confirm_delete_dialog.dart';
 import 'package:video_sniffing/features/library/widgets/episode_tile.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
 import 'package:video_sniffing/providers/library_provider.dart';
@@ -29,11 +31,42 @@ class LibraryDetailScreen extends ConsumerWidget {
     final episodes = List<LibraryEpisode>.from(repo.listEpisodes(itemId))
       ..sort((a, b) => a.index.compareTo(b.index));
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(item?.title ?? '片库详情'),
+    return Shortcuts(
+      shortcuts: const {
+        SingleActivator(LogicalKeyboardKey.contextMenu): ActivateIntent(),
+      },
+      child: Actions(
+        actions: {
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              if (item != null) {
+                _confirmDeleteItem(context, ref, item, episodes);
+              }
+              return null;
+            },
+          ),
+        },
+        child: Focus(
+          autofocus: true,
+          child: Scaffold(
+            appBar: AppBar(
+              title: Text(item?.title ?? '片库详情'),
+              actions: [
+                if (item != null)
+                  PopupMenuButton<String>(
+                    key: const Key('library_detail_menu'),
+                    onSelected: (value) =>
+                        _onMenuSelected(context, ref, value, item!, episodes),
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'delete', child: Text('删除')),
+                    ],
+                  ),
+              ],
+            ),
+            body: _buildBody(context, ref, item, episodes),
+          ),
+        ),
       ),
-      body: _buildBody(context, ref, item, episodes),
     );
   }
 
@@ -74,6 +107,9 @@ class LibraryDetailScreen extends ConsumerWidget {
       );
     }
 
+    final canDeleteEpisode =
+        item?.kind == LibraryItemKind.series && episodes.length >= 2;
+
     return ListView.builder(
       itemCount: episodes.length,
       itemBuilder: (context, index) {
@@ -85,8 +121,80 @@ class LibraryDetailScreen extends ConsumerWidget {
           onCast: canCast
               ? () => requestCast(context, ref, episode.id)
               : null,
+          onDelete: canDeleteEpisode
+              ? () => _confirmDeleteEpisode(context, ref, episode)
+              : null,
         );
       },
     );
   }
+}
+
+Future<void> _onMenuSelected(
+  BuildContext context,
+  WidgetRef ref,
+  String value,
+  LibraryItem item,
+  List<LibraryEpisode> episodes,
+) async {
+  if (value == 'delete') {
+    await _confirmDeleteItem(context, ref, item, episodes);
+  }
+}
+
+Future<void> _confirmDeleteItem(
+  BuildContext context,
+  WidgetRef ref,
+  LibraryItem item,
+  List<LibraryEpisode> episodes,
+) async {
+  final message = item.kind == LibraryItemKind.series
+      ? '将删除 ${episodes.length} 个分集'
+      : '将删除 1 个文件';
+  final result = await showConfirmDeleteDialogResult(
+    context,
+    title: '删除「${item.title}」？',
+    message: message,
+  );
+  if (result == null || !result.confirmed) {
+    return;
+  }
+
+  final repo = ref.read(engineRepositoryProvider);
+  repo.removeLibraryItem(item.id, deleteFiles: result.deleteFiles);
+  ref.invalidate(libraryProvider);
+
+  if (!context.mounted) {
+    return;
+  }
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('已删除')),
+  );
+  context.pop();
+}
+
+Future<void> _confirmDeleteEpisode(
+  BuildContext context,
+  WidgetRef ref,
+  LibraryEpisode episode,
+) async {
+  final result = await showConfirmDeleteDialogResult(
+    context,
+    title: '删除「${episode.title}」？',
+    message: '将删除 1 个文件',
+  );
+  if (result == null || !result.confirmed) {
+    return;
+  }
+
+  final repo = ref.read(engineRepositoryProvider);
+  repo.removeEpisode(episode.id, deleteFiles: result.deleteFiles);
+  ref.invalidate(libraryProvider);
+
+  if (!context.mounted) {
+    return;
+  }
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('已删除')),
+  );
 }
