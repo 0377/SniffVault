@@ -807,6 +807,7 @@ dependencies = [
  "if-addrs",
  "log",
  "mio",
+ "serde",
  "socket-pktinfo",
  "socket2",
 ]
