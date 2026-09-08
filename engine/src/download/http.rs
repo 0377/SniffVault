@@ -473,6 +473,44 @@ mod tests {
         (StatusCode::FORBIDDEN, "forbidden")
     }
 
+    async fn gzip_page_handler() -> impl IntoResponse {
+        use flate2::write::GzEncoder;
+        use flate2::Compression;
+        use std::io::Write;
+
+        let html = "<html><body>gzip-page</body></html>";
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(html.as_bytes()).unwrap();
+        let body = encoder.finish().unwrap();
+        (
+            StatusCode::OK,
+            [
+                (reqwest::header::CONTENT_ENCODING, "gzip"),
+                (reqwest::header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            ],
+            body,
+        )
+    }
+
+    #[tokio::test]
+    async fn get_page_text_decodes_gzip_body() {
+        let (base_url, _guard) =
+            spawn_server(Router::new().route("/gzip", get(gzip_page_handler))).await;
+        let client = HttpClient::new(None).unwrap();
+        let (status, body) = client
+            .get_page_text(
+                &format!("{base_url}/gzip"),
+                &PageFetchOptions {
+                    cookies: None,
+                    referer: None,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, "<html><body>gzip-page</body></html>");
+    }
+
     #[tokio::test]
     async fn get_page_text_sends_cookie_and_returns_status() {
         let (base_url, _guard) =
