@@ -124,6 +124,21 @@ cd app && flutter test integration_test/deep_link_test.dart -d macos
 
 规格见 `docs/superpowers/specs/2026-09-08-system-share-design.md`。
 
+## 播放页分集与嗅探补全（Plan 9）
+
+分集列表 URL 多为播放页，真实 m3u8/mp4 可能在页面脚本或 AJAX 响应中。批量入队后 Worker 会先尝试静态解析直链；若播放页无内嵌媒体，子任务进入 **待嗅探**（`needs_sniff`），不会把 HTML 标为已完成。
+
+主路径：
+
+1. **分集播放页入队** — 浏览页「解析本页」→ 向导批量选集 → 子任务 `source_url` 为各集播放页
+2. **待嗅探** — 任务页展开父任务，子任务显示「待嗅探」；父任务汇总「N 个子任务，M 待嗅探」
+3. **嗅探补全** — 点「嗅探补全」→ 跳转内置浏览（经 `batchSniffParentIdProvider` 传递父任务 ID，**不**写入 URL query）→ 按集序串行加载播放页、嗅探候选并写回 `resolved_media_url` → 自动继续下载
+4. **片库播放** — 下载完成后在片库播放已缓存分集
+
+单集也可在浏览中手动打开播放页、从嗅探候选入队（现有流程）。Android TV 无内置浏览，待嗅探任务需在手机/电脑上补全。
+
+规格见 `docs/superpowers/specs/2026-09-08-player-page-resolve-design.md`。
+
 ## 局域网投送（Plan 7）
 
 主路径：发送端（手机/桌面）在片库或播放器点「投送到 TV」→ 选择已配对 TV → 发送端经 LAN HTTP 推送脱敏元数据，TV 从发送端拉取已缓存文件播放。TV 端在设置中开启「允许局域网投送」后显示 6 位 PIN 供发送端配对。
