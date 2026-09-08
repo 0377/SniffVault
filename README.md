@@ -12,11 +12,11 @@
 
 - `engine/` — Rust 核心（片库、任务、后续下载/解析/LAN）
 - `app/` — Flutter UI（片库、浏览、任务、添加、播放器；Riverpod + go_router + media_kit）
-- `platforms/` — 原生胶水（`webview_sniff`：Cookie 仓 + Android `isTelevision`；iOS Share Extension 尚未实现）
+- `platforms/` — 原生胶水（`webview_sniff`：Cookie 仓 + Android `isTelevision`；`share_ingress`：iOS Share Extension 源文件托管）
 
 ## 持续集成
 
-合并到 `main` 前须通过 GitHub Actions：**fmt**（ubuntu）、**test + clippy**（Linux / macOS / Windows 三平台）、**flutter-test**（macOS 单元测试）、**flutter-integration**（macOS 引擎 FFI 与 UI 集成冒烟，并行 job）。
+合并到 `main` 前须通过 GitHub Actions：**fmt**（ubuntu）、**test + clippy**（Linux / macOS / Windows 三平台）、**flutter-test**（macOS 单元测试）、**flutter-integration**（macOS 引擎 FFI、UI 与深链 U8 集成冒烟，并行 job）。
 
 本地可运行与 CI 相同检查：
 
@@ -57,6 +57,7 @@ flutter build macos --debug
 # FFI 集成冒烟（需 macOS 设备；CI 在独立 job 中各跑一次）
 flutter test integration_test/engine_smoke_test.dart -d macos
 flutter test integration_test/ui_test.dart -d macos
+flutter test integration_test/deep_link_test.dart -d macos
 # 完整 UI 流程（含播放器，本地有 GUI 时）
 # flutter test integration_test/ui_test.dart -d macos
 
@@ -106,6 +107,21 @@ cd app && flutter test integration_test/browse_test.dart -d macos
 # CI 可用 skip；U7（video src 嗅探候选）5 秒内无条目时可 skip，不是门禁
 # flutter test integration_test/browse_test.dart -d macos --dart-define=INTEGRATION_SKIP_BROWSE=true
 ```
+
+## 系统分享与深链（Plan 6b）
+
+主路径：Android / iOS 系统「分享」选中本应用 → 主 App 打开添加 Tab 并预填 `http(s)` URL → 用户手动点「解析」（与粘贴行为一致，不自动下载）。
+
+- Android：`MainActivity` 将 `ACTION_SEND` 文本归一为 `sniffvault://add?url=<encoded>`，供 `app_links` 读取。
+- iOS：Share Extension（`platforms/share_ingress/ios/ShareExtension/`）读取分享载荷后 `extensionContext.open(sniffvault://…)` 唤起主 App。
+- Flutter：`DeepLinkHost` 解析深链后 `router.go('/add?url=…')`；无效载荷打开 `/add` 并 SnackBar 提示。
+
+```bash
+# U8 门禁（本地交付必须通过）
+cd app && flutter test integration_test/deep_link_test.dart -d macos
+```
+
+规格见 `docs/superpowers/specs/2026-09-08-system-share-design.md`。
 
 ## 许可证
 
