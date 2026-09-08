@@ -47,8 +47,7 @@ dependencies:
     path: ../platforms/share_ingress
   webview_flutter: ^4.10.0
   app_links: ^6.3.2
-  webview_flutter_windows: ^1.2.0
-
+  webview_win_floating: ^3.0.3
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -4,10 +4,12 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   app_links
+  fullscreen_window
   media_kit_libs_windows_video
   media_kit_video
   volume_controller
   webview_sniff
+  webview_win_floating
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
