@@ -33,4 +33,14 @@ class WebViewSniff {
       return;
     }
   }
+
+  static Future<void> setUserDataFolder(String path) async {
+    try {
+      await _cookies.invokeMethod<void>('setUserDataFolder', path);
+    } on MissingPluginException {
+      return;
+    } on PlatformException {
+      return;
+    }
+  }
 }
