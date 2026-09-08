@@ -44,6 +44,7 @@ dependencies:
   webview_sniff:
     path: ../platforms/webview_sniff
   webview_flutter: ^4.10.0
+  app_links: ^6.3.2
 
 dev_dependencies:
   flutter_test:
