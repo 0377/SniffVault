@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'cast_receiver/cast_receiver_host.dart';
 import 'deep_link/deep_link_host.dart';
 import 'providers/download_coordinator.dart';
 import 'providers/engine_host_provider.dart';
@@ -57,7 +58,9 @@ class VideoSniffingApp extends ConsumerWidget {
           ),
           routerConfig: router,
           builder: (context, child) => DeepLinkHost(
-            child: child ?? const SizedBox.shrink(),
+            child: CastReceiverHost(
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
         );
       },

@@ -4,6 +4,8 @@ import 'package:video_sniffing/engine/models/cast_types.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
 import 'package:video_sniffing/ui/error_presenter.dart';
 
+final activeCastRequestProvider = StateProvider<CastPlayRequest?>((ref) => null);
+
 const emptyPeersMessage = '未找到电视，请确认电视已开启局域网投送';
 
 /// 已信任设备置顶，其余保持发现顺序。

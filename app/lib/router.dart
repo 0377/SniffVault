@@ -5,6 +5,7 @@ import 'package:video_sniffing/features/add/add_screen.dart';
 import 'package:video_sniffing/features/browse/browse_screen.dart';
 import 'package:video_sniffing/features/library/library_detail_screen.dart';
 import 'package:video_sniffing/features/library/library_screen.dart';
+import 'package:video_sniffing/features/cast/cast_player_screen.dart';
 import 'package:video_sniffing/features/player/player_screen.dart';
 import 'package:video_sniffing/features/cast/trusted_devices_screen.dart';
 import 'package:video_sniffing/features/settings/settings_screen.dart';
@@ -84,6 +85,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             ],
           ),
         ],
+      ),
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: '/play/cast',
+        builder: (_, state) => CastPlayerScreen(
+          sessionId: state.uri.queryParameters['session_id'] ?? '',
+        ),
       ),
       GoRoute(
         parentNavigatorKey: _rootNavigatorKey,

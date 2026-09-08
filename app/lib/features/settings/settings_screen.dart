@@ -25,6 +25,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late final TextEditingController _userAgentController;
   late final TextEditingController _deviceNameController;
   String? _errorMessage;
+  String? _pairingPin;
 
   @override
   void initState() {
@@ -39,6 +40,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
     _userAgentController = TextEditingController(text: _draft.userAgent ?? '');
     _deviceNameController = TextEditingController(text: _draft.deviceName);
+    _pairingPin = ref.read(engineRepositoryProvider).pairingPin();
   }
 
   @override
@@ -69,6 +71,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ref.invalidate(settingsProvider);
       final isTv = await ref.read(isTelevisionProvider.future);
       await applyLanSettings(ref, isReceiver: isTv);
+      if (isTv && _draft.lanEnabled) {
+        setState(() {
+          _pairingPin = repo.pairingPin();
+        });
+      }
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -82,8 +89,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  void _refreshPairingPin() {
+    final repo = ref.read(engineRepositoryProvider);
+    final pin = repo.beginPairing();
+    setState(() => _pairingPin = pin);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isTv = ref.watch(isTelevisionProvider).value == true;
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
       body: ListView(
@@ -154,9 +168,44 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             title: const Text('局域网投送'),
             value: _draft.lanEnabled,
             onChanged: (value) {
-              setState(() => _draft = _draft.copyWith(lanEnabled: value));
+              setState(() {
+                _draft = _draft.copyWith(lanEnabled: value);
+                if (!value) {
+                  _pairingPin = null;
+                } else if (isTv) {
+                  _pairingPin = ref.read(engineRepositoryProvider).pairingPin();
+                }
+              });
             },
           ),
+          if (isTv && _draft.lanEnabled) ...[
+            const SizedBox(height: 8),
+            Text(
+              '配对码',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _pairingPin ?? '------',
+              key: const Key('settings_pairing_pin'),
+              style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                letterSpacing: 8,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '配对码 60 秒后过期，请在发送端输入',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton(
+              key: const Key('settings_refresh_pin'),
+              onPressed: _refreshPairingPin,
+              child: const Text('刷新配对码'),
+            ),
+          ],
           ListTile(
             key: const Key('settings_trusted_devices'),
             title: const Text('已信任设备'),
