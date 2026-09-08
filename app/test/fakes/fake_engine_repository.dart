@@ -127,6 +127,9 @@ class FakeEngineRepository implements EngineRepository {
   void cancelTask(String taskId) {}
 
   @override
+  void setTaskMediaUrl(String taskId, String mediaUrl) {}
+
+  @override
   void setEpisodePosition(String episodeId, int positionMs) {}
 
   @override

@@ -268,6 +268,20 @@ class EngineHost {
     });
   }
 
+  void setTaskMediaUrl(String taskId, String mediaUrl) {
+    _withUtf8(taskId, (taskIdPtr) {
+      _withUtf8(mediaUrl, (mediaUrlPtr) {
+        _callSyncVoid(
+          (handle) => _bindings.engineSetTaskMediaUrl(
+            handle,
+            taskIdPtr,
+            mediaUrlPtr,
+          ),
+        );
+      });
+    });
+  }
+
   void setEpisodePosition(String episodeId, int positionMs) {
     _withUtf8(episodeId, (episodeIdPtr) {
       _callSyncVoid(

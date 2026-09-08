@@ -38,6 +38,7 @@ abstract class EngineRepository {
   void pauseTask(String taskId);
   void resumeTask(String taskId);
   void cancelTask(String taskId);
+  void setTaskMediaUrl(String taskId, String mediaUrl);
   void setEpisodePosition(String episodeId, int positionMs);
 
   Future<ResolveOutcome> resolveUrl(String url, {ResolveOptions? opts});
@@ -123,6 +124,10 @@ class EngineHostRepository implements EngineRepository {
 
   @override
   void cancelTask(String taskId) => _host.cancelTask(taskId);
+
+  @override
+  void setTaskMediaUrl(String taskId, String mediaUrl) =>
+      _host.setTaskMediaUrl(taskId, mediaUrl);
 
   @override
   void setEpisodePosition(String episodeId, int positionMs) =>
