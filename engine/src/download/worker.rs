@@ -439,70 +439,78 @@ async fn run_one_task(
                 return TaskRunOutcome::Cancelled;
             }
 
-            let ingest_result = if let Some(parent_id) = &task.parent_id {
-                let parent = match tasks.get(parent_id) {
-                    Ok(p) => p,
-                    Err(e) => return TaskRunOutcome::Failed(e),
-                };
-                let episode_index = task.episode_index.unwrap_or(1);
-                ingest::register_completed_episode(
-                    &library,
-                    &config.media_dir,
-                    &parent.title,
-                    task.season,
-                    episode_index,
-                    &task.title,
-                    final_path.to_str().unwrap_or_default(),
-                    Some(&task.source_url),
-                )
+            let path_str = final_path.to_string_lossy().into_owned();
+            let library_item_id = if let Some(id) = current.library_item_id.clone() {
+                id
             } else {
-                ingest::register_completed_single(
-                    &library,
-                    &config.media_dir,
-                    &task.title,
-                    final_path.to_str().unwrap_or_default(),
-                    Some(&task.source_url),
-                )
+                let ingest_result = if let Some(parent_id) = &task.parent_id {
+                    let parent = match tasks.get(parent_id) {
+                        Ok(p) => p,
+                        Err(e) => return TaskRunOutcome::Failed(e),
+                    };
+                    let episode_index = task.episode_index.unwrap_or(1);
+                    ingest::register_completed_episode(
+                        &library,
+                        &config.media_dir,
+                        &parent.title,
+                        task.season,
+                        episode_index,
+                        &task.title,
+                        final_path.to_str().unwrap_or_default(),
+                        Some(&task.source_url),
+                    )
+                } else {
+                    ingest::register_completed_single(
+                        &library,
+                        &config.media_dir,
+                        &task.title,
+                        final_path.to_str().unwrap_or_default(),
+                        Some(&task.source_url),
+                    )
+                };
+
+                match ingest_result {
+                    Ok((item, _episode)) => {
+                        if let Err(e) = tasks.set_library_item_id(&task.id, &item.id) {
+                            return TaskRunOutcome::Failed(e);
+                        }
+                        item.id
+                    }
+                    Err(e) => return TaskRunOutcome::Failed(e),
+                }
             };
 
-            match ingest_result {
-                Ok((item, _episode)) => {
-                    let path_str = final_path.to_string_lossy().into_owned();
-                    let current = match tasks.get(&task.id) {
-                        Ok(t) => t,
-                        Err(e) => return TaskRunOutcome::Failed(e),
-                    };
-                    if current.status == TaskStatus::Paused {
-                        let _ = save_interrupt_checkpoint(config, task, &hls_states).await;
-                        return TaskRunOutcome::Cancelled;
-                    }
-                    if current.status != TaskStatus::Running {
-                        return TaskRunOutcome::Cancelled;
-                    }
-                    if cancel.is_cancelled() {
-                        let _ =
-                            save_interrupt_checkpoint_if_paused(config, task, &hls_states).await;
-                        return TaskRunOutcome::Cancelled;
-                    }
-                    let current = match tasks.get(&task.id) {
-                        Ok(t) => t,
-                        Err(e) => return TaskRunOutcome::Failed(e),
-                    };
-                    if current.status == TaskStatus::Paused || cancel.is_cancelled() {
-                        let _ = save_interrupt_checkpoint(config, task, &hls_states).await;
-                        return TaskRunOutcome::Cancelled;
-                    }
-                    if current.status != TaskStatus::Running {
-                        return TaskRunOutcome::Cancelled;
-                    }
-                    if let Err(e) = tasks.complete_download(&task.id, &path_str, &item.id) {
-                        return TaskRunOutcome::Failed(e);
-                    }
-                    cleanup_download_temp_if_terminal(config, &task.id);
-                    TaskRunOutcome::Success
-                }
-                Err(e) => TaskRunOutcome::Failed(e),
+            let current = match tasks.get(&task.id) {
+                Ok(t) => t,
+                Err(e) => return TaskRunOutcome::Failed(e),
+            };
+            if current.status == TaskStatus::Paused {
+                let _ = save_interrupt_checkpoint(config, task, &hls_states).await;
+                return TaskRunOutcome::Cancelled;
             }
+            if current.status != TaskStatus::Running {
+                return TaskRunOutcome::Cancelled;
+            }
+            if cancel.is_cancelled() {
+                let _ = save_interrupt_checkpoint_if_paused(config, task, &hls_states).await;
+                return TaskRunOutcome::Cancelled;
+            }
+            let current = match tasks.get(&task.id) {
+                Ok(t) => t,
+                Err(e) => return TaskRunOutcome::Failed(e),
+            };
+            if current.status == TaskStatus::Paused || cancel.is_cancelled() {
+                let _ = save_interrupt_checkpoint(config, task, &hls_states).await;
+                return TaskRunOutcome::Cancelled;
+            }
+            if current.status != TaskStatus::Running {
+                return TaskRunOutcome::Cancelled;
+            }
+            if let Err(e) = tasks.complete_download(&task.id, &path_str, &library_item_id) {
+                return TaskRunOutcome::Failed(e);
+            }
+            cleanup_download_temp_if_terminal(config, &task.id);
+            TaskRunOutcome::Success
         }
         Err(e) => {
             if cancel.is_cancelled() {

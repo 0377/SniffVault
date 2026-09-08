@@ -2,7 +2,7 @@ mod support;
 
 use std::time::Duration;
 use support::engine_download::{
-    interruptible_mp4_fixture_bytes, large_mp4_fixture_bytes, output_contains_ftyp, task_by_title,
+    interruptible_mp4_fixture_bytes, output_contains_ftyp, task_by_title,
     wait_for_any_running_or_progress, wait_for_task, EngineFixture,
 };
 use support::fixture_server;
@@ -62,11 +62,12 @@ fn mp4_resume_after_stop() {
         let sample = std::fs::read(fixture_server::fixtures_dir().join("sample.mp4")).unwrap();
         std::fs::write(
             fixture_dir.join("large.mp4"),
-            large_mp4_fixture_bytes(&sample),
+            interruptible_mp4_fixture_bytes(&sample),
         )
         .unwrap();
 
-        let (addr, _guard) = fixture_server::serve_dir(fixture_dir).await;
+        let (addr, _guard) =
+            fixture_server::serve_dir_throttled(fixture_dir, 8_192, Duration::from_millis(5)).await;
         let url = format!("http://{addr}/large.mp4");
         let task_id = fx.engine.enqueue_single("large", &url, None, None).unwrap();
 
@@ -145,7 +146,7 @@ fn mp4_resume_after_stop() {
         assert!(task.output_path.is_some());
         assert_eq!(fx.engine.list_library().unwrap().len(), 1);
 
-        let expected = large_mp4_fixture_bytes(&sample);
+        let expected = interruptible_mp4_fixture_bytes(&sample);
         let output = std::fs::read(task.output_path.as_ref().unwrap()).unwrap();
         assert_eq!(output, expected);
     });
