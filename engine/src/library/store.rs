@@ -270,11 +270,28 @@ impl LibraryStore {
     }
 
     pub fn remove_episode(&self, episode_id: &str) -> Result<(), EngineError> {
-        let n = self
-            .conn
-            .execute("DELETE FROM library_episodes WHERE id=?1", params![episode_id])?;
+        let n = self.conn.execute(
+            "DELETE FROM library_episodes WHERE id=?1",
+            params![episode_id],
+        )?;
         if n == 0 {
             return Err(EngineError::NotFound(format!("episode {episode_id}")));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn conn(&self) -> &Connection {
+        &self.conn
+    }
+
+    pub(crate) fn remove_item_in_tx(
+        &self,
+        tx: &rusqlite::Transaction,
+        item_id: &str,
+    ) -> Result<(), EngineError> {
+        let n = tx.execute("DELETE FROM library_items WHERE id=?1", params![item_id])?;
+        if n == 0 {
+            return Err(EngineError::NotFound(format!("library item {item_id}")));
         }
         Ok(())
     }

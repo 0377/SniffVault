@@ -387,6 +387,11 @@ impl LanService {
         Ok(())
     }
 
+    #[doc(hidden)]
+    pub fn has_active_cast(&self) -> bool {
+        self.active_cast.is_some()
+    }
+
     pub fn stop_cast(&mut self) -> Result<(), EngineError> {
         self.stop_cast_internal(true)
     }
