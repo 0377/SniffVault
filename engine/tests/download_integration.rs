@@ -54,6 +54,108 @@ fn player_page_resolves_and_downloads_mp4() {
 }
 
 #[test]
+fn player_page_without_media_sets_needs_sniff() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let mut fx = EngineFixture::open();
+        let (addr, _guard) = fixture_server::serve_dir(fixture_server::fixtures_dir()).await;
+        let page_url = format!("http://{addr}/html/empty_player.html");
+
+        fx.engine
+            .enqueue_single("empty-player", &page_url, None, None)
+            .unwrap();
+        fx.engine.start_downloads().unwrap();
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            let tasks = fx.engine.list_tasks().unwrap();
+            let task = task_by_title(&tasks, "empty-player");
+            if task.status == TaskStatus::NeedsSniff {
+                assert_eq!(task.error_message.as_deref(), Some("needs_sniff"));
+                assert!(task.output_path.is_none());
+                assert_eq!(fx.engine.list_library().unwrap().len(), 0);
+                fx.engine.stop_downloads().unwrap();
+                return;
+            }
+            if tokio::time::Instant::now() > deadline {
+                panic!("timeout waiting for needs_sniff, got {:?}", task.status);
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    });
+}
+
+#[test]
+fn resolved_media_url_skips_l2_fetch() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        use axum::{routing::get, Router};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        use tokio::net::TcpListener;
+
+        let page_hits = Arc::new(AtomicUsize::new(0));
+        let page_hits_ref = page_hits.clone();
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handle = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                Router::new().route(
+                    "/trap",
+                    get(move || {
+                        let page_hits = page_hits_ref.clone();
+                        async move {
+                            page_hits.fetch_add(1, Ordering::SeqCst);
+                            include_str!("fixtures/html/empty_player.html")
+                        }
+                    }),
+                ),
+            )
+            .await
+            .unwrap();
+        });
+
+        let mut fx = EngineFixture::open();
+        let (mp4_addr, mp4_guard) = fixture_server::serve_dir(fixture_server::fixtures_dir()).await;
+        let page_url = format!("http://{addr}/trap");
+        let mp4_url = format!("http://{mp4_addr}/sample.mp4");
+
+        let task_id = fx
+            .engine
+            .enqueue_single("pre-resolved", &page_url, None, None)
+            .unwrap();
+        let store = TaskStore::open(&fx.data_dir().join("tasks.db")).unwrap();
+        store.set_resolved_media_url(&task_id, &mp4_url).unwrap();
+
+        fx.engine.start_downloads().unwrap();
+        wait_for_task(
+            &fx.engine,
+            &task_id,
+            TaskStatus::Completed,
+            Duration::from_secs(30),
+        )
+        .await;
+        fx.engine.stop_downloads().unwrap();
+
+        assert_eq!(page_hits.load(Ordering::SeqCst), 0);
+        let task = fx
+            .engine
+            .list_tasks()
+            .unwrap()
+            .into_iter()
+            .find(|t| t.id == task_id)
+            .unwrap();
+        assert_eq!(task.resolved_media_url.as_deref(), Some(mp4_url.as_str()));
+        assert_eq!(fx.engine.list_library().unwrap().len(), 1);
+
+        handle.abort();
+        drop(mp4_guard);
+    });
+}
+
+#[test]
 fn mp4_download_registers() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {

@@ -81,6 +81,10 @@ pub(crate) async fn resolve_url(
     }
 }
 
+pub(crate) fn source_is_web_page(url: &str) -> bool {
+    classify_entry_url(url) == EntryKind::WebPage
+}
+
 pub(crate) async fn resolve_media_url(
     http: &HttpClient,
     url: &str,

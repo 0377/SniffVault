@@ -19,6 +19,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
+const MIN_VALID_MP4_BYTES: u64 = 64 * 1024;
+
 type HlsStateCell = Arc<tokio::sync::Mutex<HlsDownloadState>>;
 type HlsStatesMap = Arc<tokio::sync::Mutex<HashMap<String, HlsStateCell>>>;
 type TaskCancelsMap = Arc<tokio::sync::Mutex<HashMap<String, CancellationToken>>>;
@@ -398,9 +400,31 @@ async fn run_one_task(
         referer: download_referer.clone(),
         page_url: task.referer.clone(),
     };
-    let media_url = match resolve_media_url(&http, &task.source_url, &resolve_opts).await {
-        Ok(url) => url,
-        Err(e) => return TaskRunOutcome::Failed(e),
+    let media_url = if let Some(url) = task.resolved_media_url.clone() {
+        url
+    } else {
+        match resolve_media_url(&http, &task.source_url, &resolve_opts).await {
+            Ok(url) => {
+                if crate::resolve::source_is_web_page(&task.source_url) {
+                    if let Err(e) = tasks.set_resolved_media_url(&task.id, &url) {
+                        return TaskRunOutcome::Failed(e);
+                    }
+                }
+                url
+            }
+            Err(_) => {
+                if let Err(e) =
+                    tasks.set_task_status(&task.id, TaskStatus::NeedsSniff, Some("needs_sniff"))
+                {
+                    return TaskRunOutcome::Failed(e);
+                }
+                if let Some(parent_id) = &task.parent_id {
+                    let _ = tasks.sync_parent_status(parent_id);
+                }
+                cleanup_temp_dir(&config.media_dir, &task.id);
+                return TaskRunOutcome::Success;
+            }
+        }
     };
 
     let download_result = if is_hls_url(&media_url) {
@@ -443,6 +467,13 @@ async fn run_one_task(
 
     match download_result {
         Ok((final_path, _bytes)) => {
+            if let Err(err) = validate_download_output(&final_path, is_hls_url(&media_url)) {
+                let _ = tasks.mark_failed(&task.id, err.to_string().as_str());
+                let _ = std::fs::remove_file(&final_path);
+                cleanup_temp_dir(&config.media_dir, &task.id);
+                return TaskRunOutcome::Success;
+            }
+
             let current = match tasks.get(&task.id) {
                 Ok(t) => t,
                 Err(e) => return TaskRunOutcome::Failed(e),
@@ -673,6 +704,38 @@ fn is_hls_url(url: &str) -> bool {
     lower.contains(".m3u8") || lower.ends_with("m3u8")
 }
 
+fn looks_like_html(bytes: &[u8]) -> bool {
+    bytes
+        .iter()
+        .skip_while(|b| b.is_ascii_whitespace())
+        .next()
+        .is_some_and(|b| *b == b'<')
+}
+
+fn output_contains_ftyp(bytes: &[u8]) -> bool {
+    bytes.windows(4).any(|window| window == b"ftyp")
+}
+
+fn validate_download_output(path: &Path, is_hls: bool) -> Result<(), EngineError> {
+    let bytes = std::fs::read(path)?;
+    if looks_like_html(&bytes) {
+        return Err(EngineError::Message("invalid_media".into()));
+    }
+    if is_hls {
+        if !output_contains_ftyp(&bytes) {
+            return Err(EngineError::Message("invalid_media".into()));
+        }
+        return Ok(());
+    }
+    if bytes.len() < MIN_VALID_MP4_BYTES as usize {
+        return Err(EngineError::Message("invalid_media".into()));
+    }
+    if !output_contains_ftyp(&bytes) {
+        return Err(EngineError::Message("invalid_media".into()));
+    }
+    Ok(())
+}
+
 fn cleanup_temp_dir(media_dir: &Path, task_id: &str) {
     let temp = media_dir.join(".dl").join(task_id);
     if temp.exists() {
@@ -720,6 +783,20 @@ mod tests {
             classify_error(cancelled),
             TaskRunOutcome::Cancelled
         ));
+    }
+
+    #[test]
+    fn validate_download_output_rejects_html_and_tiny_mp4() {
+        let dir = tempfile::tempdir().unwrap();
+        let html_path = dir.path().join("fake.mp4");
+        std::fs::write(&html_path, b"<html><body>error</body></html>").unwrap();
+        let err = validate_download_output(&html_path, false).unwrap_err();
+        assert_eq!(err.to_string(), "invalid_media");
+
+        let tiny_path = dir.path().join("tiny.mp4");
+        std::fs::write(&tiny_path, b"ftyp").unwrap();
+        let err = validate_download_output(&tiny_path, false).unwrap_err();
+        assert_eq!(err.to_string(), "invalid_media");
     }
 
     #[test]
