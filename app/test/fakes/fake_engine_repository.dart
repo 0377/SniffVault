@@ -41,7 +41,8 @@ class FakeEngineRepository implements EngineRepository {
     this.settingsValue = EngineSettings.defaults,
     this.libraryItems = const [],
     this.tasks = const [],
-  });
+    List<LanPeer> discoverPeerResults = const [],
+  }) : discoverPeerResults = discoverPeerResults;
 
   EngineSettings settingsValue;
   List<LibraryItem> libraryItems;
@@ -52,8 +53,16 @@ class FakeEngineRepository implements EngineRepository {
   List<ResourceCandidate> sniffResults = const [];
   List<LanPeer> discoverPeerResults = const [];
   List<TrustedPeer> trustedPeers = const [];
+  Map<String, List<LibraryEpisode>> episodesByItemId = {};
+  String? lastCastEpisodeId;
+  String? lastCastPeerDeviceId;
   String pairingPinValue = '123456';
   bool? lastApplyLanIsReceiver;
+  EngineException? pairPeerError;
+  EngineException? castEpisodeError;
+  String? lastPairHost;
+  int? lastPairPort;
+  String? lastPairPin;
   final _events = StreamController<TaskEvent>.broadcast();
   final _castEvents = StreamController<CastEvent>.broadcast();
 
@@ -76,7 +85,8 @@ class FakeEngineRepository implements EngineRepository {
   List<LibraryItem> listLibrary() => libraryItems;
 
   @override
-  List<LibraryEpisode> listEpisodes(String itemId) => [];
+  List<LibraryEpisode> listEpisodes(String itemId) =>
+      episodesByItemId[itemId] ?? [];
 
   @override
   List<DownloadTask> listTasks() => tasks;
@@ -164,7 +174,14 @@ class FakeEngineRepository implements EngineRepository {
     required String host,
     required int port,
     required String pin,
-  }) {}
+  }) {
+    lastPairHost = host;
+    lastPairPort = port;
+    lastPairPin = pin;
+    if (pairPeerError != null) {
+      throw pairPeerError!;
+    }
+  }
 
   @override
   List<TrustedPeer> listTrustedPeers() => trustedPeers;
@@ -176,7 +193,13 @@ class FakeEngineRepository implements EngineRepository {
   void castEpisode({
     required String episodeId,
     required String peerDeviceId,
-  }) {}
+  }) {
+    lastCastEpisodeId = episodeId;
+    lastCastPeerDeviceId = peerDeviceId;
+    if (castEpisodeError != null) {
+      throw castEpisodeError!;
+    }
+  }
 
   @override
   void stopCast() {}
