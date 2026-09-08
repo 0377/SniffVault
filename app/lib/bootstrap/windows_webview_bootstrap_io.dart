@@ -1,6 +1,7 @@
 import 'dart:io' show Platform;
 
 import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
+import 'package:webview_sniff/webview_sniff.dart';
 import 'package:webview_win_floating/webview_plugin.dart';
 
 /// Windows WebView2 user data folder set by [bootstrapWindowsWebView].
@@ -15,7 +16,10 @@ Future<bool> bootstrapWindowsWebView(String userDataPath) async {
   try {
     WindowsWebViewPlatform.registerWith();
     windowsWebViewUserDataPath = userDataPath;
-    return WebViewPlatform.instance != null;
+    if (WebViewPlatform.instance == null) {
+      return false;
+    }
+    return await WebViewSniff.isWebView2Available();
   } catch (_) {
     return false;
   }

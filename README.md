@@ -64,7 +64,7 @@ flutter test integration_test/cast_test.dart -d macos
 
 # 浏览 U6 门禁（本地交付必须通过，不要 skip）
 flutter test integration_test/browse_test.dart -d macos
-# CI 无头环境可跳过浏览 WebView
+# 仅调试时跳过浏览 WebView（CI 默认跑 browse suite）
 # flutter test integration_test/browse_test.dart -d macos --dart-define=INTEGRATION_SKIP_BROWSE=true
 ```
 
@@ -105,7 +105,7 @@ Android / iOS / macOS 使用官方 `webview_flutter`（NavigationDelegate + 注�
 # 本地交付必须通过 U6（不要加 INTEGRATION_SKIP_BROWSE）
 cd app && flutter test integration_test/browse_test.dart -d macos
 
-# CI 可用 skip；U7（video src 嗅探候选）5 秒内无条目时可 skip，不是门禁
+# U7（video src 嗅探候选）5 秒内无条目时可 skip，不是门禁
 # flutter test integration_test/browse_test.dart -d macos --dart-define=INTEGRATION_SKIP_BROWSE=true
 ```
 

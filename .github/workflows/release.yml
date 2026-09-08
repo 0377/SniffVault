@@ -121,7 +121,7 @@ jobs:
 
   build-android:
     name: build-android
-    needs: fmt
+    needs: [test-clippy, flutter-test, flutter-integration]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -154,7 +154,7 @@ jobs:
 
   build-macos:
     name: build-macos
-    needs: fmt
+    needs: [test-clippy, flutter-test, flutter-integration]
     runs-on: macos-14
     permissions:
       contents: read
@@ -187,7 +187,7 @@ jobs:
 
   build-windows:
     name: build-windows
-    needs: fmt
+    needs: [test-clippy, flutter-test, flutter-integration]
     runs-on: windows-latest
     permissions:
       contents: read

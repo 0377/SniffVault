@@ -37,6 +37,8 @@ class WebviewSniffPlugin : public flutter::Plugin {
   void ClearCookies(
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
   void SetUserDataFolder(const std::string &folder);
+  void ProbeWebView2(
+      std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
   void ResetEnvironment();
 
   HWND hwnd_ = nullptr;

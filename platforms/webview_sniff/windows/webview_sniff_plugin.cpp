@@ -115,7 +115,35 @@ void WebviewSniffPlugin::HandleMethodCall(
     result->Success();
     return;
   }
+  if (method_call.method_name() == "isWebView2Available") {
+    ProbeWebView2(std::move(result));
+    return;
+  }
   result->NotImplemented();
+}
+
+void WebviewSniffPlugin::ProbeWebView2(
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  auto *raw_result = result.release();
+  const wchar_t *udf =
+      user_data_folder_.empty() ? nullptr : user_data_folder_.c_str();
+  const HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
+      nullptr, udf, nullptr,
+      Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
+          [raw_result](HRESULT error_code,
+                       ICoreWebView2Environment *env) -> HRESULT {
+            std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                reply(raw_result);
+            reply->Success(
+                flutter::EncodableValue(SUCCEEDED(error_code) && env != nullptr));
+            return S_OK;
+          })
+          .Get());
+  if (FAILED(hr)) {
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> reply(
+        raw_result);
+    reply->Success(flutter::EncodableValue(false));
+  }
 }
 
 void WebviewSniffPlugin::SetUserDataFolder(const std::string &folder) {
