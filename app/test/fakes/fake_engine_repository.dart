@@ -56,6 +56,9 @@ class FakeEngineRepository implements EngineRepository {
   Map<String, List<LibraryEpisode>> episodesByItemId = {};
   String? lastCastEpisodeId;
   String? lastCastPeerDeviceId;
+  bool? lastDeleteFiles;
+  String? lastRemovedItemId;
+  String? lastRemovedEpisodeId;
   String pairingPinValue = '123456';
   bool? lastApplyLanIsReceiver;
   EngineException? pairPeerError;
@@ -87,6 +90,31 @@ class FakeEngineRepository implements EngineRepository {
   @override
   List<LibraryEpisode> listEpisodes(String itemId) =>
       episodesByItemId[itemId] ?? [];
+
+  @override
+  void removeLibraryItem(String itemId, {bool deleteFiles = true}) {
+    lastDeleteFiles = deleteFiles;
+    lastRemovedItemId = itemId;
+    libraryItems = libraryItems.where((i) => i.id != itemId).toList();
+    episodesByItemId.remove(itemId);
+  }
+
+  @override
+  void removeEpisode(String episodeId, {bool deleteFiles = true}) {
+    lastDeleteFiles = deleteFiles;
+    lastRemovedEpisodeId = episodeId;
+    for (final entry in episodesByItemId.entries.toList()) {
+      final next = entry.value.where((e) => e.id != episodeId).toList();
+      if (next.length != entry.value.length) {
+        episodesByItemId[entry.key] = next;
+        if (next.isEmpty) {
+          libraryItems = libraryItems.where((i) => i.id != entry.key).toList();
+          episodesByItemId.remove(entry.key);
+        }
+        break;
+      }
+    }
+  }
 
   @override
   List<DownloadTask> listTasks() => tasks;

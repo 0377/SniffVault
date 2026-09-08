@@ -50,6 +50,28 @@ typedef EngineSetEpisodePosition = Pointer<Char> Function(
   int positionMs,
 );
 
+typedef EngineRemoveLibraryItemNative = Pointer<Char> Function(
+  Pointer<Void> handle,
+  Pointer<Utf8> itemId,
+  Uint8 deleteFiles,
+);
+typedef EngineRemoveLibraryItem = Pointer<Char> Function(
+  Pointer<Void> handle,
+  Pointer<Utf8> itemId,
+  int deleteFiles,
+);
+
+typedef EngineRemoveEpisodeNative = Pointer<Char> Function(
+  Pointer<Void> handle,
+  Pointer<Utf8> episodeId,
+  Uint8 deleteFiles,
+);
+typedef EngineRemoveEpisode = Pointer<Char> Function(
+  Pointer<Void> handle,
+  Pointer<Utf8> episodeId,
+  int deleteFiles,
+);
+
 typedef EngineListTasksNative = Pointer<Char> Function(Pointer<Void> handle);
 typedef EngineListTasks = Pointer<Char> Function(Pointer<Void> handle);
 
@@ -277,6 +299,11 @@ class NativeBindings {
         engineSetEpisodePosition = lib
             .lookupFunction<EngineSetEpisodePositionNative,
                 EngineSetEpisodePosition>('engine_set_episode_position'),
+        engineRemoveLibraryItem = lib.lookupFunction<
+            EngineRemoveLibraryItemNative,
+            EngineRemoveLibraryItem>('engine_remove_library_item'),
+        engineRemoveEpisode = lib.lookupFunction<EngineRemoveEpisodeNative,
+            EngineRemoveEpisode>('engine_remove_episode'),
         engineListTasks =
             lib.lookupFunction<EngineListTasksNative, EngineListTasks>(
           'engine_list_tasks',
@@ -389,6 +416,8 @@ class NativeBindings {
   final EngineListLibrary engineListLibrary;
   final EngineListEpisodes engineListEpisodes;
   final EngineSetEpisodePosition engineSetEpisodePosition;
+  final EngineRemoveLibraryItem engineRemoveLibraryItem;
+  final EngineRemoveEpisode engineRemoveEpisode;
   final EngineListTasks engineListTasks;
   final EngineEnqueueSingle engineEnqueueSingle;
   final EngineEnqueueEpisodes engineEnqueueEpisodes;
