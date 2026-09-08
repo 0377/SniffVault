@@ -36,6 +36,7 @@
 - 分集唯一键为 `(item_id, episode_index)`；重复登记更新文件信息但保留播放进度。
 - 每个可下载源使用同时包含 URL、媒体类型和清晰度的模型；不能保存无法映射回 URL 的清晰度选项。
 - `source_url` 可能包含鉴权参数，仅限本机持久化；投送或导出前必须脱敏或剥离。
+- LAN 投送元数据（`CastMetadata`、投送事件 JSON）不得包含 `source_url` 或 Cookie/Referer 等鉴权字段。
 
 ## 验证命令
 

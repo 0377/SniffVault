@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:video_sniffing/engine/engine_host.dart';
+import 'package:video_sniffing/engine/models/cast_types.dart';
 import 'package:video_sniffing/engine/models/ffi_response.dart';
 import 'package:video_sniffing/engine/models/download_task.dart';
 import 'package:video_sniffing/engine/models/engine_settings.dart';
@@ -40,7 +41,8 @@ class FakeEngineRepository implements EngineRepository {
     this.settingsValue = EngineSettings.defaults,
     this.libraryItems = const [],
     this.tasks = const [],
-  });
+    List<LanPeer> discoverPeerResults = const [],
+  }) : discoverPeerResults = discoverPeerResults;
 
   EngineSettings settingsValue;
   List<LibraryItem> libraryItems;
@@ -49,10 +51,26 @@ class FakeEngineRepository implements EngineRepository {
   ResolveOptions? lastResolveOpts;
   ResolveOptions? lastResolveQualitiesOpts;
   List<ResourceCandidate> sniffResults = const [];
+  List<LanPeer> discoverPeerResults = const [];
+  List<TrustedPeer> trustedPeers = const [];
+  Map<String, List<LibraryEpisode>> episodesByItemId = {};
+  String? lastCastEpisodeId;
+  String? lastCastPeerDeviceId;
+  String pairingPinValue = '123456';
+  bool? lastApplyLanIsReceiver;
+  EngineException? pairPeerError;
+  EngineException? castEpisodeError;
+  String? lastPairHost;
+  int? lastPairPort;
+  String? lastPairPin;
   final _events = StreamController<TaskEvent>.broadcast();
+  final _castEvents = StreamController<CastEvent>.broadcast();
 
   @override
   Stream<TaskEvent> get taskEvents => _events.stream;
+
+  @override
+  Stream<CastEvent> get castEvents => _castEvents.stream;
 
   @override
   EngineSettings settings() => settingsValue;
@@ -67,7 +85,8 @@ class FakeEngineRepository implements EngineRepository {
   List<LibraryItem> listLibrary() => libraryItems;
 
   @override
-  List<LibraryEpisode> listEpisodes(String itemId) => [];
+  List<LibraryEpisode> listEpisodes(String itemId) =>
+      episodesByItemId[itemId] ?? [];
 
   @override
   List<DownloadTask> listTasks() => tasks;
@@ -133,5 +152,60 @@ class FakeEngineRepository implements EngineRepository {
     String? pageUrl,
   }) => sniffResults;
 
-  void dispose() => _events.close();
+  @override
+  void applyLanSettings({required bool isReceiver}) {
+    lastApplyLanIsReceiver = isReceiver;
+  }
+
+  @override
+  void stopLan() {}
+
+  @override
+  List<LanPeer> discoverPeers() => discoverPeerResults;
+
+  @override
+  String beginPairing() => pairingPinValue;
+
+  @override
+  String? pairingPin() => pairingPinValue;
+
+  @override
+  void pairPeer({
+    required String host,
+    required int port,
+    required String pin,
+  }) {
+    lastPairHost = host;
+    lastPairPort = port;
+    lastPairPin = pin;
+    if (pairPeerError != null) {
+      throw pairPeerError!;
+    }
+  }
+
+  @override
+  List<TrustedPeer> listTrustedPeers() => trustedPeers;
+
+  @override
+  bool removeTrustedPeer(String peerDeviceId) => false;
+
+  @override
+  void castEpisode({
+    required String episodeId,
+    required String peerDeviceId,
+  }) {
+    lastCastEpisodeId = episodeId;
+    lastCastPeerDeviceId = peerDeviceId;
+    if (castEpisodeError != null) {
+      throw castEpisodeError!;
+    }
+  }
+
+  @override
+  void stopCast() {}
+
+  void dispose() {
+    _events.close();
+    _castEvents.close();
+  }
 }

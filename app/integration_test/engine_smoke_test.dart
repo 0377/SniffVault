@@ -29,11 +29,12 @@ void main() {
       deviceName: 'SmokeDevice',
     );
     host.saveSettings(custom);
+    final persisted = host.settings();
     host.dispose();
 
     final host2 = await EngineHost.open(uniqueDir);
     try {
-      expect(host2.settings(), custom);
+      expect(host2.settings(), persisted);
     } finally {
       host2.dispose();
     }

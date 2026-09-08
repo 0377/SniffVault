@@ -16,7 +16,7 @@
 
 ## 持续集成
 
-合并到 `main` 前须通过 GitHub Actions：**fmt**（ubuntu）、**test + clippy**（Linux / macOS / Windows 三平台）、**flutter-test**（macOS 单元测试）、**flutter-integration**（macOS 引擎 FFI、UI 与深链 U8 集成冒烟，并行 job）。
+合并到 `main` 前须通过 GitHub Actions：**fmt**（ubuntu）、**test + clippy**（Linux / macOS / Windows 三平台）、**flutter-test**（macOS 单元测试）、**flutter-integration**（macOS 引擎 FFI、UI、深链 U8 与投送 U10 集成冒烟，并行 job）。
 
 本地可运行与 CI 相同检查：
 
@@ -58,6 +58,7 @@ flutter build macos --debug
 flutter test integration_test/engine_smoke_test.dart -d macos
 flutter test integration_test/ui_test.dart -d macos
 flutter test integration_test/deep_link_test.dart -d macos
+flutter test integration_test/cast_test.dart -d macos
 # 完整 UI 流程（含播放器，本地有 GUI 时）
 # flutter test integration_test/ui_test.dart -d macos
 
@@ -122,6 +123,21 @@ cd app && flutter test integration_test/deep_link_test.dart -d macos
 ```
 
 规格见 `docs/superpowers/specs/2026-09-08-system-share-design.md`。
+
+## 局域网投送（Plan 7）
+
+主路径：发送端（手机/桌面）在片库或播放器点「投送到 TV」→ 选择已配对 TV → 发送端经 LAN HTTP 推送脱敏元数据，TV 从发送端拉取已缓存文件播放。TV 端在设置中开启「允许局域网投送」后显示 6 位 PIN 供发送端配对。
+
+- 仅投送**已缓存分集**；`CastMetadata` 不含 `source_url`、Cookie 等鉴权信息。
+- 各端片库独立；投送为临时拉流，不同步 SQLite。
+- Android TV 另提供 Leanback 本地片库与投送接收播放（`CastReceiverHost`）。
+
+```bash
+# U10 门禁（本地交付必须通过）
+cd app && flutter test integration_test/cast_test.dart -d macos
+```
+
+规格见 `docs/superpowers/specs/2026-09-08-lan-cast-tv-design.md`。
 
 ## 许可证
 

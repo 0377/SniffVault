@@ -1,4 +1,5 @@
 import 'package:video_sniffing/engine/engine_host.dart';
+import 'package:video_sniffing/engine/models/cast_types.dart';
 import 'package:video_sniffing/engine/models/download_auth.dart';
 import 'package:video_sniffing/engine/models/download_task.dart';
 import 'package:video_sniffing/engine/models/engine_settings.dart';
@@ -10,6 +11,7 @@ import 'package:video_sniffing/engine/models/task_event.dart';
 
 abstract class EngineRepository {
   Stream<TaskEvent> get taskEvents;
+  Stream<CastEvent> get castEvents;
 
   EngineSettings settings();
   void saveSettings(EngineSettings settings);
@@ -41,6 +43,17 @@ abstract class EngineRepository {
   Future<ResolveOutcome> resolveUrl(String url, {ResolveOptions? opts});
   Future<List<Quality>> resolveQualities(String mediaUrl, {ResolveOptions? opts});
   List<ResourceCandidate> sniffUrls(List<SniffEvent> events, {String? pageUrl});
+
+  void applyLanSettings({required bool isReceiver});
+  void stopLan();
+  List<LanPeer> discoverPeers();
+  String beginPairing();
+  String? pairingPin();
+  void pairPeer({required String host, required int port, required String pin});
+  List<TrustedPeer> listTrustedPeers();
+  bool removeTrustedPeer(String peerDeviceId);
+  void castEpisode({required String episodeId, required String peerDeviceId});
+  void stopCast();
 }
 
 class EngineHostRepository implements EngineRepository {
@@ -50,6 +63,9 @@ class EngineHostRepository implements EngineRepository {
 
   @override
   Stream<TaskEvent> get taskEvents => _host.taskEvents;
+
+  @override
+  Stream<CastEvent> get castEvents => _host.castEvents;
 
   @override
   EngineSettings settings() => _host.settings();
@@ -126,4 +142,45 @@ class EngineHostRepository implements EngineRepository {
   @override
   List<ResourceCandidate> sniffUrls(List<SniffEvent> events, {String? pageUrl}) =>
       _host.sniffUrls(events, pageUrl: pageUrl);
+
+  @override
+  void applyLanSettings({required bool isReceiver}) =>
+      _host.applyLanSettings(isReceiver: isReceiver);
+
+  @override
+  void stopLan() => _host.stopLan();
+
+  @override
+  List<LanPeer> discoverPeers() => _host.discoverPeers();
+
+  @override
+  String beginPairing() => _host.beginPairing();
+
+  @override
+  String? pairingPin() => _host.pairingPin();
+
+  @override
+  void pairPeer({
+    required String host,
+    required int port,
+    required String pin,
+  }) =>
+      _host.pairPeer(host: host, port: port, pin: pin);
+
+  @override
+  List<TrustedPeer> listTrustedPeers() => _host.listTrustedPeers();
+
+  @override
+  bool removeTrustedPeer(String peerDeviceId) =>
+      _host.removeTrustedPeer(peerDeviceId);
+
+  @override
+  void castEpisode({
+    required String episodeId,
+    required String peerDeviceId,
+  }) =>
+      _host.castEpisode(episodeId: episodeId, peerDeviceId: peerDeviceId);
+
+  @override
+  void stopCast() => _host.stopCast();
 }

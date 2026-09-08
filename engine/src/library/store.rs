@@ -208,6 +208,30 @@ impl LibraryStore {
         Ok(row)
     }
 
+    pub fn get_episode(&self, id: &str) -> Result<Option<LibraryEpisode>, EngineError> {
+        let row = self
+            .conn
+            .query_row(
+                r#"SELECT id, item_id, idx, title, file_path, duration_ms, position_ms, source_url
+                   FROM library_episodes WHERE id=?1"#,
+                params![id],
+                |row| {
+                    Ok(LibraryEpisode {
+                        id: row.get(0)?,
+                        item_id: row.get(1)?,
+                        index: row.get::<_, i64>(2)? as u32,
+                        title: row.get(3)?,
+                        file_path: row.get(4)?,
+                        duration_ms: row.get(5)?,
+                        position_ms: row.get(6)?,
+                        source_url: row.get(7)?,
+                    })
+                },
+            )
+            .optional()?;
+        Ok(row)
+    }
+
     pub fn get_episode_by_item_index(
         &self,
         item_id: &str,

@@ -5,6 +5,7 @@ import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
 
+import 'models/cast_types.dart';
 import 'models/download_auth.dart';
 import 'models/download_task.dart';
 import 'models/engine_settings.dart';
@@ -41,16 +42,20 @@ class EngineHost {
     this._handle,
     this._taskEventsPort,
     this._resolvePort,
+    this._castEventsPort,
   ) {
     _taskEventsPort.listen(_onTaskEventMessage);
     _resolvePort.listen(_onResolveMessage);
+    _castEventsPort.listen(_onCastEventMessage);
   }
 
   final NativeBindings _bindings;
   final Pointer<Void> _handle;
   final ReceivePort _taskEventsPort;
   final ReceivePort _resolvePort;
+  final ReceivePort _castEventsPort;
   final _taskEventController = StreamController<TaskEvent>.broadcast();
+  final _castEventController = StreamController<CastEvent>.broadcast();
   final _pendingResolves = <String, Completer<Map<String, dynamic>>>{};
   var _requestCounter = 0;
   var _disposed = false;
@@ -86,6 +91,7 @@ class EngineHost {
         handle,
         ReceivePort(),
         ReceivePort(),
+        ReceivePort(),
       );
       host._subscribeTaskEvents();
       return host;
@@ -96,6 +102,8 @@ class EngineHost {
 
   Stream<TaskEvent> get taskEvents => _taskEventController.stream;
 
+  Stream<CastEvent> get castEvents => _castEventController.stream;
+
   void dispose() {
     if (_disposed) {
       return;
@@ -103,6 +111,7 @@ class EngineHost {
     _disposed = true;
 
     _bindings.engineUnsubscribeTaskEvents(_handle);
+    _bindings.engineUnsubscribeCastEvents(_handle);
     _bindings.engineDestroy(_handle);
 
     for (final completer in _pendingResolves.values) {
@@ -116,7 +125,9 @@ class EngineHost {
 
     _taskEventsPort.close();
     _resolvePort.close();
+    _castEventsPort.close();
     _taskEventController.close();
+    _castEventController.close();
   }
 
   EngineSettings settings() {
@@ -336,6 +347,111 @@ class EngineHost {
     );
   }
 
+  void applyLanSettings({required bool isReceiver}) {
+    _callSyncVoid(
+      (handle) => _bindings.engineApplyLanSettings(
+        handle,
+        isReceiver ? 1 : 0,
+      ),
+    );
+    if (isReceiver) {
+      _subscribeCastEvents();
+    }
+  }
+
+  void stopLan() {
+    _callSyncVoid((handle) => _bindings.engineStopLan(handle));
+  }
+
+  int? get lanHttpPort {
+    return _callSync(
+      (handle) => _bindings.engineLanHttpPort(handle),
+      (json) => json as int?,
+    );
+  }
+
+  List<LanPeer> discoverPeers() {
+    return _callSync(
+      (handle) => _bindings.engineDiscoverPeers(handle),
+      (json) => (json as List<dynamic>)
+          .map((peer) => LanPeer.fromJson(peer as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+
+  String beginPairing() {
+    return _callSync(
+      (handle) => _bindings.engineBeginPairing(handle),
+      (json) => json as String,
+    );
+  }
+
+  String? pairingPin() {
+    final pin = _callSync(
+      (handle) => _bindings.enginePairingPin(handle),
+      (json) => json as String,
+    );
+    return pin.isEmpty ? null : pin;
+  }
+
+  void pairPeer({
+    required String host,
+    required int port,
+    required String pin,
+  }) {
+    final argsPtr = jsonEncode({
+      'host': host,
+      'port': port,
+      'pin': pin,
+    }).toNativeUtf8();
+    try {
+      _callSyncVoid(
+        (handle) => _bindings.enginePairPeer(handle, argsPtr),
+      );
+    } finally {
+      malloc.free(argsPtr);
+    }
+  }
+
+  List<TrustedPeer> listTrustedPeers() {
+    return _callSync(
+      (handle) => _bindings.engineListTrustedPeers(handle),
+      (json) => (json as List<dynamic>)
+          .map((peer) => TrustedPeer.fromJson(peer as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+
+  bool removeTrustedPeer(String peerDeviceId) {
+    return _withUtf8(peerDeviceId, (peerDeviceIdPtr) {
+      return _callSync(
+        (handle) => _bindings.engineRemoveTrustedPeer(handle, peerDeviceIdPtr),
+        (json) => json as bool,
+      );
+    });
+  }
+
+  void castEpisode({
+    required String episodeId,
+    required String peerDeviceId,
+  }) {
+    final argsPtr = jsonEncode({
+      'episode_id': episodeId,
+      'peer_device_id': peerDeviceId,
+    }).toNativeUtf8();
+    try {
+      _callSyncVoid(
+        (handle) => _bindings.engineCastEpisode(handle, argsPtr),
+      );
+    } finally {
+      malloc.free(argsPtr);
+    }
+  }
+
+  void stopCast() {
+    _callSyncVoid((handle) => _bindings.engineStopCast(handle));
+  }
+
   void _subscribeTaskEvents() {
     _callSyncVoid(
       (handle) => _bindings.engineSubscribeTaskEvents(
@@ -351,6 +467,23 @@ class EngineHost {
     }
     final json = jsonDecode(message as String) as Map<String, dynamic>;
     _taskEventController.add(TaskEvent.fromJson(json));
+  }
+
+  void _onCastEventMessage(dynamic message) {
+    if (_disposed) {
+      return;
+    }
+    final json = jsonDecode(message as String) as Map<String, dynamic>;
+    _castEventController.add(CastEvent.fromJson(json));
+  }
+
+  void _subscribeCastEvents() {
+    _callSyncVoid(
+      (handle) => _bindings.engineSubscribeCastEvents(
+        handle,
+        _castEventsPort.sendPort.nativePort,
+      ),
+    );
   }
 
   void _onResolveMessage(dynamic message) {

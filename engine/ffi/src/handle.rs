@@ -8,8 +8,10 @@ use std::sync::{
 use std::thread::JoinHandle;
 
 use tokio::runtime::Runtime;
+use tokio::sync::oneshot;
 use video_sniffing_engine::{Engine, EngineError};
 
+use crate::cast_events::unsubscribe_cast_events_inner;
 use crate::events::unsubscribe_task_events_inner;
 use crate::json_api::err_json;
 
@@ -22,6 +24,9 @@ pub struct EngineHandle {
     pub runtime: Runtime,
     pub event_port: Option<i64>,
     pub event_forwarder: Option<JoinHandle<()>>,
+    pub cast_event_port: Option<i64>,
+    pub cast_event_forwarder: Option<JoinHandle<()>>,
+    pub cast_event_shutdown: Option<oneshot::Sender<()>>,
     pub deferred_spawn: Option<JoinHandle<()>>,
     pub alive: Arc<AtomicBool>,
 }
@@ -84,6 +89,9 @@ pub unsafe extern "C" fn engine_open(data_dir: *const c_char) -> *mut EngineHand
         runtime,
         event_port: None,
         event_forwarder: None,
+        cast_event_port: None,
+        cast_event_forwarder: None,
+        cast_event_shutdown: None,
         deferred_spawn: None,
         alive: Arc::new(AtomicBool::new(true)),
     });
@@ -108,8 +116,14 @@ pub unsafe extern "C" fn engine_destroy(handle: *mut EngineHandle) {
 
     let mut boxed = Box::from_raw(handle);
 
+    unsubscribe_cast_events_inner(&mut boxed);
     unsubscribe_task_events_inner(&mut boxed);
     boxed.alive.store(false, Ordering::Release);
+
+    if let Ok(mut engine) = boxed.engine.lock() {
+        let _ = engine.stop_cast();
+        let _ = engine.stop_lan();
+    }
 
     if let Some(join_handle) = boxed.deferred_spawn.take() {
         let _ = join_handle.join();

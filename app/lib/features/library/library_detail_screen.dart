@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:video_sniffing/engine/models/library_episode.dart';
 import 'package:video_sniffing/engine/models/library_item.dart';
 import 'package:video_sniffing/engine/models/library_item_kind.dart';
+import 'package:video_sniffing/features/cast/cast_actions.dart';
 import 'package:video_sniffing/features/library/widgets/episode_tile.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
 import 'package:video_sniffing/providers/library_provider.dart';
@@ -32,12 +33,13 @@ class LibraryDetailScreen extends ConsumerWidget {
       appBar: AppBar(
         title: Text(item?.title ?? '片库详情'),
       ),
-      body: _buildBody(context, item, episodes),
+      body: _buildBody(context, ref, item, episodes),
     );
   }
 
   Widget _buildBody(
     BuildContext context,
+    WidgetRef ref,
     LibraryItem? item,
     List<LibraryEpisode> episodes,
   ) {
@@ -48,11 +50,26 @@ class LibraryDetailScreen extends ConsumerWidget {
     final isSingle = item?.kind == LibraryItemKind.single || episodes.length == 1;
     if (isSingle && episodes.length == 1) {
       final episode = episodes.first;
+      final canCast = isEpisodeCastable(episode);
       return Center(
-        child: FilledButton.icon(
-          onPressed: () => context.push('/play/${episode.id}'),
-          icon: const Icon(Icons.play_arrow),
-          label: const Text('播放'),
+        child: Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            FilledButton.icon(
+              onPressed: () => context.push('/play/${episode.id}'),
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('播放'),
+            ),
+            if (canCast)
+              OutlinedButton.icon(
+                key: const Key('library_detail_cast'),
+                onPressed: () => requestCast(context, ref, episode.id),
+                icon: const Icon(Icons.cast),
+                label: const Text('投送'),
+              ),
+          ],
         ),
       );
     }
@@ -61,9 +78,13 @@ class LibraryDetailScreen extends ConsumerWidget {
       itemCount: episodes.length,
       itemBuilder: (context, index) {
         final episode = episodes[index];
+        final canCast = isEpisodeCastable(episode);
         return EpisodeTile(
           episode: episode,
           onTap: () => context.push('/play/${episode.id}'),
+          onCast: canCast
+              ? () => requestCast(context, ref, episode.id)
+              : null,
         );
       },
     );

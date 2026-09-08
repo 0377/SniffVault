@@ -19,10 +19,12 @@ class EpisodeTile extends StatelessWidget {
     super.key,
     required this.episode,
     required this.onTap,
+    this.onCast,
   });
 
   final LibraryEpisode episode;
   final VoidCallback onTap;
+  final VoidCallback? onCast;
 
   @override
   Widget build(BuildContext context) {
@@ -41,14 +43,32 @@ class EpisodeTile extends StatelessWidget {
           ],
         ],
       ),
-      trailing: showResume
-          ? const Chip(
-              label: Text('续播'),
-              visualDensity: VisualDensity.compact,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            )
-          : null,
+      trailing: _buildTrailing(showResume),
       onTap: onTap,
+    );
+  }
+
+  Widget? _buildTrailing(bool showResume) {
+    if (onCast == null && !showResume) {
+      return null;
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (onCast != null)
+          IconButton(
+            key: Key('cast_episode_${episode.id}'),
+            icon: const Icon(Icons.cast),
+            tooltip: '投送',
+            onPressed: onCast,
+          ),
+        if (showResume)
+          const Chip(
+            label: Text('续播'),
+            visualDensity: VisualDensity.compact,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+      ],
     );
   }
 }

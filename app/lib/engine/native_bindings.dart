@@ -166,6 +166,84 @@ typedef EngineSubscribeTaskEvents = Pointer<Char> Function(
 typedef EngineUnsubscribeTaskEventsNative = Void Function(Pointer<Void> handle);
 typedef EngineUnsubscribeTaskEvents = void Function(Pointer<Void> handle);
 
+typedef EngineStartLanNative = Pointer<Char> Function(
+  Pointer<Void> handle,
+  Uint8 isReceiver,
+);
+typedef EngineStartLan = Pointer<Char> Function(
+  Pointer<Void> handle,
+  int isReceiver,
+);
+
+typedef EngineStopLanNative = Pointer<Char> Function(Pointer<Void> handle);
+typedef EngineStopLan = Pointer<Char> Function(Pointer<Void> handle);
+
+typedef EngineLanHttpPortNative = Pointer<Char> Function(Pointer<Void> handle);
+typedef EngineLanHttpPort = Pointer<Char> Function(Pointer<Void> handle);
+
+typedef EngineApplyLanSettingsNative = Pointer<Char> Function(
+  Pointer<Void> handle,
+  Uint8 isReceiver,
+);
+typedef EngineApplyLanSettings = Pointer<Char> Function(
+  Pointer<Void> handle,
+  int isReceiver,
+);
+
+typedef EngineDiscoverPeersNative = Pointer<Char> Function(Pointer<Void> handle);
+typedef EngineDiscoverPeers = Pointer<Char> Function(Pointer<Void> handle);
+
+typedef EngineBeginPairingNative = Pointer<Char> Function(Pointer<Void> handle);
+typedef EngineBeginPairing = Pointer<Char> Function(Pointer<Void> handle);
+
+typedef EnginePairingPinNative = Pointer<Char> Function(Pointer<Void> handle);
+typedef EnginePairingPin = Pointer<Char> Function(Pointer<Void> handle);
+
+typedef EnginePairPeerNative = Pointer<Char> Function(
+  Pointer<Void> handle,
+  Pointer<Utf8> argsJson,
+);
+typedef EnginePairPeer = Pointer<Char> Function(
+  Pointer<Void> handle,
+  Pointer<Utf8> argsJson,
+);
+
+typedef EngineListTrustedPeersNative = Pointer<Char> Function(Pointer<Void> handle);
+typedef EngineListTrustedPeers = Pointer<Char> Function(Pointer<Void> handle);
+
+typedef EngineRemoveTrustedPeerNative = Pointer<Char> Function(
+  Pointer<Void> handle,
+  Pointer<Utf8> peerDeviceId,
+);
+typedef EngineRemoveTrustedPeer = Pointer<Char> Function(
+  Pointer<Void> handle,
+  Pointer<Utf8> peerDeviceId,
+);
+
+typedef EngineCastEpisodeNative = Pointer<Char> Function(
+  Pointer<Void> handle,
+  Pointer<Utf8> argsJson,
+);
+typedef EngineCastEpisode = Pointer<Char> Function(
+  Pointer<Void> handle,
+  Pointer<Utf8> argsJson,
+);
+
+typedef EngineStopCastNative = Pointer<Char> Function(Pointer<Void> handle);
+typedef EngineStopCast = Pointer<Char> Function(Pointer<Void> handle);
+
+typedef EngineSubscribeCastEventsNative = Pointer<Char> Function(
+  Pointer<Void> handle,
+  Int64 portId,
+);
+typedef EngineSubscribeCastEvents = Pointer<Char> Function(
+  Pointer<Void> handle,
+  int portId,
+);
+
+typedef EngineUnsubscribeCastEventsNative = Void Function(Pointer<Void> handle);
+typedef EngineUnsubscribeCastEvents = void Function(Pointer<Void> handle);
+
 typedef DartPostCObjectFnNative = Int8 Function(Int64 port, Pointer<Dart_CObject> object);
 typedef DartPostCObjectFn = int Function(int port, Pointer<Dart_CObject> object);
 
@@ -249,7 +327,58 @@ class NativeBindings {
             EngineSubscribeTaskEvents>('engine_subscribe_task_events'),
         engineUnsubscribeTaskEvents = lib.lookupFunction<
             EngineUnsubscribeTaskEventsNative,
-            EngineUnsubscribeTaskEvents>('engine_unsubscribe_task_events');
+            EngineUnsubscribeTaskEvents>('engine_unsubscribe_task_events'),
+        engineStartLan =
+            lib.lookupFunction<EngineStartLanNative, EngineStartLan>(
+          'engine_start_lan',
+        ),
+        engineStopLan =
+            lib.lookupFunction<EngineStopLanNative, EngineStopLan>(
+          'engine_stop_lan',
+        ),
+        engineLanHttpPort = lib.lookupFunction<
+            EngineLanHttpPortNative, EngineLanHttpPort>(
+          'engine_lan_http_port',
+        ),
+        engineApplyLanSettings = lib.lookupFunction<
+            EngineApplyLanSettingsNative,
+            EngineApplyLanSettings>('engine_apply_lan_settings'),
+        engineDiscoverPeers = lib.lookupFunction<
+            EngineDiscoverPeersNative, EngineDiscoverPeers>(
+          'engine_discover_peers',
+        ),
+        engineBeginPairing = lib.lookupFunction<
+            EngineBeginPairingNative, EngineBeginPairing>(
+          'engine_begin_pairing',
+        ),
+        enginePairingPin =
+            lib.lookupFunction<EnginePairingPinNative, EnginePairingPin>(
+          'engine_pairing_pin',
+        ),
+        enginePairPeer =
+            lib.lookupFunction<EnginePairPeerNative, EnginePairPeer>(
+          'engine_pair_peer',
+        ),
+        engineListTrustedPeers = lib.lookupFunction<
+            EngineListTrustedPeersNative,
+            EngineListTrustedPeers>('engine_list_trusted_peers'),
+        engineRemoveTrustedPeer = lib.lookupFunction<
+            EngineRemoveTrustedPeerNative,
+            EngineRemoveTrustedPeer>('engine_remove_trusted_peer'),
+        engineCastEpisode =
+            lib.lookupFunction<EngineCastEpisodeNative, EngineCastEpisode>(
+          'engine_cast_episode',
+        ),
+        engineStopCast =
+            lib.lookupFunction<EngineStopCastNative, EngineStopCast>(
+          'engine_stop_cast',
+        ),
+        engineSubscribeCastEvents = lib.lookupFunction<
+            EngineSubscribeCastEventsNative,
+            EngineSubscribeCastEvents>('engine_subscribe_cast_events'),
+        engineUnsubscribeCastEvents = lib.lookupFunction<
+            EngineUnsubscribeCastEventsNative,
+            EngineUnsubscribeCastEvents>('engine_unsubscribe_cast_events');
 
   final EngineOpen engineOpen;
   final EngineLastError engineLastError;
@@ -274,6 +403,20 @@ class NativeBindings {
   final EngineResolveQualitiesAsync engineResolveQualitiesAsync;
   final EngineSubscribeTaskEvents engineSubscribeTaskEvents;
   final EngineUnsubscribeTaskEvents engineUnsubscribeTaskEvents;
+  final EngineStartLan engineStartLan;
+  final EngineStopLan engineStopLan;
+  final EngineLanHttpPort engineLanHttpPort;
+  final EngineApplyLanSettings engineApplyLanSettings;
+  final EngineDiscoverPeers engineDiscoverPeers;
+  final EngineBeginPairing engineBeginPairing;
+  final EnginePairingPin enginePairingPin;
+  final EnginePairPeer enginePairPeer;
+  final EngineListTrustedPeers engineListTrustedPeers;
+  final EngineRemoveTrustedPeer engineRemoveTrustedPeer;
+  final EngineCastEpisode engineCastEpisode;
+  final EngineStopCast engineStopCast;
+  final EngineSubscribeCastEvents engineSubscribeCastEvents;
+  final EngineUnsubscribeCastEvents engineUnsubscribeCastEvents;
 }
 
 NativeBindings? _bindings;

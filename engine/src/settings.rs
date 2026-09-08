@@ -1,6 +1,7 @@
 use crate::error::EngineError;
 use crate::types::EngineSettings;
 use std::path::Path;
+use uuid::Uuid;
 
 pub fn validate_media_dir(name: &str) -> Result<(), EngineError> {
     if name.is_empty() {
@@ -24,14 +25,28 @@ pub fn validate_media_dir(name: &str) -> Result<(), EngineError> {
     Ok(())
 }
 
+pub(crate) fn ensure_device_id(settings: &mut EngineSettings) -> bool {
+    if settings.device_id.is_empty() {
+        settings.device_id = Uuid::new_v4().to_string();
+        true
+    } else {
+        false
+    }
+}
+
 pub fn load_or_default(path: &Path) -> Result<EngineSettings, EngineError> {
     if path.exists() {
         let raw = std::fs::read_to_string(path)?;
-        let settings: EngineSettings = serde_json::from_str(&raw)?;
+        let mut settings: EngineSettings = serde_json::from_str(&raw)?;
         validate_media_dir(&settings.media_dir)?;
+        let migrated = ensure_device_id(&mut settings);
+        if migrated {
+            save(path, &settings)?;
+        }
         Ok(settings)
     } else {
-        let settings = EngineSettings::default();
+        let mut settings = EngineSettings::default();
+        ensure_device_id(&mut settings);
         save(path, &settings)?;
         Ok(settings)
     }
