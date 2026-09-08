@@ -260,6 +260,25 @@ impl LibraryStore {
         Ok(row)
     }
 
+    pub fn count_episodes(&self, item_id: &str) -> Result<u32, EngineError> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM library_episodes WHERE item_id=?1",
+            params![item_id],
+            |row| row.get(0),
+        )?;
+        Ok(count as u32)
+    }
+
+    pub fn remove_episode(&self, episode_id: &str) -> Result<(), EngineError> {
+        let n = self
+            .conn
+            .execute("DELETE FROM library_episodes WHERE id=?1", params![episode_id])?;
+        if n == 0 {
+            return Err(EngineError::NotFound(format!("episode {episode_id}")));
+        }
+        Ok(())
+    }
+
     pub fn remove_item(&self, id: &str) -> Result<(), EngineError> {
         self.conn
             .execute("DELETE FROM library_items WHERE id=?1", params![id])?;
