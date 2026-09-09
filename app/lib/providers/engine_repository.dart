@@ -17,6 +17,8 @@ abstract class EngineRepository {
   void saveSettings(EngineSettings settings);
   List<LibraryItem> listLibrary();
   List<LibraryEpisode> listEpisodes(String itemId);
+  void removeLibraryItem(String itemId, {bool deleteFiles});
+  void removeEpisode(String episodeId, {bool deleteFiles});
   List<DownloadTask> listTasks();
 
   String enqueueSingle({
@@ -79,6 +81,14 @@ class EngineHostRepository implements EngineRepository {
 
   @override
   List<LibraryEpisode> listEpisodes(String itemId) => _host.listEpisodes(itemId);
+
+  @override
+  void removeLibraryItem(String itemId, {bool deleteFiles = true}) =>
+      _host.removeLibraryItem(itemId, deleteFiles: deleteFiles);
+
+  @override
+  void removeEpisode(String episodeId, {bool deleteFiles = true}) =>
+      _host.removeEpisode(episodeId, deleteFiles: deleteFiles);
 
   @override
   List<DownloadTask> listTasks() => _host.listTasks();

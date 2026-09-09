@@ -77,7 +77,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [engine, ui, deeplink, cast, browse]
+        suite: [engine, ui, deeplink, cast, browse, library]
     steps:
       - uses: actions/checkout@v5
 
@@ -110,6 +110,8 @@ jobs:
             flutter test integration_test/cast_test.dart -d macos
           elif [ "${{ matrix.suite }}" = "browse" ]; then
             flutter test integration_test/browse_test.dart -d macos
+          elif [ "${{ matrix.suite }}" = "library" ]; then
+            flutter test integration_test/library_delete_test.dart -d macos
           else
             flutter test integration_test/ui_test.dart -d macos \
               --dart-define=INTEGRATION_SKIP_PLAYER=true

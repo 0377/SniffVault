@@ -172,6 +172,40 @@ pub unsafe extern "C" fn engine_set_episode_position(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn engine_remove_library_item(
+    handle: *mut EngineHandle,
+    item_id: *const c_char,
+    delete_files: u8,
+) -> *mut c_char {
+    let item_id = match parse_c_str(item_id, "item_id") {
+        Ok(id) => id,
+        Err(err) => return rust_to_c_string(err_json(err)),
+    };
+    let delete_files = delete_files != 0;
+    ffi_call_mut(handle, |engine| {
+        engine
+            .remove_library_item(&item_id, delete_files)
+            .map(|_| ())
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn engine_remove_episode(
+    handle: *mut EngineHandle,
+    episode_id: *const c_char,
+    delete_files: u8,
+) -> *mut c_char {
+    let episode_id = match parse_c_str(episode_id, "episode_id") {
+        Ok(id) => id,
+        Err(err) => return rust_to_c_string(err_json(err)),
+    };
+    let delete_files = delete_files != 0;
+    ffi_call_mut(handle, |engine| {
+        engine.remove_episode(&episode_id, delete_files).map(|_| ())
+    })
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn engine_list_tasks(handle: *mut EngineHandle) -> *mut c_char {
     ffi_call(handle, |engine| engine.list_tasks())
 }

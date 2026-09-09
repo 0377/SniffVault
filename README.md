@@ -16,7 +16,7 @@
 
 ## 持续集成
 
-合并到 `main` 前须通过 GitHub Actions：**fmt**（ubuntu）、**test + clippy**（Linux / macOS / Windows 三平台）、**flutter-test**（macOS 单元测试）、**flutter-integration**（macOS 引擎 FFI、UI、深链 U8 与投送 U10 集成冒烟，并行 job）。
+合并到 `main` 前须通过 GitHub Actions：**fmt**（ubuntu）、**test + clippy**（Linux / macOS / Windows 三平台）、**flutter-test**（macOS 单元测试）、**flutter-integration**（macOS 引擎 FFI、UI、深链 U8、投送 U10、浏览 U6 与片库删除 U11 集成冒烟，并行 job）。
 
 本地可运行与 CI 相同检查：
 
@@ -153,6 +153,16 @@ cd app && flutter test integration_test/cast_test.dart -d macos
 ```
 
 规格见 `docs/superpowers/specs/2026-09-08-lan-cast-tv-design.md`。
+
+## 片库删除（Plan 9a）
+
+片库详情 → ⋮ → 删除；Series（≥2 集）可对单分集删除。默认同时删除本地缓存文件。9a 发版 tag：`v0.1.1`。
+
+```bash
+cd app && flutter test integration_test/library_delete_test.dart -d macos
+```
+
+规格见 `docs/superpowers/specs/2026-09-08-library-management-design.md`。
 
 ## 可交付 v0.1（Plan 8）
 

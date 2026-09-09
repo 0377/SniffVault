@@ -320,7 +320,16 @@ Future<void> _runPlayerResumeFlow(WidgetTester tester, String title) async {
   expect(episodes.first.positionMs, greaterThan(0));
 }
 
-Future<void> runAppUiSmokeFlow(WidgetTester tester) async {
+typedef LibraryReadyCallback = Future<void> Function(
+  WidgetTester tester,
+  String mediaPath,
+);
+
+Future<void> runAppUiSmokeFlow(
+  WidgetTester tester, {
+  bool stopBeforePlay = false,
+  LibraryReadyCallback? onLibraryReady,
+}) async {
   await _startFixtureServer();
   try {
     final title = 'ui-smoke-${DateTime.now().millisecondsSinceEpoch}';
@@ -341,15 +350,23 @@ Future<void> runAppUiSmokeFlow(WidgetTester tester) async {
     );
     expect(find.textContaining(title), findsWidgets);
 
-    if (_skipPlayer) {
+    final repo = _testRepo(tester);
+    final items = repo
+        .listLibrary()
+        .where((item) => item.title == title)
+        .toList();
+    expect(items, hasLength(1));
+    final episodes = repo.listEpisodes(items.first.id);
+    expect(episodes, isNotEmpty);
+    final mediaPath = episodes.first.filePath;
+
+    if (onLibraryReady != null) {
+      await onLibraryReady(tester, mediaPath);
+      return;
+    }
+
+    if (stopBeforePlay || _skipPlayer) {
       await _openLibraryDetailForTitle(tester, title);
-      final repo = _testRepo(tester);
-      final items = repo
-          .listLibrary()
-          .where((item) => item.title == title)
-          .toList();
-      expect(items, hasLength(1));
-      expect(repo.listEpisodes(items.first.id), isNotEmpty);
       return;
     }
 

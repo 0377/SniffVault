@@ -431,6 +431,68 @@ impl Engine {
         )
     }
 
+    fn finalize_lan_for_episodes(&mut self, episode_ids: &[String]) -> Result<(), EngineError> {
+        if self.lan.is_none() {
+            return Ok(());
+        }
+        let lan = self.ensure_lan()?;
+        for id in episode_ids {
+            lan.finalize_episode_removal(id)?;
+        }
+        Ok(())
+    }
+
+    pub fn remove_library_item(
+        &mut self,
+        item_id: &str,
+        delete_files: bool,
+    ) -> Result<(), EngineError> {
+        let item = self.library.get_item(item_id)?;
+        let episodes = self.library.list_episodes(item_id)?;
+        let episode_ids: Vec<String> = episodes.iter().map(|e| e.id.clone()).collect();
+        self.finalize_lan_for_episodes(&episode_ids)?;
+        if delete_files {
+            let paths = crate::library::delete::collect_deletion_paths(
+                &self.library,
+                &item,
+                &self.media_dir(),
+            )?;
+            crate::library::delete::delete_files(&paths)?;
+        }
+        crate::library::delete::remove_item_record(&self.library, item_id)?;
+        Ok(())
+    }
+
+    pub fn remove_episode(
+        &mut self,
+        episode_id: &str,
+        delete_files: bool,
+    ) -> Result<(), EngineError> {
+        let ep = self
+            .library
+            .get_episode(episode_id)?
+            .ok_or_else(|| EngineError::NotFound(format!("episode {episode_id}")))?;
+        if self.library.count_episodes(&ep.item_id)? == 1 {
+            return self.remove_library_item(&ep.item_id, delete_files);
+        }
+        self.finalize_lan_for_episodes(&[episode_id.to_string()])?;
+        if delete_files {
+            let path =
+                crate::library::delete::resolve_deletion_path(&self.media_dir(), &ep.file_path)?;
+            crate::library::delete::delete_files(&[path])?;
+        }
+        self.library.remove_episode(episode_id)?;
+        Ok(())
+    }
+
+    #[doc(hidden)]
+    pub fn has_active_cast(&self) -> bool {
+        self.lan
+            .as_ref()
+            .map(|lan| lan.has_active_cast())
+            .unwrap_or(false)
+    }
+
     #[doc(hidden)]
     pub fn set_lan_test_config(&mut self, config: LanTestConfig) {
         if let Some(lan) = &mut self.lan {

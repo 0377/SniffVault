@@ -83,3 +83,56 @@ fn remove_item_cascades_episodes() {
     assert!(store.list_items().unwrap().is_empty());
     assert!(store.list_episodes("s").unwrap().is_empty());
 }
+
+#[test]
+fn remove_episode_deletes_one_row() {
+    let dir = tempdir().unwrap();
+    let store = LibraryStore::open(&dir.path().join("library.db")).unwrap();
+    store
+        .upsert_item(&LibraryItem {
+            id: "s".into(),
+            kind: LibraryItemKind::Series,
+            title: "剧".into(),
+            season: Some(1),
+            poster_path: None,
+            created_at_ms: 1,
+        })
+        .unwrap();
+    store
+        .upsert_episode(&LibraryEpisode {
+            id: "e1".into(),
+            item_id: "s".into(),
+            index: 1,
+            title: "第1集".into(),
+            file_path: "/tmp/e1.mp4".into(),
+            duration_ms: None,
+            position_ms: 0,
+            source_url: None,
+        })
+        .unwrap();
+    store
+        .upsert_episode(&LibraryEpisode {
+            id: "e2".into(),
+            item_id: "s".into(),
+            index: 2,
+            title: "第2集".into(),
+            file_path: "/tmp/e2.mp4".into(),
+            duration_ms: None,
+            position_ms: 0,
+            source_url: None,
+        })
+        .unwrap();
+
+    store.remove_episode("e1").unwrap();
+    assert_eq!(store.count_episodes("s").unwrap(), 1);
+    assert!(store.get_episode("e1").unwrap().is_none());
+    assert!(store.get_episode("e2").unwrap().is_some());
+}
+
+#[test]
+fn remove_episode_missing_returns_not_found() {
+    let dir = tempdir().unwrap();
+    let store = LibraryStore::open(&dir.path().join("library.db")).unwrap();
+    let err = store.remove_episode("nope").unwrap_err();
+    assert!(err.to_string().contains("not found"));
+}

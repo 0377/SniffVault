@@ -8,6 +8,7 @@ import 'package:video_sniffing/providers/device_profile.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
 import 'package:video_sniffing/providers/lan_settings_coordinator.dart';
 import 'package:video_sniffing/providers/settings_provider.dart';
+import 'package:video_sniffing/features/settings/user_agent_presets.dart';
 import 'package:video_sniffing/ui/error_presenter.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -51,6 +52,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _userAgentController.dispose();
     _deviceNameController.dispose();
     super.dispose();
+  }
+
+  void _applyUserAgentPreset(UserAgentPreset preset) {
+    _userAgentController.text = preset.value;
+    _draft = _draft.copyWith(userAgent: preset.value);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已填入 User-Agent（${preset.label}），记得保存')),
+    );
   }
 
   Future<void> _clearBrowseCookies() async {
@@ -151,6 +160,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             onChanged: (value) => _draft = _draft.copyWith(
               userAgent: value.isEmpty ? null : value,
             ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final preset in kUserAgentPresets)
+                ActionChip(
+                  key: preset.testKey,
+                  label: Text(preset.label),
+                  onPressed: () => _applyUserAgentPreset(preset),
+                ),
+            ],
           ),
           const SizedBox(height: 16),
           TextField(

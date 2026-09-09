@@ -294,6 +294,30 @@ class EngineHost {
     });
   }
 
+  void removeLibraryItem(String itemId, {bool deleteFiles = true}) {
+    _withUtf8(itemId, (itemIdPtr) {
+      _callSyncVoid(
+        (handle) => _bindings.engineRemoveLibraryItem(
+          handle,
+          itemIdPtr,
+          deleteFiles ? 1 : 0,
+        ),
+      );
+    });
+  }
+
+  void removeEpisode(String episodeId, {bool deleteFiles = true}) {
+    _withUtf8(episodeId, (episodeIdPtr) {
+      _callSyncVoid(
+        (handle) => _bindings.engineRemoveEpisode(
+          handle,
+          episodeIdPtr,
+          deleteFiles ? 1 : 0,
+        ),
+      );
+    });
+  }
+
   List<ResourceCandidate> sniffUrls(
     List<SniffEvent> events, {
     String? pageUrl,
