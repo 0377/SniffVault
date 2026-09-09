@@ -135,6 +135,17 @@ typedef EngineCancelTask = Pointer<Char> Function(
   Pointer<Utf8> taskId,
 );
 
+typedef EngineSetTaskMediaUrlNative = Pointer<Char> Function(
+  Pointer<Void> handle,
+  Pointer<Utf8> taskId,
+  Pointer<Utf8> mediaUrl,
+);
+typedef EngineSetTaskMediaUrl = Pointer<Char> Function(
+  Pointer<Void> handle,
+  Pointer<Utf8> taskId,
+  Pointer<Utf8> mediaUrl,
+);
+
 typedef EngineSniffUrlsNative = Pointer<Char> Function(
   Pointer<Void> handle,
   Pointer<Utf8> eventsJson,
@@ -338,6 +349,10 @@ class NativeBindings {
             lib.lookupFunction<EngineCancelTaskNative, EngineCancelTask>(
           'engine_cancel_task',
         ),
+        engineSetTaskMediaUrl = lib.lookupFunction<
+            EngineSetTaskMediaUrlNative, EngineSetTaskMediaUrl>(
+          'engine_set_task_media_url',
+        ),
         engineSniffUrls =
             lib.lookupFunction<EngineSniffUrlsNative, EngineSniffUrls>(
           'engine_sniff_urls',
@@ -427,6 +442,7 @@ class NativeBindings {
   final EnginePauseTask enginePauseTask;
   final EngineResumeTask engineResumeTask;
   final EngineCancelTask engineCancelTask;
+  final EngineSetTaskMediaUrl engineSetTaskMediaUrl;
   final EngineSniffUrls engineSniffUrls;
   final EngineResolveUrlAsync engineResolveUrlAsync;
   final EngineResolveQualitiesAsync engineResolveQualitiesAsync;

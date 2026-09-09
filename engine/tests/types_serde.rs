@@ -65,6 +65,7 @@ fn episode_list_and_task_status_defaults() {
         updated_at_ms: 0,
         cookie_header: None,
         referer: None,
+        resolved_media_url: None,
     };
 }
 
@@ -96,6 +97,15 @@ fn resolve_outcome_and_sniff_event_roundtrip_json() {
 }
 
 #[test]
+fn task_status_needs_sniff_roundtrip_json() {
+    let status = TaskStatus::NeedsSniff;
+    let json = serde_json::to_string(&status).unwrap();
+    assert_eq!(json, "\"needs_sniff\"");
+    let back: TaskStatus = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, TaskStatus::NeedsSniff);
+}
+
+#[test]
 fn download_task_json_omits_auth_snapshot() {
     let task = DownloadTask {
         id: "t1".into(),
@@ -115,6 +125,7 @@ fn download_task_json_omits_auth_snapshot() {
         updated_at_ms: 0,
         cookie_header: Some("sid=secret".into()),
         referer: Some("https://example.com/page".into()),
+        resolved_media_url: None,
     };
     let value = serde_json::to_value(&task).unwrap();
     assert!(value.get("cookie_header").is_none());

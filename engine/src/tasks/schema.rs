@@ -1,7 +1,7 @@
 pub const DB_PRAGMAS: &str =
     "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;";
 
-pub const TASK_SCHEMA_VERSION: i64 = 3;
+pub const TASK_SCHEMA_VERSION: i64 = 4;
 
 pub const TASK_MIGRATION_V2: &str = "ALTER TABLE download_tasks ADD COLUMN checkpoint_json TEXT;";
 
@@ -9,6 +9,9 @@ pub const TASK_MIGRATION_V3: &str = r#"
 ALTER TABLE download_tasks ADD COLUMN cookie_header TEXT;
 ALTER TABLE download_tasks ADD COLUMN referer TEXT;
 "#;
+
+pub const TASK_MIGRATION_V4: &str =
+    "ALTER TABLE download_tasks ADD COLUMN resolved_media_url TEXT;";
 
 pub const TASK_SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS download_tasks (

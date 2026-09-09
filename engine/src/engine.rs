@@ -158,6 +158,7 @@ impl Engine {
                 updated_at_ms: now,
                 cookie_header: cookie_header.clone(),
                 referer: referer.clone(),
+                resolved_media_url: None,
             });
         }
         self.tasks.upsert_parent_with_children(
@@ -179,6 +180,7 @@ impl Engine {
                 updated_at_ms: now,
                 cookie_header,
                 referer,
+                resolved_media_url: None,
             },
             &child_tasks,
         )?;
@@ -215,6 +217,7 @@ impl Engine {
             updated_at_ms: now,
             cookie_header: auth.and_then(|a| a.cookies.clone()),
             referer: auth.and_then(|a| a.referer.clone()),
+            resolved_media_url: None,
         })?;
         Ok(id)
     }
@@ -285,7 +288,46 @@ impl Engine {
         Ok(())
     }
 
+    pub fn set_task_media_url(
+        &mut self,
+        task_id: &str,
+        media_url: &str,
+    ) -> Result<(), EngineError> {
+        if media_url.is_empty() {
+            return Err(EngineError::InvalidArg(
+                "media_url must not be empty".into(),
+            ));
+        }
+        let task = self.tasks.get(task_id)?;
+        let allowed = task.status == TaskStatus::NeedsSniff
+            || (task.status == TaskStatus::Failed
+                && task.error_message.as_deref() == Some("needs_sniff"));
+        if !allowed {
+            return Err(EngineError::InvalidArg(
+                "task must be in needs_sniff status".into(),
+            ));
+        }
+        if crate::resolve::source_is_web_page(media_url) {
+            return Err(EngineError::InvalidArg(
+                "media_url must be a direct media link".into(),
+            ));
+        }
+        self.tasks.set_resolved_media_url(task_id, media_url)?;
+        self.tasks
+            .set_task_status(task_id, TaskStatus::Queued, None)?;
+        if let Some(parent_id) = &task.parent_id {
+            let _ = self.tasks.sync_parent_status(parent_id);
+        }
+        Ok(())
+    }
+
     pub fn resume_task(&mut self, task_id: &str) -> Result<(), EngineError> {
+        let task = self.tasks.get(task_id)?;
+        if task.status == TaskStatus::NeedsSniff {
+            return Err(EngineError::InvalidArg(
+                "cannot resume task in needs_sniff status".into(),
+            ));
+        }
         if let Some(runtime) = &self.download {
             runtime.send_command(DownloadCommand::Resume {
                 task_id: task_id.to_string(),

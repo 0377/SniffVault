@@ -17,6 +17,7 @@ class DownloadTask {
     this.episodeIndex,
     required this.createdAtMs,
     required this.updatedAtMs,
+    this.resolvedMediaUrl,
   });
 
   final String id;
@@ -34,6 +35,7 @@ class DownloadTask {
   final int? episodeIndex;
   final int createdAtMs;
   final int updatedAtMs;
+  final String? resolvedMediaUrl;
 
   factory DownloadTask.fromJson(Map<String, dynamic> json) {
     return DownloadTask(
@@ -52,6 +54,7 @@ class DownloadTask {
       episodeIndex: json['episode_index'] as int?,
       createdAtMs: json['created_at_ms'] as int,
       updatedAtMs: json['updated_at_ms'] as int,
+      resolvedMediaUrl: json['resolved_media_url'] as String?,
     );
   }
 
@@ -71,6 +74,7 @@ class DownloadTask {
         if (episodeIndex != null) 'episode_index': episodeIndex,
         'created_at_ms': createdAtMs,
         'updated_at_ms': updatedAtMs,
+        if (resolvedMediaUrl != null) 'resolved_media_url': resolvedMediaUrl,
       };
 
   @override
@@ -91,7 +95,8 @@ class DownloadTask {
           libraryItemId == other.libraryItemId &&
           episodeIndex == other.episodeIndex &&
           createdAtMs == other.createdAtMs &&
-          updatedAtMs == other.updatedAtMs;
+          updatedAtMs == other.updatedAtMs &&
+          resolvedMediaUrl == other.resolvedMediaUrl;
 
   @override
   int get hashCode => Object.hash(
@@ -110,5 +115,6 @@ class DownloadTask {
         episodeIndex,
         createdAtMs,
         updatedAtMs,
+        resolvedMediaUrl,
       );
 }

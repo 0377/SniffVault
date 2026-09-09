@@ -13,6 +13,7 @@ String taskStatusLabel(TaskStatus status) {
     TaskStatus.queued => '排队中',
     TaskStatus.running => '下载中',
     TaskStatus.paused => '已暂停',
+    TaskStatus.needsSniff => '待嗅探',
     TaskStatus.completed => '已完成',
     TaskStatus.failed => '失败',
     TaskStatus.cancelled => '已取消',
@@ -73,7 +74,8 @@ class TaskTile extends StatelessWidget {
 
     if (task.status == TaskStatus.queued ||
         task.status == TaskStatus.running ||
-        task.status == TaskStatus.paused) {
+        task.status == TaskStatus.paused ||
+        task.status == TaskStatus.needsSniff) {
       actions.add(
         IconButton(
           icon: const Icon(Icons.close),
