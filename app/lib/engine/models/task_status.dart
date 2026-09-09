@@ -2,6 +2,7 @@ enum TaskStatus {
   queued('queued'),
   running('running'),
   paused('paused'),
+  needsSniff('needs_sniff'),
   completed('completed'),
   failed('failed'),
   cancelled('cancelled');

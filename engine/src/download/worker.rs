@@ -7,8 +7,9 @@ use crate::download::scheduler::Scheduler;
 use crate::error::EngineError;
 use crate::ingest;
 use crate::library::LibraryStore;
+use crate::resolve::resolve_media_url;
 use crate::tasks::TaskStore;
-use crate::types::{DownloadTask, TaskEvent, TaskEventKind, TaskStatus};
+use crate::types::{DownloadTask, ResolveOptions, TaskEvent, TaskEventKind, TaskStatus};
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -17,6 +18,8 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
+
+const MIN_VALID_MP4_BYTES: u64 = 64 * 1024;
 
 type HlsStateCell = Arc<tokio::sync::Mutex<HlsDownloadState>>;
 type HlsStatesMap = Arc<tokio::sync::Mutex<HashMap<String, HlsStateCell>>>;
@@ -375,10 +378,15 @@ async fn run_one_task(
         }
     }
 
+    let download_referer = task
+        .referer
+        .clone()
+        .or_else(|| Some(task.source_url.clone()));
+
     let http = match HttpClient::new(config.user_agent.as_deref()) {
         Ok(c) => c
             .with_cancellation(cancel.clone())
-            .with_auth(task.cookie_header.clone(), task.referer.clone()),
+            .with_auth(task.cookie_header.clone(), download_referer.clone()),
         Err(e) => return TaskRunOutcome::Failed(e),
     };
 
@@ -387,7 +395,43 @@ async fn run_one_task(
         .as_deref()
         .or(config.default_quality_label.as_deref());
 
-    let download_result = if is_hls_url(&task.source_url) {
+    let resolve_opts = ResolveOptions {
+        cookies: task.cookie_header.clone(),
+        referer: download_referer.clone(),
+        page_url: task.referer.clone(),
+    };
+    let media_url = if let Some(url) = task.resolved_media_url.clone() {
+        url
+    } else {
+        match resolve_media_url(&http, &task.source_url, &resolve_opts).await {
+            Ok(url) => {
+                if crate::resolve::source_is_web_page(&task.source_url) {
+                    if let Err(e) = tasks.set_resolved_media_url(&task.id, &url) {
+                        return TaskRunOutcome::Failed(e);
+                    }
+                }
+                url
+            }
+            Err(_) => {
+                if let Err(e) = worker_set_task_status(
+                    &tasks,
+                    config,
+                    &task.id,
+                    TaskStatus::NeedsSniff,
+                    Some("needs_sniff"),
+                ) {
+                    return TaskRunOutcome::Failed(e);
+                }
+                if let Some(parent_id) = &task.parent_id {
+                    let _ = tasks.sync_parent_status(parent_id);
+                }
+                cleanup_temp_dir(&config.media_dir, &task.id);
+                return TaskRunOutcome::Success;
+            }
+        }
+    };
+
+    let download_result = if is_hls_url(&media_url) {
         let ffmpeg = match config.ffmpeg.resolve() {
             Ok(p) => p,
             Err(e) => return TaskRunOutcome::Failed(e),
@@ -404,7 +448,7 @@ async fn run_one_task(
         };
         download_hls_to_mp4(
             &ctx,
-            &task.source_url,
+            &media_url,
             &output_path,
             quality,
             checkpoint,
@@ -417,7 +461,7 @@ async fn run_one_task(
             http: &http,
             temp_dir: &temp_dir,
         };
-        download_mp4(&ctx, &task.source_url, &output_path, checkpoint).await
+        download_mp4(&ctx, &media_url, &output_path, checkpoint).await
     };
 
     if cancel.is_cancelled() {
@@ -427,6 +471,13 @@ async fn run_one_task(
 
     match download_result {
         Ok((final_path, _bytes)) => {
+            if let Err(err) = validate_download_output(&final_path, is_hls_url(&media_url)) {
+                let _ = tasks.mark_failed(&task.id, err.to_string().as_str());
+                let _ = std::fs::remove_file(&final_path);
+                cleanup_temp_dir(&config.media_dir, &task.id);
+                return TaskRunOutcome::Success;
+            }
+
             let current = match tasks.get(&task.id) {
                 Ok(t) => t,
                 Err(e) => return TaskRunOutcome::Failed(e),
@@ -657,6 +708,45 @@ fn is_hls_url(url: &str) -> bool {
     lower.contains(".m3u8") || lower.ends_with("m3u8")
 }
 
+fn looks_like_html(bytes: &[u8]) -> bool {
+    bytes
+        .iter()
+        .find(|b| !b.is_ascii_whitespace())
+        .is_some_and(|b| *b == b'<')
+}
+
+fn output_contains_ftyp(bytes: &[u8]) -> bool {
+    bytes.windows(4).any(|window| window == b"ftyp")
+}
+
+fn validate_download_output(path: &Path, is_hls: bool) -> Result<(), EngineError> {
+    use std::io::Read;
+
+    let file_len = std::fs::metadata(path)?.len();
+    const HEAD_READ_MAX: u64 = 64 * 1024;
+    let read_len = file_len.min(HEAD_READ_MAX) as usize;
+    let mut head = vec![0u8; read_len];
+    let mut file = std::fs::File::open(path)?;
+    file.read_exact(&mut head)?;
+
+    if looks_like_html(&head) {
+        return Err(EngineError::Message("invalid_media".into()));
+    }
+    if is_hls {
+        if !output_contains_ftyp(&head) {
+            return Err(EngineError::Message("invalid_media".into()));
+        }
+        return Ok(());
+    }
+    if file_len < MIN_VALID_MP4_BYTES {
+        return Err(EngineError::Message("invalid_media".into()));
+    }
+    if !output_contains_ftyp(&head) {
+        return Err(EngineError::Message("invalid_media".into()));
+    }
+    Ok(())
+}
+
 fn cleanup_temp_dir(media_dir: &Path, task_id: &str) {
     let temp = media_dir.join(".dl").join(task_id);
     if temp.exists() {
@@ -707,6 +797,20 @@ mod tests {
     }
 
     #[test]
+    fn validate_download_output_rejects_html_and_tiny_mp4() {
+        let dir = tempfile::tempdir().unwrap();
+        let html_path = dir.path().join("fake.mp4");
+        std::fs::write(&html_path, b"<html><body>error</body></html>").unwrap();
+        let err = validate_download_output(&html_path, false).unwrap_err();
+        assert_eq!(err.to_string(), "invalid_media");
+
+        let tiny_path = dir.path().join("tiny.mp4");
+        std::fs::write(&tiny_path, b"ftyp").unwrap();
+        let err = validate_download_output(&tiny_path, false).unwrap_err();
+        assert_eq!(err.to_string(), "invalid_media");
+    }
+
+    #[test]
     fn output_filename_for_series_episode() {
         let task = DownloadTask {
             id: "c1".into(),
@@ -726,6 +830,7 @@ mod tests {
             updated_at_ms: 1,
             cookie_header: None,
             referer: None,
+            resolved_media_url: None,
         };
         assert_eq!(output_filename(&task), "第1集_S1E3.mp4");
     }

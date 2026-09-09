@@ -369,6 +369,25 @@ pub unsafe extern "C" fn engine_cancel_task(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn engine_set_task_media_url(
+    handle: *mut EngineHandle,
+    task_id: *const c_char,
+    media_url: *const c_char,
+) -> *mut c_char {
+    let task_id = match parse_c_str(task_id, "task_id") {
+        Ok(id) => id,
+        Err(err) => return rust_to_c_string(err_json(err)),
+    };
+    let media_url = match parse_c_str(media_url, "media_url") {
+        Ok(url) => url,
+        Err(err) => return rust_to_c_string(err_json(err)),
+    };
+    ffi_call_mut(handle, |engine| {
+        engine.set_task_media_url(&task_id, &media_url).map(|_| ())
+    })
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn engine_sniff_urls(
     handle: *mut EngineHandle,
     events_json: *const c_char,

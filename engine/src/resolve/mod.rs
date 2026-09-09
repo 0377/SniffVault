@@ -10,7 +10,7 @@ use crate::download::http::HttpClient;
 use crate::error::EngineError;
 use crate::types::{MediaKind, Quality, ResolveOptions, ResolveOutcome};
 
-use html::{extract_episode_list, scan_media_urls};
+use html::{extract_episode_list, pick_preferred_media_url, scan_media_urls};
 use media::{
     candidates_from_m3u8_body, classify_entry_url, make_candidate, EntryKind, ResolveMediaResult,
 };
@@ -81,6 +81,30 @@ pub(crate) async fn resolve_url(
     }
 }
 
+pub(crate) fn source_is_web_page(url: &str) -> bool {
+    classify_entry_url(url) == EntryKind::WebPage
+}
+
+pub(crate) async fn resolve_media_url(
+    http: &HttpClient,
+    url: &str,
+    opts: &ResolveOptions,
+) -> Result<String, EngineError> {
+    if classify_entry_url(url) != EntryKind::WebPage {
+        return Ok(url.to_string());
+    }
+
+    let (status, html) = fetch::fetch_playlist_or_page(http, url, opts).await?;
+    if is_auth_required(status) {
+        return Err(EngineError::Message("auth_required".into()));
+    }
+    ensure_fetch_success(status)?;
+
+    let media_urls = scan_media_urls(&html, url);
+    pick_preferred_media_url(&media_urls)
+        .ok_or_else(|| EngineError::Message("no media found in page".into()))
+}
+
 pub(crate) async fn resolve_qualities(
     http: &HttpClient,
     media_url: &str,
@@ -147,6 +171,42 @@ mod pipeline_tests {
         .await
         .unwrap();
         assert!(matches!(outcome, ResolveOutcome::Single(_)));
+    }
+
+    #[tokio::test]
+    async fn resolve_media_url_from_player_page_fixture() {
+        use axum::{routing::get, Router};
+        use tokio::net::TcpListener;
+
+        async fn player_page() -> &'static str {
+            include_str!("../../tests/fixtures/html/player_page.html")
+        }
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handle = tokio::spawn(async move {
+            axum::serve(listener, Router::new().route("/player", get(player_page)))
+                .await
+                .unwrap();
+        });
+
+        let http = HttpClient::new(None).unwrap();
+        let page_url = format!("http://{addr}/player");
+        let media_url = resolve_media_url(&http, &page_url, &ResolveOptions::default())
+            .await
+            .unwrap();
+        assert!(media_url.ends_with("/sample.mp4"));
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn resolve_media_url_returns_direct_url_unchanged() {
+        let http = HttpClient::new(None).unwrap();
+        let url = "https://cdn.example/clip.m3u8";
+        let media_url = resolve_media_url(&http, url, &ResolveOptions::default())
+            .await
+            .unwrap();
+        assert_eq!(media_url, url);
     }
 
     #[tokio::test]

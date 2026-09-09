@@ -118,6 +118,13 @@ pub(crate) fn scan_media_urls(html: &str, base_url: &str) -> Vec<String> {
     urls
 }
 
+pub(crate) fn pick_preferred_media_url(urls: &[String]) -> Option<String> {
+    urls.iter()
+        .find(|url| url.to_ascii_lowercase().contains(".m3u8"))
+        .or_else(|| urls.first())
+        .cloned()
+}
+
 fn is_blacklisted_href(href: &str) -> bool {
     let trimmed = href.trim();
     if trimmed.is_empty() || trimmed == "#" || trimmed.starts_with('#') {
@@ -275,6 +282,18 @@ mod tests {
         assert!(list.episodes.len() >= 2);
         assert!(list.episodes.iter().any(|ep| ep.index == 1));
         assert!(list.episodes[0].url.contains("tjtplayer/181785"));
+    }
+
+    #[test]
+    fn pick_preferred_media_url_prefers_m3u8() {
+        let urls = vec![
+            "https://cdn.example/a.mp4".into(),
+            "https://cdn.example/b.m3u8".into(),
+        ];
+        assert_eq!(
+            pick_preferred_media_url(&urls),
+            Some("https://cdn.example/b.m3u8".into())
+        );
     }
 
     #[test]
