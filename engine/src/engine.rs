@@ -339,6 +339,32 @@ impl Engine {
         Ok(())
     }
 
+    pub fn retry_task(&mut self, task_id: &str) -> Result<(), EngineError> {
+        let task = self.tasks.get(task_id)?;
+        if task.status != TaskStatus::Failed {
+            return Err(EngineError::InvalidArg(
+                "task must be in failed status".into(),
+            ));
+        }
+        if task.error_message.as_deref() == Some("needs_sniff") {
+            return Err(EngineError::InvalidArg(
+                "failed task needs sniff before retry".into(),
+            ));
+        }
+        if let Some(runtime) = &self.download {
+            runtime.send_command(DownloadCommand::Resume {
+                task_id: task_id.to_string(),
+            })?;
+        } else {
+            self.tasks
+                .set_task_status(task_id, TaskStatus::Queued, None)?;
+        }
+        if let Some(parent_id) = &task.parent_id {
+            let _ = self.tasks.sync_parent_status(parent_id);
+        }
+        Ok(())
+    }
+
     pub fn cancel_task(&mut self, task_id: &str) -> Result<(), EngineError> {
         if let Some(runtime) = &self.download {
             runtime.send_command(DownloadCommand::Cancel {

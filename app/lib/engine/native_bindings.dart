@@ -126,6 +126,15 @@ typedef EngineResumeTask = Pointer<Char> Function(
   Pointer<Utf8> taskId,
 );
 
+typedef EngineRetryTaskNative = Pointer<Char> Function(
+  Pointer<Void> handle,
+  Pointer<Utf8> taskId,
+);
+typedef EngineRetryTask = Pointer<Char> Function(
+  Pointer<Void> handle,
+  Pointer<Utf8> taskId,
+);
+
 typedef EngineCancelTaskNative = Pointer<Char> Function(
   Pointer<Void> handle,
   Pointer<Utf8> taskId,
@@ -345,6 +354,10 @@ class NativeBindings {
             lib.lookupFunction<EngineResumeTaskNative, EngineResumeTask>(
           'engine_resume_task',
         ),
+        engineRetryTask =
+            lib.lookupFunction<EngineRetryTaskNative, EngineRetryTask>(
+          'engine_retry_task',
+        ),
         engineCancelTask =
             lib.lookupFunction<EngineCancelTaskNative, EngineCancelTask>(
           'engine_cancel_task',
@@ -441,6 +454,7 @@ class NativeBindings {
   final EngineStopDownloads engineStopDownloads;
   final EnginePauseTask enginePauseTask;
   final EngineResumeTask engineResumeTask;
+  final EngineRetryTask engineRetryTask;
   final EngineCancelTask engineCancelTask;
   final EngineSetTaskMediaUrl engineSetTaskMediaUrl;
   final EngineSniffUrls engineSniffUrls;

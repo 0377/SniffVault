@@ -26,6 +26,7 @@ void main() {
             onPause: () {},
             onResume: () {},
             onCancel: () {},
+            onRetry: () {},
           ),
         ),
       ),
@@ -35,6 +36,65 @@ void main() {
     expect(find.byIcon(Icons.pause), findsNothing);
     expect(find.byIcon(Icons.play_arrow), findsNothing);
     expect(find.byIcon(Icons.close), findsOneWidget);
+  });
+
+  testWidgets('failed task shows retry button', (tester) async {
+    const task = DownloadTask(
+      id: 't-failed',
+      title: '第01集',
+      sourceUrl: 'https://example/x.m3u8',
+      status: TaskStatus.failed,
+      errorMessage: 'http error',
+      progressBytes: 0,
+      createdAtMs: 1,
+      updatedAtMs: 1,
+    );
+    var retried = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TaskTile(
+            task: task,
+            onPause: () {},
+            onResume: () {},
+            onCancel: () {},
+            onRetry: () => retried = true,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byTooltip('重试'), findsOneWidget);
+    await tester.tap(find.byTooltip('重试'));
+    expect(retried, isTrue);
+  });
+
+  testWidgets('failed needs_sniff task hides retry button', (tester) async {
+    const task = DownloadTask(
+      id: 't-sniff-failed',
+      title: '第01集',
+      sourceUrl: 'https://example/play/1',
+      status: TaskStatus.failed,
+      errorMessage: 'needs_sniff',
+      progressBytes: 0,
+      createdAtMs: 1,
+      updatedAtMs: 1,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TaskTile(
+            task: task,
+            onPause: () {},
+            onResume: () {},
+            onCancel: () {},
+            onRetry: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byTooltip('重试'), findsNothing);
   });
 
   testWidgets('W2 shows indeterminate progress when totalBytes is null', (
@@ -58,6 +118,7 @@ void main() {
             onPause: () {},
             onResume: () {},
             onCancel: () {},
+            onRetry: () {},
           ),
         ),
       ),

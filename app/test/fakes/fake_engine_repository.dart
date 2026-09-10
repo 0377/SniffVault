@@ -160,6 +160,9 @@ class FakeEngineRepository implements EngineRepository {
   void resumeTask(String taskId) {}
 
   @override
+  void retryTask(String taskId) {}
+
+  @override
   void cancelTask(String taskId) {}
 
   @override

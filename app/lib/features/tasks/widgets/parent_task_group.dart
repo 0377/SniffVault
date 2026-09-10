@@ -14,6 +14,8 @@ class ParentTaskGroup extends ConsumerWidget {
     required this.onPause,
     required this.onResume,
     required this.onCancel,
+    required this.onRetry,
+    required this.onBatchRetry,
   });
 
   final DownloadTask parent;
@@ -21,9 +23,14 @@ class ParentTaskGroup extends ConsumerWidget {
   final void Function(String taskId) onPause;
   final void Function(String taskId) onResume;
   final void Function(String taskId) onCancel;
+  final void Function(String taskId) onRetry;
+  final VoidCallback onBatchRetry;
 
   int _needsSniffCount() =>
       children.where((child) => child.status == TaskStatus.needsSniff).length;
+
+  int _retryableFailedCount() =>
+      children.where(taskCanRetry).length;
 
   void _startBatchSniff(BuildContext context, WidgetRef ref) {
     ref.read(batchSniffParentIdProvider.notifier).state = parent.id;
@@ -38,13 +45,19 @@ class ParentTaskGroup extends ConsumerWidget {
         onPause: () => onPause(parent.id),
         onResume: () => onResume(parent.id),
         onCancel: () => onCancel(parent.id),
+        onRetry: () => onRetry(parent.id),
       );
     }
 
     final needsSniffCount = _needsSniffCount();
-    final subtitle = needsSniffCount > 0
-        ? '${children.length} 个子任务，$needsSniffCount 待嗅探'
-        : '${children.length} 个子任务';
+    final retryableFailedCount = _retryableFailedCount();
+    final subtitle = switch ((needsSniffCount, retryableFailedCount)) {
+      (final sniff, _) when sniff > 0 =>
+        '${children.length} 个子任务，$sniff 待嗅探',
+      (_, final failed) when failed > 0 =>
+        '${children.length} 个子任务，$failed 失败',
+      _ => '${children.length} 个子任务',
+    };
 
     return ExpansionTile(
       title: Text(parent.title),
@@ -61,6 +74,15 @@ class ParentTaskGroup extends ConsumerWidget {
                 child: const Text('嗅探补全'),
               ),
             ),
+          if (retryableFailedCount > 0)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                key: const Key('batch_retry_button'),
+                onPressed: onBatchRetry,
+                child: const Text('重试失败'),
+              ),
+            ),
         ],
       ),
       children: children
@@ -70,6 +92,7 @@ class ParentTaskGroup extends ConsumerWidget {
               onPause: () => onPause(child.id),
               onResume: () => onResume(child.id),
               onCancel: () => onCancel(child.id),
+              onRetry: () => onRetry(child.id),
             ),
           )
           .toList(),

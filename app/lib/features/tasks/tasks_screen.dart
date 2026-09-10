@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_sniffing/features/tasks/widgets/parent_task_group.dart';
+import 'package:video_sniffing/features/tasks/widgets/task_tile.dart';
 import 'package:video_sniffing/providers/download_coordinator.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
 import 'package:video_sniffing/providers/tasks_provider.dart';
@@ -40,6 +41,16 @@ class TasksScreen extends ConsumerWidget {
               coordinator.ensureDownloads();
             },
             onCancel: repo.cancelTask,
+            onRetry: (taskId) {
+              repo.retryTask(taskId);
+              coordinator.ensureDownloads();
+            },
+            onBatchRetry: () {
+              for (final child in children.where(taskCanRetry)) {
+                repo.retryTask(child.id);
+              }
+              coordinator.ensureDownloads();
+            },
           );
         },
       ),
