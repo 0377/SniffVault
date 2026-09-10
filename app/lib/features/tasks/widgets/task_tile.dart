@@ -37,6 +37,10 @@ bool taskCanRetry(DownloadTask task) {
       task.errorMessage != TaskError.needsSniff;
 }
 
+bool taskCanRestore(DownloadTask task) {
+  return task.status == TaskStatus.cancelled;
+}
+
 class TaskTile extends StatelessWidget {
   const TaskTile({
     super.key,
@@ -45,6 +49,7 @@ class TaskTile extends StatelessWidget {
     required this.onResume,
     required this.onCancel,
     required this.onRetry,
+    required this.onRestore,
   });
 
   final DownloadTask task;
@@ -52,6 +57,7 @@ class TaskTile extends StatelessWidget {
   final VoidCallback onResume;
   final VoidCallback onCancel;
   final VoidCallback onRetry;
+  final VoidCallback onRestore;
 
   @override
   Widget build(BuildContext context) {
@@ -103,6 +109,14 @@ class TaskTile extends StatelessWidget {
           icon: const Icon(Icons.refresh),
           tooltip: '重试',
           onPressed: onRetry,
+        ),
+      );
+    } else if (taskCanRestore(task)) {
+      actions.add(
+        IconButton(
+          icon: const Icon(Icons.play_arrow),
+          tooltip: '恢复',
+          onPressed: onRestore,
         ),
       );
     }

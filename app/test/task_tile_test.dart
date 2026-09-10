@@ -28,6 +28,7 @@ void main() {
             onResume: () {},
             onCancel: () {},
             onRetry: () {},
+            onRestore: () {},
           ),
         ),
       ),
@@ -60,6 +61,7 @@ void main() {
             onResume: () {},
             onCancel: () {},
             onRetry: () => retried = true,
+            onRestore: () {},
           ),
         ),
       ),
@@ -90,12 +92,45 @@ void main() {
             onResume: () {},
             onCancel: () {},
             onRetry: () {},
+            onRestore: () {},
           ),
         ),
       ),
     );
 
     expect(find.byTooltip('重试'), findsNothing);
+  });
+
+  testWidgets('cancelled task shows restore button', (tester) async {
+    const task = DownloadTask(
+      id: 't-cancelled',
+      title: '第24集',
+      sourceUrl: 'https://example.com/play/24',
+      status: TaskStatus.cancelled,
+      progressBytes: 0,
+      createdAtMs: 1,
+      updatedAtMs: 1,
+    );
+    var restored = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TaskTile(
+            task: task,
+            onPause: () {},
+            onResume: () {},
+            onCancel: () {},
+            onRetry: () {},
+            onRestore: () => restored = true,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('已取消'), findsOneWidget);
+    expect(find.byTooltip('恢复'), findsOneWidget);
+    await tester.tap(find.byTooltip('恢复'));
+    expect(restored, isTrue);
   });
 
   testWidgets('running task shows segment progress when totalBytes is set', (
@@ -120,6 +155,7 @@ void main() {
             onResume: () {},
             onCancel: () {},
             onRetry: () {},
+            onRestore: () {},
           ),
         ),
       ),
@@ -154,6 +190,7 @@ void main() {
             onResume: () {},
             onCancel: () {},
             onRetry: () {},
+            onRestore: () {},
           ),
         ),
       ),

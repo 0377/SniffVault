@@ -268,6 +268,12 @@ class EngineHost {
     });
   }
 
+  void restoreTask(String taskId) {
+    _withUtf8(taskId, (taskIdPtr) {
+      _callSyncVoid((handle) => _bindings.engineRestoreTask(handle, taskIdPtr));
+    });
+  }
+
   void cancelTask(String taskId) {
     _withUtf8(taskId, (taskIdPtr) {
       _callSyncVoid((handle) => _bindings.engineCancelTask(handle, taskIdPtr));

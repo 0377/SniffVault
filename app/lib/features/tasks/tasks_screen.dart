@@ -53,6 +53,11 @@ class TasksScreen extends ConsumerWidget {
                     ref.invalidate(tasksProvider);
                     coordinator.ensureDownloads();
                   },
+                  onRestore: (taskId) {
+                    repo.restoreTask(taskId);
+                    ref.invalidate(tasksProvider);
+                    coordinator.ensureDownloads();
+                  },
                   onBatchRetry: () {
                     for (final child in children.where(taskCanRetry)) {
                       repo.retryTask(child.id);
