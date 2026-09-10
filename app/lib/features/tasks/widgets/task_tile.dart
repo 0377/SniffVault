@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:video_sniffing/engine/models/download_task.dart';
+import 'package:video_sniffing/engine/models/task_error.dart';
 import 'package:video_sniffing/engine/models/task_status.dart';
 
 double? taskProgressFraction(DownloadTask task) {
@@ -22,7 +23,7 @@ String taskStatusLabel(TaskStatus status) {
 
 bool taskCanRetry(DownloadTask task) {
   return task.status == TaskStatus.failed &&
-      task.errorMessage != 'needs_sniff';
+      task.errorMessage != TaskError.needsSniff;
 }
 
 class TaskTile extends StatelessWidget {

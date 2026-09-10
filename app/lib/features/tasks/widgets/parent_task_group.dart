@@ -32,6 +32,14 @@ class ParentTaskGroup extends ConsumerWidget {
   int _retryableFailedCount() =>
       children.where(taskCanRetry).length;
 
+  String _subtitle(int needsSniffCount, int retryableFailedCount) {
+    return parentTaskGroupSubtitle(
+      childCount: children.length,
+      needsSniffCount: needsSniffCount,
+      retryableFailedCount: retryableFailedCount,
+    );
+  }
+
   void _startBatchSniff(BuildContext context, WidgetRef ref) {
     ref.read(batchSniffParentIdProvider.notifier).state = parent.id;
     context.push('/browse');
@@ -51,13 +59,7 @@ class ParentTaskGroup extends ConsumerWidget {
 
     final needsSniffCount = _needsSniffCount();
     final retryableFailedCount = _retryableFailedCount();
-    final subtitle = switch ((needsSniffCount, retryableFailedCount)) {
-      (final sniff, _) when sniff > 0 =>
-        '${children.length} 个子任务，$sniff 待嗅探',
-      (_, final failed) when failed > 0 =>
-        '${children.length} 个子任务，$failed 失败',
-      _ => '${children.length} 个子任务',
-    };
+    final subtitle = _subtitle(needsSniffCount, retryableFailedCount);
 
     return ExpansionTile(
       title: Text(parent.title),
@@ -98,4 +100,18 @@ class ParentTaskGroup extends ConsumerWidget {
           .toList(),
     );
   }
+}
+
+String parentTaskGroupSubtitle({
+  required int childCount,
+  required int needsSniffCount,
+  required int retryableFailedCount,
+}) {
+  return switch ((needsSniffCount, retryableFailedCount)) {
+    (final sniff, final failed) when sniff > 0 && failed > 0 =>
+      '$childCount 个子任务，$sniff 待嗅探，$failed 失败',
+    (final sniff, _) when sniff > 0 => '$childCount 个子任务，$sniff 待嗅探',
+    (_, final failed) when failed > 0 => '$childCount 个子任务，$failed 失败',
+    _ => '$childCount 个子任务',
+  };
 }

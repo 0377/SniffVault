@@ -157,6 +157,64 @@ void main() {
     expect(retried, ['c1', 'c3']);
   });
 
+  testWidgets('parent task shows sniff and failed counts when both present', (
+    tester,
+  ) async {
+    const parent = DownloadTask(
+      id: 'parent-4',
+      title: '混合状态剧集',
+      sourceUrl: 'https://example/list',
+      status: TaskStatus.running,
+      progressBytes: 0,
+      createdAtMs: 1,
+      updatedAtMs: 1,
+    );
+    final children = [
+      _child(
+        id: 'c1',
+        status: TaskStatus.needsSniff,
+        episodeIndex: 1,
+        parentId: 'parent-4',
+      ),
+      _child(
+        id: 'c2',
+        status: TaskStatus.failed,
+        episodeIndex: 2,
+        parentId: 'parent-4',
+        errorMessage: 'http error',
+      ),
+      _child(
+        id: 'c3',
+        status: TaskStatus.completed,
+        episodeIndex: 3,
+        parentId: 'parent-4',
+      ),
+    ];
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: ParentTaskGroup(
+              parent: parent,
+              children: children,
+              onPause: (_) {},
+              onResume: (_) {},
+              onCancel: (_) {},
+              onRetry: (_) {},
+              onBatchRetry: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('3 个子任务，1 待嗅探，1 失败'), findsOneWidget);
+    expect(find.text('嗅探补全'), findsOneWidget);
+    expect(find.text('重试失败'), findsOneWidget);
+  });
+
   testWidgets('parent task hides batch sniff button when no needs sniff children', (
     tester,
   ) async {

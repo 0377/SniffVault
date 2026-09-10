@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:video_sniffing/engine/models/download_task.dart';
+import 'package:video_sniffing/engine/models/task_error.dart';
 import 'package:video_sniffing/engine/models/task_status.dart';
 import 'package:video_sniffing/features/tasks/widgets/task_tile.dart';
 
@@ -13,7 +14,7 @@ void main() {
       title: 'ajax-episode',
       sourceUrl: 'https://example/play/1',
       status: TaskStatus.needsSniff,
-      errorMessage: 'needs_sniff',
+      errorMessage: TaskError.needsSniff,
       progressBytes: 0,
       createdAtMs: 1,
       updatedAtMs: 1,
@@ -75,7 +76,7 @@ void main() {
       title: '第01集',
       sourceUrl: 'https://example/play/1',
       status: TaskStatus.failed,
-      errorMessage: 'needs_sniff',
+      errorMessage: TaskError.needsSniff,
       progressBytes: 0,
       createdAtMs: 1,
       updatedAtMs: 1,
