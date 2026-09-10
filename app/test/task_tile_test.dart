@@ -98,6 +98,40 @@ void main() {
     expect(find.byTooltip('重试'), findsNothing);
   });
 
+  testWidgets('running task shows segment progress when totalBytes is set', (
+    tester,
+  ) async {
+    const task = DownloadTask(
+      id: 't-hls',
+      title: '第05集',
+      sourceUrl: 'https://example/x.m3u8',
+      status: TaskStatus.running,
+      progressBytes: 3,
+      totalBytes: 120,
+      createdAtMs: 1,
+      updatedAtMs: 1,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TaskTile(
+            task: task,
+            onPause: () {},
+            onResume: () {},
+            onCancel: () {},
+            onRetry: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('下载中 3/120 分片'), findsOneWidget);
+    final indicator = tester.widget<LinearProgressIndicator>(
+      find.byType(LinearProgressIndicator),
+    );
+    expect(indicator.value, 0.025);
+  });
+
   testWidgets('W2 shows indeterminate progress when totalBytes is null', (
     tester,
   ) async {
@@ -124,6 +158,7 @@ void main() {
         ),
       ),
     );
+    expect(find.text('下载中…'), findsOneWidget);
     expect(find.byType(LinearProgressIndicator), findsOneWidget);
     final indicator = tester.widget<LinearProgressIndicator>(
       find.byType(LinearProgressIndicator),

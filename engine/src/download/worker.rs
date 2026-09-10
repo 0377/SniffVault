@@ -9,7 +9,9 @@ use crate::ingest;
 use crate::library::LibraryStore;
 use crate::resolve::resolve_media_url;
 use crate::tasks::TaskStore;
-use crate::types::{DownloadTask, ResolveOptions, TaskEvent, TaskEventKind, TaskStatus};
+use crate::types::{
+    DownloadLogEntry, DownloadTask, ResolveOptions, TaskEvent, TaskEventKind, TaskStatus,
+};
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -44,9 +46,34 @@ pub struct WorkerConfig {
     pub task_event_tx: Option<mpsc::Sender<TaskEvent>>,
 }
 
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
 fn emit_task_event(config: &WorkerConfig, kind: TaskEventKind, task: Option<DownloadTask>) {
     if let Some(tx) = &config.task_event_tx {
-        let _ = tx.send(TaskEvent { kind, task });
+        let _ = tx.send(TaskEvent {
+            kind,
+            task,
+            log: None,
+        });
+    }
+}
+
+fn emit_download_log(config: &WorkerConfig, task_id: &str, message: impl Into<String>) {
+    if let Some(tx) = &config.task_event_tx {
+        let _ = tx.send(TaskEvent {
+            kind: TaskEventKind::Log,
+            task: None,
+            log: Some(DownloadLogEntry {
+                task_id: task_id.to_string(),
+                message: message.into(),
+                at_ms: now_ms(),
+            }),
+        });
     }
 }
 
@@ -231,7 +258,7 @@ pub async fn run_worker(config: WorkerConfig, cmd_rx: mpsc::Receiver<DownloadCom
                             TaskStatus::Running,
                             None,
                         ) {
-                            tracing_log(&format!("set running failed: {e}"));
+                            emit_download_log(&config, &task.id, format!("标记运行中失败: {e}"));
                             task_cancels.lock().await.remove(&task.id);
                             in_flight.lock().await.remove(&task.id);
                             continue;
@@ -251,9 +278,15 @@ pub async fn run_worker(config: WorkerConfig, cmd_rx: mpsc::Receiver<DownloadCom
                             hls_states: hls_states.clone(),
                         };
 
+                        let cfg_for_task = Arc::clone(&cfg);
                         tokio::spawn(async move {
-                            let outcome =
-                                run_one_task(&cfg, &task, token, handles.hls_states.clone()).await;
+                            let outcome = run_one_task(
+                                cfg_for_task,
+                                &task,
+                                token,
+                                handles.hls_states.clone(),
+                            )
+                            .await;
                             handle_outcome(&cfg, &task, outcome, scheduler_ref, handles).await;
                             active_ref.fetch_sub(1, Ordering::SeqCst);
                         });
@@ -266,7 +299,6 @@ pub async fn run_worker(config: WorkerConfig, cmd_rx: mpsc::Receiver<DownloadCom
     }
 }
 
-fn tracing_log(_msg: &str) {}
 
 async fn handle_outcome(
     config: &WorkerConfig,
@@ -313,6 +345,7 @@ async fn handle_outcome(
             }
             TaskRunOutcome::Failed(err) => {
                 let msg = err.to_string();
+                emit_download_log(config, &task.id, format!("失败：{}", msg));
                 let _ = store.mark_failed(&task.id, &msg);
             }
         }
@@ -342,7 +375,7 @@ async fn finish_task_handles(config: &WorkerConfig, task_id: &str, handles: &Wor
 }
 
 async fn run_one_task(
-    config: &WorkerConfig,
+    config: Arc<WorkerConfig>,
     task: &DownloadTask,
     cancel: CancellationToken,
     hls_states: HlsStatesMap,
@@ -415,7 +448,7 @@ async fn run_one_task(
             Err(_) => {
                 if let Err(e) = worker_set_task_status(
                     &tasks,
-                    config,
+                    config.as_ref(),
                     &task.id,
                     TaskStatus::NeedsSniff,
                     Some("needs_sniff"),
@@ -431,20 +464,48 @@ async fn run_one_task(
         }
     };
 
+    emit_download_log(config.as_ref(), &task.id, format!("开始下载：{}", task.title));
+    emit_download_log(config.as_ref(), &task.id, format!("媒体地址：{}", media_url));
+
     let download_result = if is_hls_url(&media_url) {
         let ffmpeg = match config.ffmpeg.resolve() {
             Ok(p) => p,
             Err(e) => return TaskRunOutcome::Failed(e),
         };
+        emit_download_log(config.as_ref(), &task.id, "HLS：获取播放列表…");
         let hls_state = Arc::new(tokio::sync::Mutex::new(HlsDownloadState::default()));
         hls_states
             .lock()
             .await
             .insert(task.id.clone(), hls_state.clone());
+        let tasks_path = config.data_dir.join("tasks.db");
+        let config_ref = Arc::clone(&config);
+        let task_id = task.id.clone();
+        let on_segment_progress: crate::download::hls::SegmentProgressCallback =
+            Arc::new(move |done, total| {
+                if let Ok(store) = TaskStore::open(&tasks_path) {
+                    let _ = worker_update_progress(
+                        &store,
+                        config_ref.as_ref(),
+                        &task_id,
+                        done,
+                        Some(total),
+                        TaskStatus::Running,
+                    );
+                }
+                if done == 1 || done == total || done % 10 == 0 {
+                    emit_download_log(
+                        config_ref.as_ref(),
+                        &task_id,
+                        format!("HLS：分片 {}/{}", done, total),
+                    );
+                }
+            });
         let ctx = HlsContext {
             http: &http,
             temp_dir: &temp_dir,
             ffmpeg: &ffmpeg,
+            on_segment_progress: Some(on_segment_progress),
         };
         download_hls_to_mp4(
             &ctx,
@@ -455,8 +516,12 @@ async fn run_one_task(
             Some(hls_state),
         )
         .await
-        .map(|p| (p, 0u64))
+        .map(|p| {
+            emit_download_log(config.as_ref(), &task.id, "HLS：合并为 MP4…");
+            (p, 0u64)
+        })
     } else {
+        emit_download_log(config.as_ref(), &task.id, "MP4：开始下载…");
         let ctx = Mp4Context {
             http: &http,
             temp_dir: &temp_dir,
@@ -465,7 +530,7 @@ async fn run_one_task(
     };
 
     if cancel.is_cancelled() {
-        let _ = save_interrupt_checkpoint_if_paused(config, task, &hls_states).await;
+        let _ = save_interrupt_checkpoint_if_paused(config.as_ref(), task, &hls_states).await;
         return TaskRunOutcome::Cancelled;
     }
 
@@ -483,7 +548,7 @@ async fn run_one_task(
                 Err(e) => return TaskRunOutcome::Failed(e),
             };
             if current.status == TaskStatus::Paused {
-                let _ = save_interrupt_checkpoint(config, task, &hls_states).await;
+                let _ = save_interrupt_checkpoint(config.as_ref(), task, &hls_states).await;
                 return TaskRunOutcome::Cancelled;
             }
             if current.status != TaskStatus::Running {
@@ -536,14 +601,14 @@ async fn run_one_task(
                 Err(e) => return TaskRunOutcome::Failed(e),
             };
             if current.status == TaskStatus::Paused {
-                let _ = save_interrupt_checkpoint(config, task, &hls_states).await;
+                let _ = save_interrupt_checkpoint(config.as_ref(), task, &hls_states).await;
                 return TaskRunOutcome::Cancelled;
             }
             if current.status != TaskStatus::Running {
                 return TaskRunOutcome::Cancelled;
             }
             if cancel.is_cancelled() {
-                let _ = save_interrupt_checkpoint_if_paused(config, task, &hls_states).await;
+                let _ = save_interrupt_checkpoint_if_paused(config.as_ref(), task, &hls_states).await;
                 return TaskRunOutcome::Cancelled;
             }
             let current = match tasks.get(&task.id) {
@@ -551,7 +616,7 @@ async fn run_one_task(
                 Err(e) => return TaskRunOutcome::Failed(e),
             };
             if current.status == TaskStatus::Paused || cancel.is_cancelled() {
-                let _ = save_interrupt_checkpoint(config, task, &hls_states).await;
+                let _ = save_interrupt_checkpoint(config.as_ref(), task, &hls_states).await;
                 return TaskRunOutcome::Cancelled;
             }
             if current.status != TaskStatus::Running {
@@ -560,12 +625,13 @@ async fn run_one_task(
             if let Err(e) = tasks.complete_download(&task.id, &path_str, &library_item_id) {
                 return TaskRunOutcome::Failed(e);
             }
-            cleanup_download_temp_if_terminal(config, &task.id);
+            cleanup_download_temp_if_terminal(config.as_ref(), &task.id);
+            emit_download_log(config.as_ref(), &task.id, "下载完成");
             TaskRunOutcome::Success
         }
         Err(e) => {
             if cancel.is_cancelled() {
-                let _ = save_interrupt_checkpoint_if_paused(config, task, &hls_states).await;
+                let _ = save_interrupt_checkpoint_if_paused(config.as_ref(), task, &hls_states).await;
                 TaskRunOutcome::Cancelled
             } else {
                 classify_error(e)

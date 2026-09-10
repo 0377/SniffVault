@@ -1,7 +1,27 @@
 use video_sniffing_engine::{
-    DownloadTask, Episode, EpisodeList, LibraryItem, LibraryItemKind, MediaKind, Quality,
-    ResolveOptions, ResolveOutcome, ResourceCandidate, SniffEvent, SniffInitiator, TaskStatus,
+    DownloadLogEntry, DownloadTask, Episode, EpisodeList, LibraryItem, LibraryItemKind, MediaKind,
+    Quality, ResolveOptions, ResolveOutcome, ResourceCandidate, SniffEvent, SniffInitiator,
+    TaskEvent, TaskEventKind, TaskStatus,
 };
+
+#[test]
+fn task_log_event_roundtrip_json() {
+    let event = TaskEvent {
+        kind: TaskEventKind::Log,
+        task: None,
+        log: Some(DownloadLogEntry {
+            task_id: "t1".into(),
+            message: "HLS：分片 1/120".into(),
+            at_ms: 1_700_000_000_000,
+        }),
+    };
+    let json = serde_json::to_string(&event).unwrap();
+    assert!(json.contains("\"log\""));
+    assert_eq!(json.contains("\"kind\":\"log\"") || json.contains("\"kind\": \"log\""), true);
+    let back: TaskEvent = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.kind, TaskEventKind::Log);
+    assert_eq!(back.log.as_ref().unwrap().message, "HLS：分片 1/120");
+}
 
 #[test]
 fn resource_candidate_roundtrip_json() {

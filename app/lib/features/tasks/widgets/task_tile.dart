@@ -9,6 +9,17 @@ double? taskProgressFraction(DownloadTask task) {
   return task.progressBytes / total;
 }
 
+String? taskRunningStatusText(DownloadTask task) {
+  if (task.status != TaskStatus.running) {
+    return null;
+  }
+  final total = task.totalBytes;
+  if (total != null && total > 0) {
+    return '下载中 ${task.progressBytes}/$total 分片';
+  }
+  return '下载中…';
+}
+
 String taskStatusLabel(TaskStatus status) {
   return switch (status) {
     TaskStatus.queued => '排队中',
@@ -45,11 +56,19 @@ class TaskTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fraction = taskProgressFraction(task);
+    final runningStatus = taskRunningStatusText(task);
 
     return ListTile(
       title: Text(task.title),
       subtitle: task.status == TaskStatus.running
-          ? LinearProgressIndicator(value: fraction)
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (runningStatus != null) Text(runningStatus),
+                const SizedBox(height: 4),
+                LinearProgressIndicator(value: fraction),
+              ],
+            )
           : Text(
               task.status == TaskStatus.failed && task.errorMessage != null
                   ? '${taskStatusLabel(task.status)}：${task.errorMessage}'

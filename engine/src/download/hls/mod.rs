@@ -58,10 +58,13 @@ fn is_master_playlist(body: &str) -> bool {
         .any(|line| line.starts_with("#EXT-X-STREAM-INF:"))
 }
 
+pub(crate) type SegmentProgressCallback = Arc<dyn Fn(u64, u64) + Send + Sync>;
+
 pub(crate) struct HlsContext<'a> {
     pub(crate) http: &'a HttpClient,
     pub(crate) temp_dir: &'a Path,
     pub(crate) ffmpeg: &'a Path,
+    pub(crate) on_segment_progress: Option<SegmentProgressCallback>,
 }
 
 async fn resolve_media_playlist(
@@ -156,6 +159,11 @@ pub(crate) async fn download_hls_to_mp4(
             }
         };
 
+    let total_segments = playlist.segments.len() as u64;
+    if let Some(on_progress) = &ctx.on_segment_progress {
+        on_progress(skip_indices.len() as u64, total_segments);
+    }
+
     let segment_paths = download_segments(
         ctx.http,
         &playlist,
@@ -164,6 +172,8 @@ pub(crate) async fn download_hls_to_mp4(
         &skip_indices,
         &existing_paths,
         progress.clone(),
+        ctx.on_segment_progress.clone(),
+        total_segments,
     )
     .await?;
 
@@ -185,6 +195,7 @@ pub(crate) async fn download_hls_to_mp4_with_bundled_ffmpeg(
         http,
         temp_dir,
         ffmpeg: &ffmpeg,
+        on_segment_progress: None,
     };
     download_hls_to_mp4(
         &ctx,

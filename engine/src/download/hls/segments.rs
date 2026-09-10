@@ -5,6 +5,7 @@ use crate::error::EngineError;
 use aes::cipher::{block_padding::NoPadding, BlockDecryptMut, KeyIvInit};
 use aes::Aes128;
 use cbc::Decryptor;
+use crate::download::hls::SegmentProgressCallback;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs;
@@ -127,6 +128,8 @@ pub async fn download_segments(
     skip_indices: &[u32],
     existing_paths: &[PathBuf],
     progress: Option<Arc<Mutex<HlsDownloadState>>>,
+    on_segment_progress: Option<SegmentProgressCallback>,
+    total_segments: u64,
 ) -> Result<Vec<PathBuf>, EngineError> {
     fs::create_dir_all(temp_dir).await?;
 
@@ -164,6 +167,10 @@ pub async fn download_segments(
             if !s.segment_paths.iter().any(|p| p == &path_str) {
                 s.segment_paths.push(path_str);
             }
+        }
+        let done = paths.len() as u64;
+        if let Some(on_progress) = &on_segment_progress {
+            on_progress(done, total_segments);
         }
     }
 
