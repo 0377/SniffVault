@@ -75,6 +75,43 @@ fn list_runnable_tasks_excludes_parent_container() {
 }
 
 #[test]
+fn count_running_downloads_excludes_parent_container() {
+    let dir = tempdir().unwrap();
+    let store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();
+
+    store
+        .upsert(&DownloadTask {
+            id: "parent".into(),
+            parent_id: None,
+            season: Some(1),
+            title: "parent".into(),
+            source_url: String::new(),
+            quality_label: None,
+            status: TaskStatus::Running,
+            progress_bytes: 0,
+            total_bytes: None,
+            error_message: None,
+            output_path: None,
+            library_item_id: None,
+            episode_index: None,
+            created_at_ms: 1,
+            updated_at_ms: 1,
+            cookie_header: None,
+            referer: None,
+            resolved_media_url: None,
+        })
+        .unwrap();
+    store
+        .upsert(&sample("c1", Some("parent"), TaskStatus::Running))
+        .unwrap();
+    store
+        .upsert(&sample("c2", Some("parent"), TaskStatus::Running))
+        .unwrap();
+
+    assert_eq!(store.count_running_downloads().unwrap(), 2);
+}
+
+#[test]
 fn sync_parent_status_aggregates_children() {
     let dir = tempdir().unwrap();
     let store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();

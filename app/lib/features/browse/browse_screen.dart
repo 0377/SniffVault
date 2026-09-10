@@ -459,7 +459,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
                     children: [
                       Expanded(
                         child: Text(
-                          '正在嗅探第 $_batchSniffCurrent/$_batchSniffTotal 集…',
+                          '正在嗅探（$_batchSniffCurrent/$_batchSniffTotal）…',
                           key: const Key('batch_sniff_progress'),
                         ),
                       ),

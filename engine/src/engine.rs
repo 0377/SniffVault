@@ -24,6 +24,7 @@ pub struct Engine {
     tasks: TaskStore,
     lan: Option<LanService>,
     download: Option<DownloadRuntime>,
+    download_stopping: bool,
     task_event_rx: Option<mpsc::Receiver<TaskEvent>>,
     pending_task_event_tx: Option<mpsc::Sender<TaskEvent>>,
 }
@@ -59,6 +60,7 @@ impl Engine {
             tasks,
             lan: None,
             download: None,
+            download_stopping: false,
             task_event_rx: None,
             pending_task_event_tx: None,
         })
@@ -223,7 +225,10 @@ impl Engine {
     }
 
     pub fn prepare_download_events(&mut self) -> Result<(), EngineError> {
-        if self.download.is_some() || self.pending_task_event_tx.is_some() {
+        if self.download.is_some()
+            || self.pending_task_event_tx.is_some()
+            || self.download_stopping
+        {
             return Err(EngineError::InvalidArg("downloads already running".into()));
         }
         for task in self.tasks.list_all()? {
@@ -271,7 +276,10 @@ impl Engine {
     pub fn stop_downloads(&mut self) -> Result<(), EngineError> {
         self.pending_task_event_tx = None;
         if let Some(runtime) = self.download.take() {
-            runtime.stop_and_join()?;
+            self.download_stopping = true;
+            let result = runtime.stop_and_join();
+            self.download_stopping = false;
+            result?;
         }
         Ok(())
     }
@@ -351,14 +359,8 @@ impl Engine {
                 "failed task needs sniff before retry".into(),
             ));
         }
-        if let Some(runtime) = &self.download {
-            runtime.send_command(DownloadCommand::Resume {
-                task_id: task_id.to_string(),
-            })?;
-        } else {
-            self.tasks
-                .set_task_status(task_id, TaskStatus::Queued, None)?;
-        }
+        self.tasks
+            .set_task_status(task_id, TaskStatus::Queued, None)?;
         if let Some(parent_id) = &task.parent_id {
             let _ = self.tasks.sync_parent_status(parent_id);
         }

@@ -242,16 +242,20 @@ pub async fn run_worker(config: WorkerConfig, cmd_rx: mpsc::Receiver<DownloadCom
             break;
         }
 
-        let slots = {
+        let tasks_path = config.data_dir.join("tasks.db");
+        let slots = if let Ok(store) = TaskStore::open(&tasks_path) {
+            let running = store.count_running_downloads().unwrap_or(0);
             let sched = scheduler.lock().await;
-            sched.available_slots(active.load(Ordering::SeqCst))
+            sched.available_slots(running)
+        } else {
+            0
         };
 
         if slots > 0 {
-            let tasks_path = config.data_dir.join("tasks.db");
             if let Ok(store) = TaskStore::open(&tasks_path) {
+                let running = store.count_running_downloads().unwrap_or(0);
                 let sched = scheduler.lock().await;
-                if let Ok(runnable) = sched.pick_next(&store, active.load(Ordering::SeqCst), slots)
+                if let Ok(runnable) = sched.pick_next(&store, running, slots)
                 {
                     for task in runnable {
                         if in_flight.lock().await.contains(&task.id) {

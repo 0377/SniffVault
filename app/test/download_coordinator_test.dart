@@ -55,6 +55,35 @@ void main() {
     coordinator.dispose();
   });
 
+  test('workerStopped does not auto restart downloads', () async {
+    final repo = _RecordingRepo(
+      tasks: const [
+        DownloadTask(
+          id: 't1',
+          title: 'queued',
+          sourceUrl: 'https://example/x.mp4',
+          status: TaskStatus.queued,
+          progressBytes: 0,
+          createdAtMs: 1,
+          updatedAtMs: 1,
+        ),
+      ],
+    );
+    final coordinator = DownloadCoordinator.forTest(
+      repo,
+      onInvalidateTasks: () {},
+      onInvalidateLibrary: () {},
+    );
+    coordinator.ensureDownloads();
+    expect(repo.startCalls, 1);
+
+    repo.emitTaskEvent(const TaskEvent(kind: TaskEventKind.workerStopped));
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    expect(repo.startCalls, 1);
+    coordinator.dispose();
+  });
+
   test('starts worker when queued tasks exist on init', () {
     final repo = _RecordingRepo(
       tasks: const [

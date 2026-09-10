@@ -86,12 +86,6 @@ class DownloadCoordinator {
       case TaskEventKind.workerStopped:
         _workerActive = false;
         _onInvalidateTasks();
-        final queued = _repo
-            .listTasks()
-            .any((task) => task.status == TaskStatus.queued);
-        if (queued) {
-          ensureDownloads();
-        }
       case TaskEventKind.taskUpdated:
         _onInvalidateTasks();
         final task = event.task;

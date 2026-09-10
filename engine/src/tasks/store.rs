@@ -470,6 +470,20 @@ impl TaskStore {
         Ok(out)
     }
 
+    /// 统计实际下载中的任务数（排除父容器行，与 `list_runnable_tasks` 口径一致）。
+    pub fn count_running_downloads(&self) -> Result<usize, EngineError> {
+        let count: i64 = self.conn.query_row(
+            r#"SELECT COUNT(*)
+               FROM download_tasks
+               WHERE status='running'
+                 AND source_url != ''
+                 AND (parent_id IS NOT NULL OR episode_index IS NULL)"#,
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(count as usize)
+    }
+
     pub fn set_task_status(
         &self,
         id: &str,
