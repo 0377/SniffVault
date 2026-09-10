@@ -148,7 +148,9 @@ class BatchSniffCoordinator {
       onProgress?.call(index + 1, total);
       await _processEpisode(children[index], loadUrl);
     }
-    onComplete?.call();
+    if (!_cancelled) {
+      onComplete?.call();
+    }
   }
 
   List<DownloadTask> _needsSniffChildren(String parentId) {
@@ -169,6 +171,9 @@ class BatchSniffCoordinator {
     DownloadTask task,
     BatchSniffLoadUrl loadUrl,
   ) async {
+    if (_cancelled) {
+      return;
+    }
     final uri = Uri.parse(task.sourceUrl);
     await loadUrl(uri);
     if (_cancelled) {

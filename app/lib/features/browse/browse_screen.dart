@@ -24,6 +24,7 @@ import 'package:video_sniffing/providers/download_coordinator.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
 import 'package:video_sniffing/bootstrap/windows_webview_bootstrap.dart';
 import 'package:video_sniffing/providers/settings_provider.dart';
+import 'package:video_sniffing/providers/tasks_provider.dart';
 import 'package:video_sniffing/providers/webview_bootstrap_provider.dart';
 import 'package:video_sniffing/ui/error_presenter.dart';
 import 'package:video_sniffing/ui/loading_overlay.dart';
@@ -52,6 +53,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
   bool _batchSniffStarted = false;
   int? _batchSniffCurrent;
   int? _batchSniffTotal;
+  BrowseSession? _batchSniffSession;
 
   @override
   void dispose() {
@@ -205,6 +207,9 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
   }
 
   Future<void> _loadUrl(Uri uri) async {
+    if (!mounted) {
+      return;
+    }
     setState(() {
       _pendingLoadUrl = uri;
       _loadError = null;
@@ -219,7 +224,13 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
   }
 
   Future<void> _loadUrlForBatchSniff(Uri uri) async {
-    final session = _resolvedSession(watch: false);
+    if (!mounted) {
+      return;
+    }
+    final session = _batchSniffSession;
+    if (session == null) {
+      return;
+    }
     session.onTopLevelNavigation(uri);
     await _loadUrl(uri);
   }
@@ -233,6 +244,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
       return;
     }
     _batchSniffStarted = true;
+    _batchSniffSession = ref.read(browseSessionProvider);
     final coordinator = ref.read(batchSniffCoordinatorProvider);
     unawaited(
       coordinator.start(
@@ -261,12 +273,17 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
   }
 
   void _finishBatchSniff() {
+    if (!mounted) {
+      return;
+    }
     setState(() {
       _batchSniffStarted = false;
       _batchSniffCurrent = null;
       _batchSniffTotal = null;
+      _batchSniffSession = null;
     });
     ref.read(batchSniffParentIdProvider.notifier).state = null;
+    ref.invalidate(tasksProvider);
     if (context.mounted) {
       context.go('/tasks');
     }

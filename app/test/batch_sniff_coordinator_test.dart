@@ -162,6 +162,74 @@ void main() {
     expect(downloads.ensureDownloadsCalls, 2);
   });
 
+  test('cancel after first episode does not load second episode', () async {
+    const parentId = 'parent-1';
+    final repo = _RecordingRepo(
+      tasks: [
+        _needsSniffChild(
+          id: 'child-1',
+          parentId: parentId,
+          episodeIndex: 1,
+          sourceUrl: 'http://x/ep1',
+        ),
+        _needsSniffChild(
+          id: 'child-2',
+          parentId: parentId,
+          episodeIndex: 2,
+          sourceUrl: 'http://x/ep2',
+        ),
+      ],
+    );
+    final session = BrowseSession(
+      repo: repo,
+      cookies: FakeCookieExporter(null),
+    );
+    final downloads = _RecordingDownloadCoordinator(repo);
+    repo.sniffResults = const [
+      ResourceCandidate(
+        id: 'm',
+        url: 'http://x/media.m3u8',
+        kind: MediaKind.hls,
+      ),
+    ];
+
+    late final BatchSniffCoordinator coordinator;
+    coordinator = BatchSniffCoordinator.forTest(
+      repo: repo,
+      session: session,
+      ensureDownloads: () {
+        downloads.ensureDownloads();
+        if (downloads.ensureDownloadsCalls == 1) {
+          coordinator.cancel();
+        }
+      },
+      debounce: Duration.zero,
+      pollInterval: Duration.zero,
+      episodeTimeout: const Duration(seconds: 1),
+    );
+    final loadedUrls = <String>[];
+    var onCompleteCalls = 0;
+
+    await coordinator.start(
+      parentId: parentId,
+      loadUrl: (uri) async {
+        loadedUrls.add(uri.toString());
+        session.onTopLevelNavigation(uri);
+        session.onHookEvent(
+          const SniffEvent(
+            url: 'http://x/media.m3u8',
+            initiator: SniffInitiator.media,
+          ),
+        );
+      },
+      onComplete: () => onCompleteCalls++,
+    );
+
+    expect(loadedUrls, ['http://x/ep1']);
+    expect(repo.setTaskMediaUrlCalls.length, 1);
+    expect(onCompleteCalls, 0);
+  });
+
   test('cancel stops remaining episodes', () async {
     const parentId = 'parent-1';
     final repo = _RecordingRepo(
@@ -201,6 +269,7 @@ void main() {
       pollInterval: Duration.zero,
       episodeTimeout: const Duration(seconds: 1),
     );
+    var onCompleteCalls = 0;
 
     final run = coordinator.start(
       parentId: parentId,
@@ -216,12 +285,14 @@ void main() {
           coordinator.cancel();
         }
       },
+      onComplete: () => onCompleteCalls++,
     );
 
     await run;
 
     expect(repo.setTaskMediaUrlCalls.length, 1);
     expect(downloads.ensureDownloadsCalls, 1);
+    expect(onCompleteCalls, 0);
   });
 
   test('restart after cancel starts a new run', () async {
