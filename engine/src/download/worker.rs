@@ -63,6 +63,19 @@ fn emit_task_event(config: &WorkerConfig, kind: TaskEventKind, task: Option<Down
     }
 }
 
+fn sanitize_url_for_log(url: &str) -> String {
+    url::Url::parse(url)
+        .map(|parsed| {
+            let host = parsed.host_str().unwrap_or("");
+            format!("{}://{}{}", parsed.scheme(), host, parsed.path())
+        })
+        .unwrap_or_else(|_| url.split('?').next().unwrap_or(url).to_string())
+}
+
+fn should_emit_segment_milestone(done: u64, total: u64) -> bool {
+    done == 1 || done == total || done.is_multiple_of(10)
+}
+
 fn emit_download_log(config: &WorkerConfig, task_id: &str, message: impl Into<String>) {
     if let Some(tx) = &config.task_event_tx {
         let _ = tx.send(TaskEvent {
@@ -465,7 +478,11 @@ async fn run_one_task(
     };
 
     emit_download_log(config.as_ref(), &task.id, format!("开始下载：{}", task.title));
-    emit_download_log(config.as_ref(), &task.id, format!("媒体地址：{}", media_url));
+    emit_download_log(
+        config.as_ref(),
+        &task.id,
+        format!("媒体地址：{}", sanitize_url_for_log(&media_url)),
+    );
 
     let download_result = if is_hls_url(&media_url) {
         let ffmpeg = match config.ffmpeg.resolve() {
@@ -481,8 +498,16 @@ async fn run_one_task(
         let tasks_path = config.data_dir.join("tasks.db");
         let config_ref = Arc::clone(&config);
         let task_id = task.id.clone();
+        let on_stage_log: crate::download::hls::HlsStageLogCallback = Arc::new({
+            let config_ref = Arc::clone(&config_ref);
+            let task_id = task_id.clone();
+            move |message| emit_download_log(config_ref.as_ref(), &task_id, message)
+        });
         let on_segment_progress: crate::download::hls::SegmentProgressCallback =
             Arc::new(move |done, total| {
+                if !should_emit_segment_milestone(done, total) {
+                    return;
+                }
                 if let Ok(store) = TaskStore::open(&tasks_path) {
                     let _ = worker_update_progress(
                         &store,
@@ -493,19 +518,18 @@ async fn run_one_task(
                         TaskStatus::Running,
                     );
                 }
-                if done == 1 || done == total || done % 10 == 0 {
-                    emit_download_log(
-                        config_ref.as_ref(),
-                        &task_id,
-                        format!("HLS：分片 {}/{}", done, total),
-                    );
-                }
+                emit_download_log(
+                    config_ref.as_ref(),
+                    &task_id,
+                    format!("HLS：分片 {}/{}", done, total),
+                );
             });
         let ctx = HlsContext {
             http: &http,
             temp_dir: &temp_dir,
             ffmpeg: &ffmpeg,
             on_segment_progress: Some(on_segment_progress),
+            on_stage_log: Some(on_stage_log),
         };
         download_hls_to_mp4(
             &ctx,
@@ -516,10 +540,7 @@ async fn run_one_task(
             Some(hls_state),
         )
         .await
-        .map(|p| {
-            emit_download_log(config.as_ref(), &task.id, "HLS：合并为 MP4…");
-            (p, 0u64)
-        })
+        .map(|p| (p, 0u64))
     } else {
         emit_download_log(config.as_ref(), &task.id, "MP4：开始下载…");
         let ctx = Mp4Context {
@@ -839,6 +860,22 @@ pub(crate) fn cleanup_download_temp(media_dir: &Path, task_id: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sanitize_url_for_log_strips_query() {
+        let sanitized = sanitize_url_for_log(
+            "https://cdn.example.com/path/master.m3u8?token=secret&expires=1",
+        );
+        assert_eq!(sanitized, "https://cdn.example.com/path/master.m3u8");
+    }
+
+    #[test]
+    fn should_emit_segment_milestone_on_first_last_and_every_tenth() {
+        assert!(should_emit_segment_milestone(1, 120));
+        assert!(should_emit_segment_milestone(10, 120));
+        assert!(should_emit_segment_milestone(120, 120));
+        assert!(!should_emit_segment_milestone(5, 120));
+    }
 
     #[test]
     fn sanitize_filename_truncates_and_replaces() {

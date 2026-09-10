@@ -38,4 +38,31 @@ void main() {
     expect(find.textContaining('第01集'), findsOneWidget);
     expect(find.textContaining('HLS：分片 1/10'), findsOneWidget);
   });
+
+  testWidgets('shows newest log entry without scrolling', (tester) async {
+    const older = DownloadLogEntry(
+      taskId: 't1',
+      message: '开始下载',
+      atMs: 1,
+    );
+    const newer = DownloadLogEntry(
+      taskId: 't1',
+      message: 'HLS：分片 2/10',
+      atMs: 2,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DownloadLogPanel(
+            entries: const [older, newer],
+            tasksById: const {},
+            onClear: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('HLS：分片 2/10'), findsOneWidget);
+  });
 }

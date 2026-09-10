@@ -65,10 +65,11 @@ class DownloadLogPanel extends StatelessWidget {
             height: 160,
             child: ListView.builder(
               key: const Key('download_log_list'),
+              reverse: true,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               itemCount: entries.length,
               itemBuilder: (context, index) {
-                final entry = entries[index];
+                final entry = entries[entries.length - 1 - index];
                 return Text(
                   logLineLabel(entry, tasksById),
                   style: theme.textTheme.bodySmall?.copyWith(

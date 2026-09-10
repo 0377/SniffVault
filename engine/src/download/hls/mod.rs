@@ -59,12 +59,14 @@ fn is_master_playlist(body: &str) -> bool {
 }
 
 pub(crate) type SegmentProgressCallback = Arc<dyn Fn(u64, u64) + Send + Sync>;
+pub(crate) type HlsStageLogCallback = Arc<dyn Fn(&str) + Send + Sync>;
 
 pub(crate) struct HlsContext<'a> {
     pub(crate) http: &'a HttpClient,
     pub(crate) temp_dir: &'a Path,
     pub(crate) ffmpeg: &'a Path,
     pub(crate) on_segment_progress: Option<SegmentProgressCallback>,
+    pub(crate) on_stage_log: Option<HlsStageLogCallback>,
 }
 
 async fn resolve_media_playlist(
@@ -177,6 +179,9 @@ pub(crate) async fn download_hls_to_mp4(
     )
     .await?;
 
+    if let Some(log) = &ctx.on_stage_log {
+        log("HLS：合并为 MP4…");
+    }
     merge_segments_to_mp4(ctx.ffmpeg, &segment_paths, ctx.temp_dir, output_mp4)?;
 
     Ok(output_mp4.to_path_buf())
@@ -196,6 +201,7 @@ pub(crate) async fn download_hls_to_mp4_with_bundled_ffmpeg(
         temp_dir,
         ffmpeg: &ffmpeg,
         on_segment_progress: None,
+        on_stage_log: None,
     };
     download_hls_to_mp4(
         &ctx,
