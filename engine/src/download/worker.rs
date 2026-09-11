@@ -361,6 +361,7 @@ async fn handle_outcome(
             TaskRunOutcome::Failed(err) => {
                 let msg = err.to_string();
                 emit_download_log(config, &task.id, format!("失败：{}", msg));
+                let _ = save_failure_checkpoint(config, task, &handles.hls_states).await;
                 let _ = store.mark_failed(&task.id, &msg);
             }
         }
@@ -685,65 +686,75 @@ async fn save_interrupt_checkpoint_if_paused(
     Ok(())
 }
 
+async fn save_failure_checkpoint(
+    config: &WorkerConfig,
+    task: &DownloadTask,
+    hls_states: &HlsStatesMap,
+) -> Result<(), EngineError> {
+    persist_download_checkpoint(config, task, hls_states, None).await
+}
+
 async fn save_interrupt_checkpoint(
     config: &WorkerConfig,
     task: &DownloadTask,
     hls_states: &HlsStatesMap,
 ) -> Result<(), EngineError> {
+    persist_download_checkpoint(config, task, hls_states, Some(TaskStatus::Paused)).await
+}
+
+async fn persist_download_checkpoint(
+    config: &WorkerConfig,
+    task: &DownloadTask,
+    hls_states: &HlsStatesMap,
+    interrupt_status: Option<TaskStatus>,
+) -> Result<(), EngineError> {
     let mut store = TaskStore::open(&config.data_dir.join("tasks.db"))?;
 
-    if is_hls_url(&task.source_url) {
-        let state = hls_states.lock().await.get(&task.id).cloned();
-        if let Some(state) = state {
-            let snapshot = state.lock().await;
-            if let Some(checkpoint) = snapshot.to_checkpoint() {
-                let progress = snapshot.segments_done.len() as u64;
-                store.save_checkpoint(&task.id, &checkpoint)?;
-                worker_update_progress(
-                    &store,
-                    config,
-                    &task.id,
-                    progress,
-                    None,
-                    TaskStatus::Paused,
-                )?;
+    let state = hls_states.lock().await.get(&task.id).cloned();
+    if let Some(state) = state {
+        let snapshot = state.lock().await;
+        if let Some(checkpoint) = snapshot.to_checkpoint() {
+            let progress = snapshot.segments_done.len() as u64;
+            store.save_checkpoint(&task.id, &checkpoint)?;
+            if let Some(status) = interrupt_status {
+                let total_bytes = store.get(&task.id)?.total_bytes;
+                worker_update_progress(&store, config, &task.id, progress, total_bytes, status)?;
             }
         }
         return Ok(());
     }
 
-    let temp_dir = config.media_dir.join(".dl").join(&task.id);
-    let output_path = config.media_dir.join(output_filename(task));
-    let part = mp4_part_path(&temp_dir, &output_path);
-    let (checkpoint_part, bytes_done) = if part.is_file() {
-        (part.clone(), std::fs::metadata(&part)?.len())
-    } else if output_path.is_file() {
-        (output_path.clone(), std::fs::metadata(&output_path)?.len())
-    } else {
-        return Ok(());
-    };
+    if !is_hls_url(&task.source_url) {
+        let temp_dir = config.media_dir.join(".dl").join(&task.id);
+        let output_path = config.media_dir.join(output_filename(task));
+        let part = mp4_part_path(&temp_dir, &output_path);
+        let (checkpoint_part, bytes_done) = if part.is_file() {
+            (part.clone(), std::fs::metadata(&part)?.len())
+        } else if output_path.is_file() {
+            (output_path.clone(), std::fs::metadata(&output_path)?.len())
+        } else {
+            return Ok(());
+        };
 
-    if bytes_done == 0 {
-        return Ok(());
+        if bytes_done == 0 {
+            return Ok(());
+        }
+
+        let checkpoint = Checkpoint {
+            version: 1,
+            body: CheckpointBody::Mp4 {
+                temp_dir: temp_dir.to_string_lossy().into_owned(),
+                part_path: checkpoint_part.to_string_lossy().into_owned(),
+                bytes_done,
+            },
+        };
+        store.save_checkpoint(&task.id, &checkpoint)?;
+        if let Some(status) = interrupt_status {
+            let total_bytes = store.get(&task.id)?.total_bytes;
+            worker_update_progress(&store, config, &task.id, bytes_done, total_bytes, status)?;
+        }
     }
 
-    let checkpoint = Checkpoint {
-        version: 1,
-        body: CheckpointBody::Mp4 {
-            temp_dir: temp_dir.to_string_lossy().into_owned(),
-            part_path: checkpoint_part.to_string_lossy().into_owned(),
-            bytes_done,
-        },
-    };
-    store.save_checkpoint(&task.id, &checkpoint)?;
-    worker_update_progress(
-        &store,
-        config,
-        &task.id,
-        bytes_done,
-        None,
-        TaskStatus::Paused,
-    )?;
     Ok(())
 }
 

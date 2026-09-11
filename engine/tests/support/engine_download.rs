@@ -18,6 +18,31 @@ pub fn interruptible_mp4_fixture_bytes(sample: &[u8]) -> Vec<u8> {
     bytes
 }
 
+pub async fn wait_for_task_failed(engine: &Engine, task_id: &str, timeout: Duration) {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        let task = engine
+            .list_tasks()
+            .unwrap()
+            .into_iter()
+            .find(|t| t.id == task_id)
+            .unwrap_or_else(|| panic!("task {task_id} not found"));
+        if task.status == TaskStatus::Failed {
+            return;
+        }
+        if task.status == TaskStatus::Completed {
+            panic!("task {task_id} completed unexpectedly");
+        }
+        if tokio::time::Instant::now() > deadline {
+            panic!(
+                "timeout waiting for task {task_id} to fail, got {:?}",
+                task.status
+            );
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
 pub async fn wait_for_task(engine: &Engine, task_id: &str, want: TaskStatus, timeout: Duration) {
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
