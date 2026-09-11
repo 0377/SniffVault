@@ -6,6 +6,7 @@ import 'deep_link/deep_link_host.dart';
 import 'providers/download_coordinator.dart';
 import 'providers/engine_host_provider.dart';
 import 'router.dart';
+import 'ui/app_theme.dart';
 
 class VideoSniffingApp extends ConsumerWidget {
   const VideoSniffingApp({super.key});
@@ -16,6 +17,9 @@ class VideoSniffingApp extends ConsumerWidget {
 
     return hostAsync.when(
       loading: () => MaterialApp(
+        theme: AppTheme.light,
+        darkTheme: AppTheme.dark,
+        themeMode: ThemeMode.system,
         home: Scaffold(
           body: SafeArea(
             child: Center(
@@ -32,6 +36,9 @@ class VideoSniffingApp extends ConsumerWidget {
         ),
       ),
       error: (error, _) => MaterialApp(
+        theme: AppTheme.light,
+        darkTheme: AppTheme.dark,
+        themeMode: ThemeMode.system,
         home: Scaffold(
           body: SafeArea(
             child: Center(
@@ -56,10 +63,9 @@ class VideoSniffingApp extends ConsumerWidget {
         final router = ref.watch(appRouterProvider);
         return MaterialApp.router(
           title: '嗅影库',
-          theme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-            useMaterial3: true,
-          ),
+          theme: AppTheme.light,
+          darkTheme: AppTheme.dark,
+          themeMode: ThemeMode.system,
           routerConfig: router,
           builder: (context, child) => DeepLinkHost(
             child: CastReceiverHost(
