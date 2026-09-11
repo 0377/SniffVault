@@ -9,7 +9,6 @@ import 'package:video_sniffing/features/browse/browse_unavailable_screen.dart';
 import 'package:video_sniffing/features/library/library_screen.dart';
 import 'package:video_sniffing/features/tasks/tasks_screen.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
-import 'package:video_sniffing/providers/engine_repository.dart';
 
 import 'fakes/fake_engine_repository.dart';
 import 'fakes/fake_ready_engine_host.dart';
