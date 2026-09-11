@@ -21,9 +21,10 @@ vendor/ffmpeg/
 | Linux aarch64 | `linux-aarch64/` |
 | Windows x86_64 | `windows-x86_64/` |
 
-引擎通过 `BundledFfmpegLocator::candidate_path()` 解析路径：
+引擎通过 `BundledFfmpegLocator` 解析路径，优先级：
 
-`engine/vendor/ffmpeg/{os}-{arch}/ffmpeg`
+1. **macOS 应用包**：`Contents/Resources/ffmpeg`（`flutter build macos` / `flutter run -d macos` 时由 `app/macos/Runner/copy_ffmpeg.sh` 从 vendor 复制并签名）
+2. **开发 / 测试**：`engine/vendor/ffmpeg/{os}-{arch}/ffmpeg`
 
 ## 获取二进制
 
