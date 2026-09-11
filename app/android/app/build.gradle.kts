@@ -81,6 +81,9 @@ fun isReleaseBuildRequested(): Boolean {
 tasks.register("copyFfmpegAssets") {
     doLast {
         val ffmpegRoot = file("src/main/assets/ffmpeg")
+        if (ffmpegRoot.exists()) {
+            ffmpegRoot.deleteRecursively()
+        }
         ffmpegRoot.mkdirs()
 
         val abisToCopy = resolveAbisToCopy()
