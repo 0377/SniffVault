@@ -7,6 +7,26 @@
 
 ## 导出平台图标
 
+### Android
+
+从已导出的 1024×1024 PNG（或与 iOS `Icon-App-1024x1024@1x.png` 同源）生成各密度：
+
+```bash
+cd app
+SRC=ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png
+DEST=android/app/src/main/res
+for spec in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+  d=${spec%%:*}; s=${spec##*:}
+  sips -z $s $s "$SRC" --out "$DEST/mipmap-$d/ic_launcher.png"
+done
+for spec in mdpi:108 hdpi:162 xhdpi:216 xxhdpi:324 xxxhdpi:432; do
+  d=${spec%%:*}; s=${spec##*:}
+  sips -z $s $s "$SRC" --out "$DEST/mipmap-$d/ic_launcher_foreground.png"
+done
+```
+
+### macOS
+
 macOS `AppIcon.appiconset` 需要 PNG。在已安装 [librsvg](https://formulae.brew.sh/formula/librsvg) 时：
 
 ```bash
