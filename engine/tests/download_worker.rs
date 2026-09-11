@@ -43,7 +43,7 @@ fn spawn_worker(
         max_concurrency: 1,
         user_agent: None,
         default_quality_label: Some("highest".into()),
-        ffmpeg: Arc::new(BundledFfmpegLocator),
+        ffmpeg: Arc::new(BundledFfmpegLocator::default()),
         task_event_tx: None,
     };
     let worker = std::thread::spawn(move || {
@@ -200,7 +200,7 @@ async fn worker_downloads_mp4_and_registers_library() {
         max_concurrency: 1,
         user_agent: None,
         default_quality_label: Some("highest".into()),
-        ffmpeg: Arc::new(BundledFfmpegLocator),
+        ffmpeg: Arc::new(BundledFfmpegLocator::default()),
         task_event_tx: None,
     };
 

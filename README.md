@@ -82,7 +82,12 @@ HLS 合并相关集成测试需要本机可用的 `ffmpeg`。在 `engine/` 目�
 
 主流程：启动应用 →「添加」粘贴 URL → 解析并入队 →「任务」查看进度 →「片库」播放已缓存内容。
 
-macOS 桌面版 HLS 下载会把 `ffmpeg` 打进应用包；构建前请在 `engine/` 执行一次 `./scripts/fetch_ffmpeg.sh`。
+macOS 桌面版与 Android 版 HLS 下载会把 `ffmpeg` 打进应用包。构建前请在 `engine/` 执行：
+
+```bash
+./scripts/fetch_ffmpeg.sh              # macOS / Linux / Windows 宿主与桌面版
+./scripts/fetch_ffmpeg_android.sh      # Android 各 ABI（真机与模拟器）
+```
 
 ```bash
 cd app

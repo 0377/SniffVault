@@ -20,8 +20,8 @@ pub use types::*;
 pub mod test_api {
     pub use crate::download::checkpoint::{Checkpoint, CheckpointBody};
     pub use crate::download::ffmpeg::{
-        ffmpeg_binary_name, macos_bundle_ffmpeg_path_from_exe, vendor_ffmpeg_path,
-        BundledFfmpegLocator, FfmpegLocator,
+        data_dir_ffmpeg_path, ffmpeg_binary_name, macos_bundle_ffmpeg_path_from_exe,
+        vendor_ffmpeg_path, BundledFfmpegLocator, FfmpegLocator,
     };
     pub use crate::download::mp4::{download_mp4, Mp4Context};
     pub use crate::download::worker::{run_worker, DownloadCommand, WorkerConfig};

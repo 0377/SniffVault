@@ -1,7 +1,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::tempdir;
-use video_sniffing_engine::test_api::{macos_bundle_ffmpeg_path_from_exe, vendor_ffmpeg_path};
+use video_sniffing_engine::test_api::{
+    data_dir_ffmpeg_path, macos_bundle_ffmpeg_path_from_exe, vendor_ffmpeg_path,
+    BundledFfmpegLocator, FfmpegLocator,
+};
 
 fn touch(path: &Path) {
     if let Some(parent) = path.parent() {
@@ -46,6 +49,24 @@ fn macos_bundle_ffmpeg_path_from_exe_returns_none_without_resources_binary() {
     fs::create_dir_all(exe.parent().unwrap()).unwrap();
 
     assert!(macos_bundle_ffmpeg_path_from_exe(&exe).is_none());
+}
+
+#[test]
+fn data_dir_ffmpeg_path_is_under_bin() {
+    let dir = tempdir().unwrap();
+    let path = data_dir_ffmpeg_path(dir.path());
+    assert_eq!(path, dir.path().join("bin").join("ffmpeg"));
+}
+
+#[test]
+fn bundled_locator_prefers_data_dir_ffmpeg() {
+    let dir = tempdir().unwrap();
+    let ffmpeg = data_dir_ffmpeg_path(dir.path());
+    touch(&ffmpeg);
+
+    let locator = BundledFfmpegLocator::with_data_dir(dir.path().to_path_buf());
+    let resolved = locator.resolve().expect("data_dir ffmpeg should resolve");
+    assert_eq!(resolved, ffmpeg);
 }
 
 #[cfg(target_os = "macos")]

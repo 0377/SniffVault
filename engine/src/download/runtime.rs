@@ -52,13 +52,14 @@ pub fn worker_config(
     default_quality_label: Option<String>,
     task_event_tx: Option<mpsc::Sender<TaskEvent>>,
 ) -> WorkerConfig {
+    let ffmpeg = Arc::new(BundledFfmpegLocator::with_data_dir(data_dir.clone()));
     WorkerConfig {
         data_dir,
         media_dir,
         max_concurrency,
         user_agent,
         default_quality_label,
-        ffmpeg: Arc::new(BundledFfmpegLocator),
+        ffmpeg,
         task_event_tx,
     }
 }

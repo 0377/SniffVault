@@ -139,6 +139,8 @@ jobs:
 
       - run: bash engine/scripts/fetch_ffmpeg.sh
 
+      - run: bash engine/scripts/fetch_ffmpeg_android.sh
+
       - run: test -L app/rust || test -d app/rust_builder/rust
 
       - run: cd app && flutter pub get

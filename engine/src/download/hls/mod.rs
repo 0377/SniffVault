@@ -195,7 +195,7 @@ pub(crate) async fn download_hls_to_mp4_with_bundled_ffmpeg(
     quality_label: Option<&str>,
     checkpoint: Option<Checkpoint>,
 ) -> Result<PathBuf, EngineError> {
-    let ffmpeg = BundledFfmpegLocator.resolve()?;
+    let ffmpeg = BundledFfmpegLocator::default().resolve()?;
     let ctx = HlsContext {
         http,
         temp_dir,

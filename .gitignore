@@ -42,3 +42,6 @@ docs/
 # Vendor ffmpeg 二进制（通过 engine/scripts/fetch_ffmpeg.sh 获取）
 engine/vendor/ffmpeg/**/*
 !engine/vendor/ffmpeg/README.md
+
+# Android 构建时从 vendor 复制的 ffmpeg assets
+app/android/app/src/main/assets/ffmpeg/

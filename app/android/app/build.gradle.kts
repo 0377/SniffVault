@@ -43,3 +43,29 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+val engineRoot = rootProject.projectDir.parentFile.parentFile.resolve("engine")
+val vendorFfmpeg = engineRoot.resolve("vendor/ffmpeg")
+
+tasks.register("copyFfmpegAssets") {
+    doLast {
+        val abis = listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+        val assetsDir = file("src/main/assets/ffmpeg")
+        for (abi in abis) {
+            val src = vendorFfmpeg.resolve("android-$abi/ffmpeg")
+            if (!src.exists()) {
+                logger.warn(
+                    "ffmpeg not found for $abi at $src — run: (cd engine && ./scripts/fetch_ffmpeg_android.sh)",
+                )
+                continue
+            }
+            val dst = assetsDir.resolve("$abi/ffmpeg")
+            dst.parentFile.mkdirs()
+            src.copyTo(dst, overwrite = true)
+        }
+    }
+}
+
+tasks.named("preBuild") {
+    dependsOn("copyFfmpegAssets")
+}

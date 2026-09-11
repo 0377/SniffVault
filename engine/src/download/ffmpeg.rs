@@ -7,7 +7,9 @@ pub trait FfmpegLocator: Send + Sync {
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
-pub struct BundledFfmpegLocator;
+pub struct BundledFfmpegLocator {
+    data_dir: Option<PathBuf>,
+}
 
 /// Vendor 目录名，与 `scripts/fetch_ffmpeg.sh` 中 `{os}-{arch}` 一致。
 ///
@@ -29,6 +31,11 @@ pub fn vendor_ffmpeg_path() -> PathBuf {
         .join("vendor/ffmpeg")
         .join(platform_dir_name())
         .join(ffmpeg_binary_name())
+}
+
+/// 移动端由 Flutter 启动时解压到 `{data_dir}/bin/ffmpeg`。
+pub fn data_dir_ffmpeg_path(data_dir: &Path) -> PathBuf {
+    data_dir.join("bin").join(ffmpeg_binary_name())
 }
 
 /// macOS 应用包内 `Contents/Resources/ffmpeg` 路径（相对给定可执行文件）。
@@ -53,8 +60,20 @@ fn macos_app_bundle_ffmpeg_path() -> Option<PathBuf> {
 
 #[cfg_attr(not(test), allow(dead_code))]
 impl BundledFfmpegLocator {
+    pub fn with_data_dir(data_dir: PathBuf) -> Self {
+        Self {
+            data_dir: Some(data_dir),
+        }
+    }
+
     pub fn candidate_path() -> PathBuf {
         vendor_ffmpeg_path()
+    }
+}
+
+impl Default for BundledFfmpegLocator {
+    fn default() -> Self {
+        Self { data_dir: None }
     }
 }
 
@@ -65,14 +84,31 @@ impl FfmpegLocator for BundledFfmpegLocator {
             return Ok(path);
         }
 
+        if let Some(data_dir) = &self.data_dir {
+            let path = data_dir_ffmpeg_path(data_dir);
+            if path.is_file() {
+                return Ok(path);
+            }
+        }
+
         let path = Self::candidate_path();
         if path.is_file() {
             return Ok(path);
         }
-        Err(EngineError::Message(format!(
+        Err(EngineError::Message(ffmpeg_not_found_message()))
+    }
+}
+
+fn ffmpeg_not_found_message() -> String {
+    if cfg!(target_os = "android") {
+        format!(
+            "未找到 ffmpeg，请重新安装应用；开发构建请执行 engine/scripts/fetch_ffmpeg_android.sh 并重新编译"
+        )
+    } else {
+        format!(
             "未找到 ffmpeg，请执行 engine/scripts/fetch_ffmpeg.sh，或确保应用包内存在 Resources/{}",
             ffmpeg_binary_name()
-        )))
+        )
     }
 }
 

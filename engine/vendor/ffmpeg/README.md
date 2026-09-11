@@ -20,11 +20,16 @@ vendor/ffmpeg/
 | Linux x86_64 | `linux-x86_64/` |
 | Linux aarch64 | `linux-aarch64/` |
 | Windows x86_64 | `windows-x86_64/` |
+| Android arm64-v8a | `android-arm64-v8a/` |
+| Android armeabi-v7a | `android-armeabi-v7a/` |
+| Android x86 | `android-x86/` |
+| Android x86_64 | `android-x86_64/` |
 
 引擎通过 `BundledFfmpegLocator` 解析路径，优先级：
 
 1. **macOS 应用包**：`Contents/Resources/ffmpeg`（`flutter build macos` / `flutter run -d macos` 时由 `app/macos/Runner/copy_ffmpeg.sh` 从 vendor 复制并签名）
-2. **开发 / 测试**：`engine/vendor/ffmpeg/{os}-{arch}/ffmpeg`
+2. **Android 应用数据目录**：`{data_dir}/bin/ffmpeg`（启动时由 `MainActivity` 从 APK assets 解压）
+3. **开发 / 测试**：`engine/vendor/ffmpeg/{os}-{arch}/ffmpeg`
 
 ## 获取二进制
 
@@ -32,6 +37,7 @@ vendor/ffmpeg/
 
 ```bash
 ./scripts/fetch_ffmpeg.sh
+./scripts/fetch_ffmpeg_android.sh   # Android HLS 所需各 ABI
 ```
 
 脚本行为：
