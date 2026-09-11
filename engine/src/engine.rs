@@ -1,3 +1,4 @@
+use crate::download::checkpoint::CheckpointRebuildStatus;
 use crate::download::runtime::{worker_config, DownloadRuntime};
 use crate::download::worker::DownloadCommand;
 use crate::error::EngineError;
@@ -8,8 +9,9 @@ use crate::library::LibraryStore;
 use crate::settings;
 use crate::tasks::TaskStore;
 use crate::types::{
-    DownloadAuth, DownloadTask, EngineSettings, LibraryEpisode, LibraryItem, Quality,
-    ResolveOptions, ResolveOutcome, ResourceCandidate, SniffEvent, TaskEvent, TaskStatus,
+    DownloadAuth, DownloadLogEntry, DownloadTask, EngineSettings, LibraryEpisode, LibraryItem,
+    Quality, ResolveOptions, ResolveOutcome, ResourceCandidate, SniffEvent, TaskEvent,
+    TaskEventKind, TaskStatus,
 };
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc};
@@ -224,18 +226,59 @@ impl Engine {
         Ok(id)
     }
 
+    fn emit_prepare_log(tx: &mpsc::Sender<TaskEvent>, task_id: &str, message: impl Into<String>) {
+        let _ = tx.send(TaskEvent {
+            kind: TaskEventKind::Log,
+            task: None,
+            log: Some(DownloadLogEntry {
+                task_id: task_id.to_string(),
+                message: message.into(),
+                at_ms: Self::now_ms(),
+            }),
+        });
+    }
+
+    fn reconcile_interrupted_task(
+        tasks: &mut TaskStore,
+        media_dir: &Path,
+        task: &DownloadTask,
+        log_tx: Option<&mpsc::Sender<TaskEvent>>,
+    ) -> Result<(), EngineError> {
+        let status =
+            crate::download::checkpoint::ensure_checkpoint_from_temp(tasks, media_dir, task)?;
+        if let Some(tx) = log_tx {
+            match status {
+                CheckpointRebuildStatus::Rebuilt => {
+                    Self::emit_prepare_log(tx, &task.id, "已从临时文件恢复下载断点");
+                }
+                CheckpointRebuildStatus::MissingMediaUrl => {
+                    Self::emit_prepare_log(
+                        tx,
+                        &task.id,
+                        "发现已下载分片但缺少媒体地址，将继续全量下载",
+                    );
+                }
+                CheckpointRebuildStatus::AlreadyPresent
+                | CheckpointRebuildStatus::NoRecoverableData => {}
+            }
+        }
+        Ok(())
+    }
+
     pub fn prepare_download_events(&mut self) -> Result<(), EngineError> {
         if self.download.is_some() || self.pending_task_event_tx.is_some() || self.download_stopping
         {
             return Err(EngineError::InvalidArg("downloads already running".into()));
         }
+        let (task_event_tx, task_event_rx) = mpsc::channel();
         let media_dir = self.media_dir();
         for task in self.tasks.list_all()? {
             if matches!(task.status, TaskStatus::Running | TaskStatus::Paused) {
-                crate::download::checkpoint::ensure_checkpoint_from_temp(
+                Self::reconcile_interrupted_task(
                     &mut self.tasks,
                     &media_dir,
                     &task,
+                    Some(&task_event_tx),
                 )?;
                 self.tasks
                     .set_task_status(&task.id, TaskStatus::Queued, None)?;
@@ -244,7 +287,6 @@ impl Engine {
                 }
             }
         }
-        let (task_event_tx, task_event_rx) = mpsc::channel();
         self.pending_task_event_tx = Some(task_event_tx);
         self.task_event_rx = Some(task_event_rx);
         Ok(())
@@ -299,11 +341,7 @@ impl Engine {
         } else {
             let task = self.tasks.get(task_id)?;
             let media_dir = self.media_dir();
-            crate::download::checkpoint::ensure_checkpoint_from_temp(
-                &mut self.tasks,
-                &media_dir,
-                &task,
-            )?;
+            Self::reconcile_interrupted_task(&mut self.tasks, &media_dir, &task, None)?;
             self.tasks
                 .set_task_status(task_id, TaskStatus::Paused, None)?;
         }

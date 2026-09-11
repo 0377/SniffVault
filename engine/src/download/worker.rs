@@ -3,6 +3,7 @@ use crate::download::ffmpeg::FfmpegLocator;
 use crate::download::hls::{download_hls_to_mp4, HlsContext, HlsDownloadState};
 use crate::download::http::HttpClient;
 use crate::download::mp4::{download_mp4, mp4_part_path, Mp4Context};
+use crate::download::paths::output_filename;
 use crate::download::scheduler::Scheduler;
 use crate::error::EngineError;
 use crate::ingest;
@@ -775,40 +776,6 @@ fn is_disk_full(err: &EngineError) -> bool {
     }
 }
 
-pub fn sanitize_filename(title: &str) -> String {
-    let mut out: String = title
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '_' || c == '-' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    if out.len() > 120 {
-        out.truncate(120);
-    }
-    if out.is_empty() {
-        "download".into()
-    } else {
-        out
-    }
-}
-
-pub fn output_filename(task: &DownloadTask) -> String {
-    let base = sanitize_filename(&task.title);
-    if task.parent_id.is_some() {
-        if let Some(index) = task.episode_index {
-            if let Some(season) = task.season {
-                return format!("{base}_S{season}E{index}.mp4");
-            }
-            return format!("{base}_E{index}.mp4");
-        }
-    }
-    format!("{base}.mp4")
-}
-
 fn is_hls_url(url: &str) -> bool {
     let lower = url.to_ascii_lowercase();
     lower.contains(".m3u8") || lower.ends_with("m3u8")
@@ -879,6 +846,7 @@ pub(crate) fn cleanup_download_temp(media_dir: &Path, task_id: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::download::paths::{output_filename, sanitize_filename};
 
     #[test]
     fn sanitize_url_for_log_strips_query() {

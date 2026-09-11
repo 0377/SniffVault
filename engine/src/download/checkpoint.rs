@@ -1,10 +1,14 @@
+use crate::download::hls::playlist::{parse_media_playlist, MediaPlaylist};
 use crate::download::mp4::mp4_part_path;
-use crate::download::worker::output_filename;
+use crate::download::paths::output_filename;
 use crate::error::EngineError;
 use crate::tasks::TaskStore;
 use crate::types::DownloadTask;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+
+pub const HLS_MEDIA_URL_FILE: &str = "media.url";
+pub const HLS_MEDIA_PLAYLIST_FILE: &str = "media.m3u8";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Checkpoint {
@@ -39,9 +43,48 @@ pub struct HlsEncryption {
     pub iv_hex: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckpointRebuildStatus {
+    AlreadyPresent,
+    Rebuilt,
+    NoRecoverableData,
+    MissingMediaUrl,
+}
+
+pub(crate) fn hls_encryption_from_playlist(playlist: &MediaPlaylist) -> Option<HlsEncryption> {
+    playlist.encryption.as_ref().map(|key| HlsEncryption {
+        method: key.method.clone(),
+        key_uri: key.uri.clone(),
+        iv_hex: key.iv_hex.clone(),
+    })
+}
+
+pub(crate) fn persist_hls_snapshot(
+    temp_dir: &Path,
+    media_url: &str,
+    playlist_body: &str,
+) -> Result<(), EngineError> {
+    std::fs::create_dir_all(temp_dir)?;
+    std::fs::write(temp_dir.join(HLS_MEDIA_URL_FILE), media_url)?;
+    std::fs::write(temp_dir.join(HLS_MEDIA_PLAYLIST_FILE), playlist_body)?;
+    Ok(())
+}
+
 fn is_hls_url(url: &str) -> bool {
     let lower = url.to_ascii_lowercase();
     lower.contains(".m3u8") || lower.ends_with("m3u8")
+}
+
+fn read_hls_snapshot(temp_dir: &Path) -> Result<Option<(String, MediaPlaylist)>, EngineError> {
+    let url_path = temp_dir.join(HLS_MEDIA_URL_FILE);
+    let playlist_path = temp_dir.join(HLS_MEDIA_PLAYLIST_FILE);
+    if !url_path.is_file() || !playlist_path.is_file() {
+        return Ok(None);
+    }
+    let media_url = std::fs::read_to_string(&url_path)?;
+    let body = std::fs::read_to_string(&playlist_path)?;
+    let playlist = parse_media_playlist(&body, &media_url)?;
+    Ok(Some((media_url, playlist)))
 }
 
 fn scan_hls_segments(temp_dir: &Path) -> Result<Option<(Vec<u32>, Vec<String>)>, EngineError> {
@@ -70,6 +113,23 @@ fn scan_hls_segments(temp_dir: &Path) -> Result<Option<(Vec<u32>, Vec<String>)>,
     Ok(Some((segments_done, segment_paths)))
 }
 
+fn resolve_hls_media_url(task: &DownloadTask, snapshot_url: Option<String>) -> Option<String> {
+    snapshot_url
+        .filter(|url| is_hls_url(url))
+        .or_else(|| {
+            task.resolved_media_url
+                .clone()
+                .filter(|url| is_hls_url(url))
+        })
+        .or_else(|| {
+            if is_hls_url(&task.source_url) {
+                Some(task.source_url.clone())
+            } else {
+                None
+            }
+        })
+}
+
 pub(crate) fn rebuild_checkpoint_from_temp(
     media_dir: &Path,
     task: &DownloadTask,
@@ -80,18 +140,13 @@ pub(crate) fn rebuild_checkpoint_from_temp(
     }
 
     if let Some((segments_done, segment_paths)) = scan_hls_segments(&temp_dir)? {
-        let media_playlist_url = task
-            .resolved_media_url
-            .clone()
-            .filter(|url| is_hls_url(url))
-            .or_else(|| {
-                if is_hls_url(&task.source_url) {
-                    Some(task.source_url.clone())
-                } else {
-                    None
-                }
-            });
+        let snapshot = read_hls_snapshot(&temp_dir)?;
+        let snapshot_url = snapshot.as_ref().map(|(url, _)| url.clone());
+        let media_playlist_url = resolve_hls_media_url(task, snapshot_url);
         if let Some(media_playlist_url) = media_playlist_url {
+            let encryption = snapshot
+                .as_ref()
+                .and_then(|(_, playlist)| hls_encryption_from_playlist(playlist));
             return Ok(Some(Checkpoint {
                 version: 1,
                 body: CheckpointBody::Hls {
@@ -100,10 +155,11 @@ pub(crate) fn rebuild_checkpoint_from_temp(
                     variant_url: None,
                     segments_done,
                     segment_paths,
-                    encryption: None,
+                    encryption,
                 },
             }));
         }
+        return Ok(None);
     }
 
     let output_path = media_dir.join(output_filename(task));
@@ -133,20 +189,40 @@ pub(crate) fn ensure_checkpoint_from_temp(
     store: &mut TaskStore,
     media_dir: &Path,
     task: &DownloadTask,
-) -> Result<(), EngineError> {
+) -> Result<CheckpointRebuildStatus, EngineError> {
     if store.load_checkpoint(&task.id)?.is_some() {
-        return Ok(());
+        return Ok(CheckpointRebuildStatus::AlreadyPresent);
     }
+
+    let temp_dir = media_dir.join(".dl").join(&task.id);
+    let has_segments = scan_hls_segments(&temp_dir)?
+        .map(|(segments, _)| !segments.is_empty())
+        .unwrap_or(false);
+
     let Some(checkpoint) = rebuild_checkpoint_from_temp(media_dir, task)? else {
-        return Ok(());
+        if has_segments {
+            return Ok(CheckpointRebuildStatus::MissingMediaUrl);
+        }
+        return Ok(CheckpointRebuildStatus::NoRecoverableData);
     };
-    let progress = match &checkpoint.body {
+
+    let rebuilt_progress = match &checkpoint.body {
         CheckpointBody::Hls { segments_done, .. } => segments_done.len() as u64,
         CheckpointBody::Mp4 { bytes_done, .. } => *bytes_done,
     };
+    let progress = task.progress_bytes.max(rebuilt_progress);
+    let total_bytes = match &checkpoint.body {
+        CheckpointBody::Hls { .. } => task.total_bytes.or_else(|| {
+            read_hls_snapshot(&temp_dir)
+                .ok()
+                .flatten()
+                .map(|(_, playlist)| playlist.segments.len() as u64)
+        }),
+        CheckpointBody::Mp4 { .. } => task.total_bytes,
+    };
     store.save_checkpoint(&task.id, &checkpoint)?;
-    store.update_progress(&task.id, progress, task.total_bytes, task.status)?;
-    Ok(())
+    store.update_progress(&task.id, progress, total_bytes, task.status)?;
+    Ok(CheckpointRebuildStatus::Rebuilt)
 }
 
 #[cfg(test)]
@@ -224,6 +300,12 @@ mod tests {
         std::fs::create_dir_all(&temp_dir).unwrap();
         std::fs::write(temp_dir.join("seg0000.ts"), b"ts").unwrap();
         std::fs::write(temp_dir.join("seg0001.ts"), b"ts").unwrap();
+        persist_hls_snapshot(
+            &temp_dir,
+            "https://example.com/media.m3u8",
+            "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:1.5,\nsegments/seg0.ts\n#EXT-X-ENDLIST\n",
+        )
+        .unwrap();
 
         let task = DownloadTask {
             id: "task-1".into(),
@@ -243,7 +325,7 @@ mod tests {
             updated_at_ms: 1,
             cookie_header: None,
             referer: None,
-            resolved_media_url: Some("https://example.com/media.m3u8".into()),
+            resolved_media_url: None,
         };
 
         let checkpoint = rebuild_checkpoint_from_temp(&media_dir, &task)
@@ -262,5 +344,136 @@ mod tests {
             }
             other => panic!("expected HLS checkpoint, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn rebuild_hls_checkpoint_uses_snapshot_encryption() {
+        let dir = tempdir().unwrap();
+        let media_dir = dir.path().join("media");
+        let temp_dir = media_dir.join(".dl/task-1");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        std::fs::write(temp_dir.join("seg0000.ts"), b"ts").unwrap();
+        let encrypted_playlist = "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\"\n#EXTINF:1.5,\nsegments/seg0.ts\n#EXT-X-ENDLIST\n";
+        persist_hls_snapshot(
+            &temp_dir,
+            "https://example.com/encrypted.m3u8",
+            encrypted_playlist,
+        )
+        .unwrap();
+
+        let task = DownloadTask {
+            id: "task-1".into(),
+            parent_id: None,
+            season: None,
+            title: "ep".into(),
+            source_url: "https://example.com/page".into(),
+            quality_label: None,
+            status: TaskStatus::Running,
+            progress_bytes: 0,
+            total_bytes: None,
+            error_message: None,
+            output_path: None,
+            library_item_id: None,
+            episode_index: None,
+            created_at_ms: 1,
+            updated_at_ms: 1,
+            cookie_header: None,
+            referer: None,
+            resolved_media_url: None,
+        };
+
+        let checkpoint = rebuild_checkpoint_from_temp(&media_dir, &task)
+            .unwrap()
+            .expect("checkpoint");
+        match checkpoint.body {
+            CheckpointBody::Hls { encryption, .. } => {
+                let encryption = encryption.expect("encryption");
+                assert_eq!(encryption.method, "AES-128");
+                assert_eq!(encryption.key_uri, "key.bin");
+            }
+            other => panic!("expected HLS checkpoint, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rebuild_mp4_checkpoint_from_part_file() {
+        let dir = tempdir().unwrap();
+        let media_dir = dir.path().join("media");
+        let temp_dir = media_dir.join(".dl/task-1");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        std::fs::write(temp_dir.join("test.mp4.part"), vec![0u8; 2048]).unwrap();
+
+        let task = DownloadTask {
+            id: "task-1".into(),
+            parent_id: None,
+            season: None,
+            title: "test".into(),
+            source_url: "https://example.com/video.mp4".into(),
+            quality_label: None,
+            status: TaskStatus::Running,
+            progress_bytes: 0,
+            total_bytes: None,
+            error_message: None,
+            output_path: None,
+            library_item_id: None,
+            episode_index: None,
+            created_at_ms: 1,
+            updated_at_ms: 1,
+            cookie_header: None,
+            referer: None,
+            resolved_media_url: None,
+        };
+
+        let checkpoint = rebuild_checkpoint_from_temp(&media_dir, &task)
+            .unwrap()
+            .expect("checkpoint");
+        match checkpoint.body {
+            CheckpointBody::Mp4 { bytes_done, .. } => assert_eq!(bytes_done, 2048),
+            other => panic!("expected MP4 checkpoint, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ensure_checkpoint_preserves_higher_progress_bytes() {
+        let dir = tempdir().unwrap();
+        let media_dir = dir.path().join("media");
+        let temp_dir = media_dir.join(".dl/task-1");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        std::fs::write(temp_dir.join("seg0000.ts"), b"ts").unwrap();
+        persist_hls_snapshot(
+            &temp_dir,
+            "https://example.com/media.m3u8",
+            "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:1.5,\nsegments/seg0.ts\n#EXT-X-ENDLIST\n",
+        )
+        .unwrap();
+
+        let mut store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();
+        let task = DownloadTask {
+            id: "task-1".into(),
+            parent_id: None,
+            season: None,
+            title: "ep".into(),
+            source_url: "https://example.com/media.m3u8".into(),
+            quality_label: None,
+            status: TaskStatus::Running,
+            progress_bytes: 120,
+            total_bytes: Some(507),
+            error_message: None,
+            output_path: None,
+            library_item_id: None,
+            episode_index: None,
+            created_at_ms: 1,
+            updated_at_ms: 1,
+            cookie_header: None,
+            referer: None,
+            resolved_media_url: Some("https://example.com/media.m3u8".into()),
+        };
+        store.upsert(&task).unwrap();
+
+        let status =
+            ensure_checkpoint_from_temp(&mut store, &media_dir, &task).expect("ensure checkpoint");
+        assert_eq!(status, CheckpointRebuildStatus::Rebuilt);
+        let updated = store.get("task-1").unwrap();
+        assert_eq!(updated.progress_bytes, 120);
     }
 }

@@ -2,7 +2,9 @@ pub(crate) mod merge;
 pub(crate) mod playlist;
 pub(crate) mod segments;
 
-use crate::download::checkpoint::{Checkpoint, CheckpointBody, HlsEncryption};
+use crate::download::checkpoint::{
+    hls_encryption_from_playlist, persist_hls_snapshot, Checkpoint, CheckpointBody, HlsEncryption,
+};
 use crate::download::ffmpeg::{BundledFfmpegLocator, FfmpegLocator};
 use crate::download::hls::merge::merge_segments_to_mp4;
 use crate::download::hls::playlist::{
@@ -42,14 +44,6 @@ impl HlsDownloadState {
             },
         })
     }
-}
-
-fn encryption_from_playlist(playlist: &MediaPlaylist) -> Option<HlsEncryption> {
-    playlist.encryption.as_ref().map(|key| HlsEncryption {
-        method: key.method.clone(),
-        key_uri: key.uri.clone(),
-        iv_hex: key.iv_hex.clone(),
-    })
 }
 
 fn is_master_playlist(body: &str) -> bool {
@@ -126,6 +120,8 @@ pub(crate) async fn download_hls_to_mp4(
             Some((media_url, variant_url, done, paths, encryption)) => {
                 let body = ctx.http.get_text(&media_url).await?;
                 let playlist = parse_media_playlist(&body, &media_url)?;
+                let _ = persist_hls_snapshot(ctx.temp_dir, &media_url, &body);
+                let encryption = encryption.or_else(|| hls_encryption_from_playlist(&playlist));
                 if let Some(state) = &progress {
                     let mut s = state.lock().await;
                     s.temp_dir = temp_dir_str.clone();
@@ -136,18 +132,21 @@ pub(crate) async fn download_hls_to_mp4(
                         .iter()
                         .map(|p| p.to_string_lossy().into_owned())
                         .collect();
-                    s.encryption = encryption;
+                    s.encryption = encryption.clone();
                 }
                 (media_url, playlist, done, paths, variant_url)
             }
             None => {
                 let (media_url, playlist) =
                     resolve_media_playlist(ctx.http, source_url, quality_label).await?;
+                let body = ctx.http.get_text(&media_url).await?;
+                let _ = persist_hls_snapshot(ctx.temp_dir, &media_url, &body);
                 let variant_url = if from_master {
                     Some(source_url.to_string())
                 } else {
                     None
                 };
+                let encryption = hls_encryption_from_playlist(&playlist);
                 if let Some(state) = &progress {
                     let mut s = state.lock().await;
                     s.temp_dir = temp_dir_str.clone();
@@ -155,7 +154,7 @@ pub(crate) async fn download_hls_to_mp4(
                     s.variant_url = variant_url.clone();
                     s.segments_done.clear();
                     s.segment_paths.clear();
-                    s.encryption = encryption_from_playlist(&playlist);
+                    s.encryption = encryption.clone();
                 }
                 (media_url, playlist, Vec::new(), Vec::new(), variant_url)
             }

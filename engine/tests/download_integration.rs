@@ -446,6 +446,54 @@ fn orphaned_running_hls_resumes_after_reopen() {
 }
 
 #[test]
+fn pause_without_worker_rebuilds_checkpoint_from_temp() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let mut fx = EngineFixture::open();
+        let hls_fixture = fx.data_dir().join("fixtures/hls");
+        build_multi_segment_hls_fixture(&hls_fixture, 3);
+        let (addr, _guard) = fixture_server::serve_dir(hls_fixture).await;
+        let url = format!("http://{addr}/many.m3u8");
+
+        let task_id = fx
+            .engine
+            .enqueue_single("pause-offline", &url, None, None)
+            .unwrap();
+        fx.engine.start_downloads().unwrap();
+
+        let temp = fx.media_dir().join(".dl").join(&task_id);
+        let partial_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+        loop {
+            if temp.join("seg0000.ts").is_file() {
+                break;
+            }
+            if tokio::time::Instant::now() > partial_deadline {
+                panic!("timeout waiting for first HLS segment");
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
+        fx.engine.stop_downloads().unwrap();
+
+        let mut store = TaskStore::open(&fx.data_dir().join("tasks.db")).unwrap();
+        store.clear_checkpoint(&task_id).unwrap();
+        store
+            .update_progress(&task_id, 1, Some(3), TaskStatus::Running)
+            .unwrap();
+
+        fx.engine.pause_task(&task_id).unwrap();
+
+        let checkpoint = store.load_checkpoint(&task_id).unwrap();
+        assert!(
+            checkpoint.is_some(),
+            "pause without active worker should rebuild checkpoint from temp segments"
+        );
+        let paused = store.get(&task_id).unwrap();
+        assert_eq!(paused.status, TaskStatus::Paused);
+    });
+}
+
+#[test]
 fn hls_aes128_registers() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
