@@ -381,6 +381,71 @@ fn hls_failure_retry_resumes_and_completes() {
 }
 
 #[test]
+fn orphaned_running_hls_resumes_after_reopen() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let mut fx = EngineFixture::open();
+        let hls_fixture = fx.data_dir().join("fixtures/hls");
+        build_multi_segment_hls_fixture(&hls_fixture, 3);
+        let (addr, _guard) = fixture_server::serve_dir(hls_fixture).await;
+        let url = format!("http://{addr}/many.m3u8");
+
+        let task_id = fx
+            .engine
+            .enqueue_single("crash-resume", &url, None, None)
+            .unwrap();
+        fx.engine.start_downloads().unwrap();
+        let temp = fx.media_dir().join(".dl").join(&task_id);
+        let partial_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+        loop {
+            if temp.join("seg0000.ts").is_file() {
+                break;
+            }
+            let tasks = fx.engine.list_tasks().unwrap();
+            let task = tasks.iter().find(|t| t.id == task_id).unwrap();
+            if task.status == TaskStatus::Completed {
+                panic!("download finished before partial progress could be captured");
+            }
+            if tokio::time::Instant::now() > partial_deadline {
+                panic!("timeout waiting for first HLS segment");
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
+        let mut store = TaskStore::open(&fx.data_dir().join("tasks.db")).unwrap();
+        let running = store.get(&task_id).unwrap();
+
+        fx.engine.stop_downloads().unwrap();
+        store.clear_checkpoint(&task_id).unwrap();
+        store
+            .update_progress(
+                &task_id,
+                running.progress_bytes,
+                running.total_bytes,
+                TaskStatus::Running,
+            )
+            .unwrap();
+
+        fx.engine.start_downloads().unwrap();
+        wait_for_task(
+            &fx.engine,
+            &task_id,
+            TaskStatus::Completed,
+            Duration::from_secs(60),
+        )
+        .await;
+        fx.engine.stop_downloads().unwrap();
+
+        let completed = store.get(&task_id).unwrap();
+        assert_eq!(completed.progress_bytes, 3);
+        assert!(completed
+            .output_path
+            .as_ref()
+            .is_some_and(|p| output_contains_ftyp(std::path::Path::new(p))));
+    });
+}
+
+#[test]
 fn hls_aes128_registers() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {

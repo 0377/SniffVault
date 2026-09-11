@@ -57,10 +57,12 @@ class DownloadCoordinator {
   var _workerActive = false;
 
   void _startQueuedDownloadsIfNeeded() {
-    final hasQueued = _repo
-        .listTasks()
-        .any((task) => task.status == TaskStatus.queued);
-    if (hasQueued) {
+    final hasRunnable = _repo.listTasks().any(
+      (task) =>
+          task.status == TaskStatus.queued ||
+          task.status == TaskStatus.running,
+    );
+    if (hasRunnable) {
       ensureDownloads();
     }
   }

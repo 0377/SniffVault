@@ -84,6 +84,29 @@ void main() {
     coordinator.dispose();
   });
 
+  test('starts worker when running tasks exist on init', () {
+    final repo = _RecordingRepo(
+      tasks: const [
+        DownloadTask(
+          id: 't1',
+          title: 'running',
+          sourceUrl: 'https://example/x.mp4',
+          status: TaskStatus.running,
+          progressBytes: 42,
+          createdAtMs: 1,
+          updatedAtMs: 1,
+        ),
+      ],
+    );
+    final coordinator = DownloadCoordinator.forTest(
+      repo,
+      onInvalidateTasks: () {},
+      onInvalidateLibrary: () {},
+    );
+    expect(repo.startCalls, 1);
+    coordinator.dispose();
+  });
+
   test('starts worker when queued tasks exist on init', () {
     final repo = _RecordingRepo(
       tasks: const [

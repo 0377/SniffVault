@@ -229,10 +229,19 @@ impl Engine {
         {
             return Err(EngineError::InvalidArg("downloads already running".into()));
         }
+        let media_dir = self.media_dir();
         for task in self.tasks.list_all()? {
-            if task.status == TaskStatus::Paused {
+            if matches!(task.status, TaskStatus::Running | TaskStatus::Paused) {
+                crate::download::checkpoint::ensure_checkpoint_from_temp(
+                    &mut self.tasks,
+                    &media_dir,
+                    &task,
+                )?;
                 self.tasks
                     .set_task_status(&task.id, TaskStatus::Queued, None)?;
+                if let Some(parent_id) = &task.parent_id {
+                    let _ = self.tasks.sync_parent_status(parent_id);
+                }
             }
         }
         let (task_event_tx, task_event_rx) = mpsc::channel();
@@ -288,6 +297,13 @@ impl Engine {
                 task_id: task_id.to_string(),
             })?;
         } else {
+            let task = self.tasks.get(task_id)?;
+            let media_dir = self.media_dir();
+            crate::download::checkpoint::ensure_checkpoint_from_temp(
+                &mut self.tasks,
+                &media_dir,
+                &task,
+            )?;
             self.tasks
                 .set_task_status(task_id, TaskStatus::Paused, None)?;
         }
