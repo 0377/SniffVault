@@ -51,7 +51,7 @@ class VideoSniffingApp extends ConsumerWidget {
         ref.watch(downloadCoordinatorProvider);
         final router = ref.watch(appRouterProvider);
         return MaterialApp.router(
-          title: 'Video Sniffing',
+          title: '嗅影库',
           theme: ThemeData(
             colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
             useMaterial3: true,

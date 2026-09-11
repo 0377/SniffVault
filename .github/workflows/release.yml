@@ -105,7 +105,7 @@ jobs:
         run: |
           cd app
           flutter pub get
-          pkill -9 -f video_sniffing.app 2>/dev/null || true
+          pkill -9 -f SniffVault.app 2>/dev/null || true
           if [ "${{ matrix.suite }}" = "engine" ]; then
             flutter test integration_test/engine_smoke_test.dart -d macos
           elif [ "${{ matrix.suite }}" = "deeplink" ]; then
@@ -178,7 +178,7 @@ jobs:
 
       - run: |
           cd app/build/macos/Build/Products/Release
-          ditto -c -k --sequesterRsrc --keepParent video_sniffing.app macos-app.zip
+          ditto -c -k --sequesterRsrc --keepParent SniffVault.app macos-app.zip
 
       - uses: actions/upload-artifact@v4
         with:

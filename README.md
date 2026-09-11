@@ -169,7 +169,7 @@ cd app && flutter test integration_test/library_delete_test.dart -d macos
 ## 可交付 v0.1（Plan 8）
 
 - Windows 内置浏览需 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
-- 推送 `v0.1.0` 等 `v*` tag 后，GitHub Release 提供 Android APK、macOS zip（解压得 `video_sniffing.app`）、Windows zip 与 `SHA256SUMS.txt`。
+- 推送 `v0.1.0` 等 `v*` tag 后，GitHub Release 提供 Android APK、macOS zip（解压得 `SniffVault.app`）、Windows zip 与 `SHA256SUMS.txt`。
 - iOS 需本地自编译：`cd app && flutter build ios --release`（本仓库 CI 不产出 ipa）。
 - Android APK 为默认 debug/未商店签名，侧载需允许「未知来源」。
 
