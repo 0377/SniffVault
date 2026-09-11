@@ -45,18 +45,13 @@ typedef BatchSniffProgress = void Function(int current, int total);
 
 class BatchSniffCoordinator {
   BatchSniffCoordinator._({
-    required EngineRepository repo,
-    required BrowseSession session,
-    required BatchSniffEnsureDownloads ensureDownloads,
-    required Duration debounce,
-    required Duration pollInterval,
-    required Duration episodeTimeout,
-  })  : _repo = repo,
-        _session = session,
-        _ensureDownloads = ensureDownloads,
-        _debounce = debounce,
-        _pollInterval = pollInterval,
-        _episodeTimeout = episodeTimeout;
+    required this._repo,
+    required this._session,
+    required this._ensureDownloads,
+    required this._debounce,
+    required this._pollInterval,
+    required this._episodeTimeout,
+  });
 
   factory BatchSniffCoordinator(Ref ref) {
     return BatchSniffCoordinator._(

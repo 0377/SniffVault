@@ -255,8 +255,7 @@ pub async fn run_worker(config: WorkerConfig, cmd_rx: mpsc::Receiver<DownloadCom
             if let Ok(store) = TaskStore::open(&tasks_path) {
                 let running = store.count_running_downloads().unwrap_or(0);
                 let sched = scheduler.lock().await;
-                if let Ok(runnable) = sched.pick_next(&store, running, slots)
-                {
+                if let Ok(runnable) = sched.pick_next(&store, running, slots) {
                     for task in runnable {
                         if in_flight.lock().await.contains(&task.id) {
                             continue;
@@ -315,7 +314,6 @@ pub async fn run_worker(config: WorkerConfig, cmd_rx: mpsc::Receiver<DownloadCom
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 }
-
 
 async fn handle_outcome(
     config: &WorkerConfig,
@@ -481,7 +479,11 @@ async fn run_one_task(
         }
     };
 
-    emit_download_log(config.as_ref(), &task.id, format!("开始下载：{}", task.title));
+    emit_download_log(
+        config.as_ref(),
+        &task.id,
+        format!("开始下载：{}", task.title),
+    );
     emit_download_log(
         config.as_ref(),
         &task.id,
@@ -633,7 +635,8 @@ async fn run_one_task(
                 return TaskRunOutcome::Cancelled;
             }
             if cancel.is_cancelled() {
-                let _ = save_interrupt_checkpoint_if_paused(config.as_ref(), task, &hls_states).await;
+                let _ =
+                    save_interrupt_checkpoint_if_paused(config.as_ref(), task, &hls_states).await;
                 return TaskRunOutcome::Cancelled;
             }
             let current = match tasks.get(&task.id) {
@@ -656,7 +659,8 @@ async fn run_one_task(
         }
         Err(e) => {
             if cancel.is_cancelled() {
-                let _ = save_interrupt_checkpoint_if_paused(config.as_ref(), task, &hls_states).await;
+                let _ =
+                    save_interrupt_checkpoint_if_paused(config.as_ref(), task, &hls_states).await;
                 TaskRunOutcome::Cancelled
             } else {
                 classify_error(e)
@@ -867,9 +871,8 @@ mod tests {
 
     #[test]
     fn sanitize_url_for_log_strips_query() {
-        let sanitized = sanitize_url_for_log(
-            "https://cdn.example.com/path/master.m3u8?token=secret&expires=1",
-        );
+        let sanitized =
+            sanitize_url_for_log("https://cdn.example.com/path/master.m3u8?token=secret&expires=1");
         assert_eq!(sanitized, "https://cdn.example.com/path/master.m3u8");
     }
 

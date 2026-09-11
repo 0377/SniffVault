@@ -225,9 +225,7 @@ impl Engine {
     }
 
     pub fn prepare_download_events(&mut self) -> Result<(), EngineError> {
-        if self.download.is_some()
-            || self.pending_task_event_tx.is_some()
-            || self.download_stopping
+        if self.download.is_some() || self.pending_task_event_tx.is_some() || self.download_stopping
         {
             return Err(EngineError::InvalidArg("downloads already running".into()));
         }

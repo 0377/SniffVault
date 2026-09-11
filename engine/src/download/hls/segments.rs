@@ -1,11 +1,11 @@
 use crate::download::hls::playlist::{resolve_url, KeyTag, MediaPlaylist, SegmentEntry};
 use crate::download::hls::HlsDownloadState;
+use crate::download::hls::SegmentProgressCallback;
 use crate::download::http::HttpClient;
 use crate::error::EngineError;
 use aes::cipher::{block_padding::NoPadding, BlockDecryptMut, KeyIvInit};
 use aes::Aes128;
 use cbc::Decryptor;
-use crate::download::hls::SegmentProgressCallback;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs;

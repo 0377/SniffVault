@@ -17,7 +17,10 @@ fn task_log_event_roundtrip_json() {
     };
     let json = serde_json::to_string(&event).unwrap();
     assert!(json.contains("\"log\""));
-    assert_eq!(json.contains("\"kind\":\"log\"") || json.contains("\"kind\": \"log\""), true);
+    assert_eq!(
+        json.contains("\"kind\":\"log\"") || json.contains("\"kind\": \"log\""),
+        true
+    );
     let back: TaskEvent = serde_json::from_str(&json).unwrap();
     assert_eq!(back.kind, TaskEventKind::Log);
     assert_eq!(back.log.as_ref().unwrap().message, "HLS：分片 1/120");

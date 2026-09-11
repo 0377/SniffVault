@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:video_sniffing/engine/models/download_task.dart';
 import 'package:video_sniffing/engine/models/task_status.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
-import 'package:video_sniffing/providers/engine_repository.dart';
 import 'package:video_sniffing/providers/tasks_provider.dart';
 
 import 'fakes/fake_engine_repository.dart';
