@@ -44,6 +44,9 @@ vendor/ffmpeg/
 
 - **macOS**：优先从 `PATH` 或 Homebrew 复制；若无则尝试 `brew install ffmpeg`
 - **Linux / Windows**：优先使用 `PATH` 中的 `ffmpeg`；若无则从 [BtbN FFmpeg Builds](https://github.com/BtbN/FFmpeg-Builds/releases) 自动下载对应 `linux64` / `linuxarm64` / `win64` 包
+- **Android**（`fetch_ffmpeg_android.sh`）：
+  - `arm64-v8a`：优先 [Android-FFmpeg-Prebuilt](https://github.com/hzw1199/Android-FFmpeg-Prebuilt)（FFmpeg 8.x，LGPL-2.1）
+  - 其余 ABI： [Khang-NT/ffmpeg-binary-android](https://github.com/Khang-NT/ffmpeg-binary-android) `*-full` 包（2018 构建，含 GPL/non-free 编解码器如 x264、fdk-aac）
 
 复制完成后会 `chmod +x`。
 
@@ -64,3 +67,12 @@ cargo test --manifest-path Cargo.toml
 ## 许可证
 
 ffmpeg 为 LGPL/GPL 软件。分发应用时请遵守 [FFmpeg 许可证](https://ffmpeg.org/legal.html) 与所选构建版本的说明。
+
+**Android 额外注意：**
+
+| ABI | 来源 | 许可证要点 |
+|-----|------|------------|
+| arm64-v8a | Android-FFmpeg-Prebuilt | LGPL-2.1，无 GPL/non-free 组件 |
+| armeabi-v7a / x86 / x86_64 | Khang-NT `*-full` | GPL + non-free（x264、fdk-aac 等）；公开发布 APK 前请评估合规性 |
+
+若需更严格的许可证策略，可改为仅分发 arm64 现代构建，或自行交叉编译精简版 ffmpeg。

@@ -89,6 +89,12 @@ macOS 桌面版与 Android 版 HLS 下载会把 `ffmpeg` 打进应用包。构�
 ./scripts/fetch_ffmpeg_android.sh      # Android 各 ABI（真机与模拟器）
 ```
 
+发布 Android 包时建议使用分 ABI 构建以减小体积：
+
+```bash
+cd app && flutter build apk --release --split-per-abi
+```
+
 ```bash
 cd app
 flutter pub get

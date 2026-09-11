@@ -147,12 +147,12 @@ jobs:
 
       - run: yes | flutter doctor --android-licenses || true
 
-      - run: cd app && flutter build apk --release
+      - run: cd app && flutter build apk --release --split-per-abi
 
       - uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: app/build/app/outputs/flutter-apk/app-release.apk
+          path: app/build/app/outputs/flutter-apk/*-release.apk
 
   build-macos:
     name: build-macos
@@ -259,7 +259,9 @@ jobs:
       - name: Rename release assets
         run: |
           TAG="${{ github.ref_name }}"
-          cp artifacts/android-apk/app-release.apk "sniffvault-${TAG}-android.apk"
+          cp artifacts/android-apk/app-arm64-v8a-release.apk "sniffvault-${TAG}-android-arm64.apk"
+          cp artifacts/android-apk/app-armeabi-v7a-release.apk "sniffvault-${TAG}-android-armv7.apk"
+          cp artifacts/android-apk/app-x86_64-release.apk "sniffvault-${TAG}-android-x86_64.apk"
           cp artifacts/macos-zip/macos-app.zip "sniffvault-${TAG}-macos.zip"
           cp artifacts/windows-zip/sniffvault-windows.zip "sniffvault-${TAG}-windows.zip"
           sha256sum sniffvault-${TAG}-* > SHA256SUMS.txt
@@ -271,7 +273,9 @@ jobs:
           name: ${{ github.ref_name }}
           body: ${{ steps.changelog.outputs.body }}
           files: |
-            sniffvault-${{ github.ref_name }}-android.apk
+            sniffvault-${{ github.ref_name }}-android-arm64.apk
+            sniffvault-${{ github.ref_name }}-android-armv7.apk
+            sniffvault-${{ github.ref_name }}-android-x86_64.apk
             sniffvault-${{ github.ref_name }}-macos.zip
             sniffvault-${{ github.ref_name }}-windows.zip
             SHA256SUMS.txt

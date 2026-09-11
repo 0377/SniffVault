@@ -45,3 +45,4 @@ engine/vendor/ffmpeg/**/*
 
 # Android 构建时从 vendor 复制的 ffmpeg assets
 app/android/app/src/main/assets/ffmpeg/
+
