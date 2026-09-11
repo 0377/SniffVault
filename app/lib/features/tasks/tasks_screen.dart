@@ -17,8 +17,10 @@ class TasksScreen extends ConsumerWidget {
     final roots = tasks.where((task) => task.parentId == null).toList();
 
     if (roots.isEmpty) {
-      return const Scaffold(
-        body: Center(child: Text('暂无下载任务，去「添加」粘贴 URL')),
+      return Scaffold(
+        body: SafeArea(
+          child: Center(child: Text('暂无下载任务，去「添加」粘贴 URL')),
+        ),
       );
     }
 
@@ -28,8 +30,10 @@ class TasksScreen extends ConsumerWidget {
     final tasksById = {for (final task in tasks) task.id: task};
 
     return Scaffold(
-      body: Column(
-        children: [
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
           Expanded(
             child: ListView.builder(
               key: const Key('tasks_list'),
@@ -75,6 +79,7 @@ class TasksScreen extends ConsumerWidget {
             onClear: () => ref.read(downloadLogsProvider.notifier).clear(),
           ),
         ],
+        ),
       ),
     );
   }

@@ -82,9 +82,11 @@ class _BrowseChromeState extends State<BrowseChrome> {
   @override
   Widget build(BuildContext context) {
     final errorColor = Theme.of(context).colorScheme.error;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
+    return SafeArea(
+      bottom: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
           child: Row(
@@ -133,7 +135,8 @@ class _BrowseChromeState extends State<BrowseChrome> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: Text(_errorMessage!, style: TextStyle(color: errorColor)),
           ),
-      ],
+        ],
+      ),
     );
   }
 }

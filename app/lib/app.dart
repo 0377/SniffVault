@@ -15,33 +15,37 @@ class VideoSniffingApp extends ConsumerWidget {
     final hostAsync = ref.watch(engineHostProvider);
 
     return hostAsync.when(
-      loading: () => const MaterialApp(
+      loading: () => MaterialApp(
         home: Scaffold(
-          body: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text('正在初始化引擎…'),
-              ],
+          body: SafeArea(
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('正在初始化引擎…'),
+                ],
+              ),
             ),
           ),
         ),
       ),
       error: (error, _) => MaterialApp(
         home: Scaffold(
-          body: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('引擎初始化失败：$error'),
-                const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: () => ref.invalidate(engineHostProvider),
-                  child: const Text('重试'),
-                ),
-              ],
+          body: SafeArea(
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('引擎初始化失败：$error'),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: () => ref.invalidate(engineHostProvider),
+                    child: const Text('重试'),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

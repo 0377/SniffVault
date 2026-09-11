@@ -12,13 +12,17 @@ class LibraryScreen extends ConsumerWidget {
     final items = ref.watch(libraryProvider);
 
     if (items.isEmpty) {
-      return const Scaffold(
-        body: Center(child: Text('片库为空，去「添加」粘贴 URL')),
+      return Scaffold(
+        body: SafeArea(
+          child: Center(child: Text('片库为空，去「添加」粘贴 URL')),
+        ),
       );
     }
 
     return Scaffold(
-      body: ListView.builder(
+      body: SafeArea(
+        bottom: false,
+        child: ListView.builder(
         key: const Key('library_list'),
         itemCount: items.length,
         itemBuilder: (context, index) {
@@ -28,6 +32,7 @@ class LibraryScreen extends ConsumerWidget {
             onTap: () => context.push('/library/${item.id}'),
           );
         },
+        ),
       ),
     );
   }
