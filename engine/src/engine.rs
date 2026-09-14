@@ -405,7 +405,11 @@ impl Engine {
         Ok(())
     }
 
-    pub fn retry_task(&mut self, task_id: &str) -> Result<(), EngineError> {
+    pub fn retry_task(
+        &mut self,
+        task_id: &str,
+        new_url: Option<&str>,
+    ) -> Result<(), EngineError> {
         let task = self.tasks.get(task_id)?;
         if task.status != TaskStatus::Failed {
             return Err(EngineError::InvalidArg(
@@ -417,8 +421,29 @@ impl Engine {
                 "failed task needs sniff before retry".into(),
             ));
         }
-        self.tasks
-            .set_task_status(task_id, TaskStatus::Queued, None)?;
+
+        match new_url {
+            None => {
+                self.tasks
+                    .set_task_status(task_id, TaskStatus::Queued, None)?;
+            }
+            Some(url) => {
+                let trimmed = url.trim();
+                if trimmed.is_empty() {
+                    return Err(EngineError::InvalidArg(
+                        "new_url must not be empty".into(),
+                    ));
+                }
+                if trimmed == task.source_url {
+                    self.tasks
+                        .set_task_status(task_id, TaskStatus::Queued, None)?;
+                } else {
+                    self.tasks.requeue_failed_with_url(task_id, trimmed)?;
+                    crate::download::worker::cleanup_download_temp(&self.media_dir(), task_id);
+                }
+            }
+        }
+
         if let Some(parent_id) = &task.parent_id {
             let _ = self.tasks.sync_parent_status(parent_id);
         }

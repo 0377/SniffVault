@@ -13,15 +13,6 @@ use support::hls_fixture::{build_multi_segment_hls_fixture, fixtures_hls_dir};
 use video_sniffing_engine::test_api::{CheckpointBody, TaskStore};
 use video_sniffing_engine::{DownloadAuth, Engine, TaskStatus};
 
-fn requeue_failed_task(data_dir: &std::path::Path, task_id: &str, new_url: &str) {
-    let store = TaskStore::open(&data_dir.join("tasks.db")).unwrap();
-    let mut task = store.get(task_id).unwrap();
-    task.source_url = new_url.to_string();
-    task.status = TaskStatus::Queued;
-    task.error_message = None;
-    store.upsert(&task).unwrap();
-}
-
 #[test]
 fn player_page_resolves_and_downloads_mp4() {
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -360,7 +351,7 @@ fn hls_failure_retry_resumes_and_completes() {
         assert!(seg0_path.is_file());
 
         seg1_blocked.store(false, Ordering::SeqCst);
-        fx.engine.retry_task(&task_id).unwrap();
+        fx.engine.retry_task(&task_id, None).unwrap();
         wait_for_task(
             &fx.engine,
             &task_id,
@@ -610,7 +601,9 @@ fn series_partial_failure_resume() {
         fx.engine.stop_downloads().unwrap();
 
         let failed_id = children[1].clone();
-        requeue_failed_task(fx.data_dir(), &failed_id, &good_mp4);
+        fx.engine
+            .retry_task(&failed_id, Some(&good_mp4))
+            .unwrap();
 
         fx.engine.start_downloads().unwrap();
         wait_for_task(
