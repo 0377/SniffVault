@@ -837,7 +837,9 @@ fn validate_download_output(path: &Path, is_hls: bool) -> Result<(), EngineError
 fn cleanup_temp_dir(media_dir: &Path, task_id: &str) {
     let temp = media_dir.join(".dl").join(task_id);
     if temp.exists() {
-        let _ = std::fs::remove_dir_all(&temp);
+        if let Err(e) = std::fs::remove_dir_all(&temp) {
+            eprintln!("failed to remove download temp dir {}: {e}", temp.display());
+        }
     }
 }
 

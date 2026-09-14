@@ -8,11 +8,15 @@ import 'package:video_sniffing/providers/device_profile.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
 import 'package:video_sniffing/providers/lan_settings_coordinator.dart';
 import 'package:video_sniffing/providers/settings_provider.dart';
+import 'package:video_sniffing/features/settings/media_dir_picker.dart';
+import 'package:video_sniffing/features/settings/media_directory_picker.dart';
 import 'package:video_sniffing/features/settings/user_agent_presets.dart';
 import 'package:video_sniffing/ui/error_presenter.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
-  const SettingsScreen({super.key});
+  const SettingsScreen({super.key, this.directoryPicker});
+
+  final MediaDirectoryPicker? directoryPicker;
 
   @override
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
@@ -59,6 +63,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _draft = _draft.copyWith(userAgent: preset.value);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('已填入 User-Agent（${preset.label}），记得保存')),
+    );
+  }
+
+  Future<void> _pickMediaDir() async {
+    final picker =
+        widget.directoryPicker ?? FilePickerMediaDirectoryPicker();
+    final picked = await picker.pickDirectoryPath();
+    if (!mounted || picked == null) {
+      return;
+    }
+    final name = mediaDirNameFromPickerResult(picked);
+    if (name == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('无法识别文件夹名称')),
+      );
+      return;
+    }
+    _mediaDirController.text = name;
+    _draft = _draft.copyWith(mediaDir: name);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已填入目录名，记得保存')),
     );
   }
 
@@ -114,13 +139,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         children: [
           TextField(
             key: const Key('settings_media_dir'),
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: '媒体目录',
-              border: OutlineInputBorder(),
+              border: const OutlineInputBorder(),
+              helperText: isTv
+                  ? '此处为应用数据目录下的文件夹名称。'
+                  : '此处为应用数据目录下的文件夹名称；选择外置路径时仅采用文件夹名，不会自动搬移已有缓存文件。',
             ),
             controller: _mediaDirController,
             onChanged: (value) => _draft = _draft.copyWith(mediaDir: value),
           ),
+          if (!isTv) ...[
+            const SizedBox(height: 8),
+            OutlinedButton(
+              key: const Key('settings_pick_media_dir'),
+              onPressed: _pickMediaDir,
+              child: const Text('选择文件夹'),
+            ),
+          ],
           const SizedBox(height: 16),
           TextField(
             key: const Key('settings_max_concurrency'),

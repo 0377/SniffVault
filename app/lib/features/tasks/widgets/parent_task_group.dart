@@ -17,6 +17,7 @@ class ParentTaskGroup extends ConsumerWidget {
     required this.onRetry,
     required this.onRestore,
     required this.onBatchRetry,
+    this.onEditUrlRetry,
   });
 
   final DownloadTask parent;
@@ -27,6 +28,7 @@ class ParentTaskGroup extends ConsumerWidget {
   final void Function(String taskId) onRetry;
   final void Function(String taskId) onRestore;
   final VoidCallback onBatchRetry;
+  final void Function(DownloadTask task)? onEditUrlRetry;
 
   int _needsSniffCount() =>
       children.where((child) => child.status == TaskStatus.needsSniff).length;
@@ -57,6 +59,9 @@ class ParentTaskGroup extends ConsumerWidget {
         onCancel: () => onCancel(parent.id),
         onRetry: () => onRetry(parent.id),
         onRestore: () => onRestore(parent.id),
+        onEditUrlRetry: onEditUrlRetry == null
+            ? null
+            : () => onEditUrlRetry!(parent),
       );
     }
 
@@ -99,6 +104,9 @@ class ParentTaskGroup extends ConsumerWidget {
               onCancel: () => onCancel(child.id),
               onRetry: () => onRetry(child.id),
               onRestore: () => onRestore(child.id),
+              onEditUrlRetry: onEditUrlRetry == null
+                  ? null
+                  : () => onEditUrlRetry!(child),
             ),
           )
           .toList(),

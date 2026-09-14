@@ -265,9 +265,20 @@ class EngineHost {
     });
   }
 
-  void retryTask(String taskId) {
+  void retryTask(String taskId, {String? newUrl}) {
     _withUtf8(taskId, (taskIdPtr) {
-      _callSyncVoid((handle) => _bindings.engineRetryTask(handle, taskIdPtr));
+      if (newUrl == null) {
+        _callSyncVoid(
+          (handle) => _bindings.engineRetryTask(handle, taskIdPtr, nullptr),
+        );
+        return;
+      }
+      _withUtf8(newUrl, (newUrlPtr) {
+        _callSyncVoid(
+          (handle) =>
+              _bindings.engineRetryTask(handle, taskIdPtr, newUrlPtr),
+        );
+      });
     });
   }
 
