@@ -10,6 +10,7 @@ import 'package:video_sniffing/engine/models/library_episode.dart';
 import 'package:video_sniffing/engine/models/library_item.dart';
 import 'package:video_sniffing/engine/models/library_item_kind.dart';
 import 'package:video_sniffing/features/library/library_detail_screen.dart';
+import 'package:video_sniffing/features/library/widgets/confirm_merge_dialog.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
 import 'package:video_sniffing/providers/library_provider.dart';
 
@@ -78,6 +79,63 @@ void main() {
     expect(find.text('本地存储异常：disk full'), findsOneWidget);
   });
 
+  testWidgets('W9b-3 confirm merge dialog defaults deleteOrphanFiles false',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            return ElevatedButton(
+              onPressed: () => showConfirmMergeDialogResult(
+                context,
+                targetTitle: '目标',
+                episodeCount: 2,
+              ),
+              child: const Text('open'),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(find.text('删除被丢弃分集的本地缓存文件'), findsOneWidget);
+    final checkbox = tester.widget<CheckboxListTile>(
+      find.byType(CheckboxListTile),
+    );
+    expect(checkbox.value, isFalse);
+  });
+
+  testWidgets('W9b-4 merge flow calls repo.mergeLibraryItems', (tester) async {
+    final fake = _setupMergeFake();
+    var libraryReads = 0;
+
+    await tester.pumpWidget(
+      _detailScope(
+        fake,
+        itemId: 'series-source',
+        libraryReads: () => libraryReads++,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('library_detail_menu')));
+    await tester.pumpAndSettle();
+    expect(find.text('合并到…'), findsOneWidget);
+    await tester.tap(find.text('合并到…'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('merge_target_series-target')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '合并'));
+    await tester.pumpAndSettle();
+
+    expect(fake.lastMergedSourceId, 'series-source');
+    expect(fake.lastMergedTargetId, 'series-target');
+    expect(fake.lastMergeDeleteOrphanFiles, isFalse);
+    expect(libraryReads, greaterThan(1));
+    expect(find.text('已合并'), findsOneWidget);
+  });
+
   testWidgets('W9b-6 rename episode calls repo.renameEpisode', (tester) async {
     final fake = _setupSeriesFake();
     var libraryReads = 0;
@@ -133,6 +191,58 @@ FakeEngineRepository _setupSingleItemFake() {
         index: 1,
         title: '正片',
         filePath: episodeFile.path,
+        positionMs: 0,
+      ),
+    ],
+  };
+  return fake;
+}
+
+FakeEngineRepository _setupMergeFake() {
+  final fake = FakeEngineRepository(
+    libraryItems: const [
+      LibraryItem(
+        id: 'series-source',
+        kind: LibraryItemKind.series,
+        title: '示意剧',
+        season: 1,
+        createdAtMs: 1,
+      ),
+      LibraryItem(
+        id: 'series-target',
+        kind: LibraryItemKind.series,
+        title: '示意剧',
+        season: 1,
+        createdAtMs: 2,
+      ),
+    ],
+  );
+  fake.episodesByItemId = {
+    'series-source': [
+      const LibraryEpisode(
+        id: 'src-ep-1',
+        itemId: 'series-source',
+        index: 1,
+        title: '源第1集',
+        filePath: '/tmp/src1.mp4',
+        positionMs: 0,
+      ),
+      const LibraryEpisode(
+        id: 'src-ep-2',
+        itemId: 'series-source',
+        index: 2,
+        title: '源第2集',
+        filePath: '/tmp/src2.mp4',
+        positionMs: 0,
+      ),
+    ],
+    'series-target': [
+      const LibraryEpisode(
+        id: 'tgt-ep-1',
+        itemId: 'series-target',
+        index: 1,
+        title: '目标第1集',
+        filePath: '/tmp/tgt1.mp4',
         positionMs: 0,
       ),
     ],
