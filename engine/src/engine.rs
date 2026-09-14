@@ -587,17 +587,11 @@ impl Engine {
                 "source series has no episodes".into(),
             ));
         }
-        let orphan_ids: Vec<String> = source_eps
-            .iter()
-            .filter(|ep| {
-                self.library
-                    .get_episode_by_item_index(target_item_id, ep.index)
-                    .ok()
-                    .flatten()
-                    .is_some()
-            })
-            .map(|ep| ep.id.clone())
-            .collect();
+        let orphan_ids = crate::library::merge::orphan_episode_ids_for_merge(
+            &self.library,
+            &source_eps,
+            target_item_id,
+        )?;
         self.finalize_lan_for_episodes(&orphan_ids)?;
         crate::library::merge::merge_items(
             &self.library,

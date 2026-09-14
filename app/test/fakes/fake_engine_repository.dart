@@ -214,12 +214,12 @@ class FakeEngineRepository implements EngineRepository {
     String targetItemId, {
     bool deleteOrphanFiles = false,
   }) {
-    lastMergedSourceId = sourceItemId;
-    lastMergedTargetId = targetItemId;
-    lastMergeDeleteOrphanFiles = deleteOrphanFiles;
     if (mergeLibraryItemsError != null) {
       throw mergeLibraryItemsError!;
     }
+    lastMergedSourceId = sourceItemId;
+    lastMergedTargetId = targetItemId;
+    lastMergeDeleteOrphanFiles = deleteOrphanFiles;
     final sourceEpisodes = episodesByItemId[sourceItemId] ?? [];
     final targetEpisodes = episodesByItemId[targetItemId] ?? [];
     final migrated = sourceEpisodes

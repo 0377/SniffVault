@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:sqlite3/sqlite3.dart';
 import 'package:video_sniffing/engine/engine_host.dart';
 
 const _sourceItemId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -25,20 +26,23 @@ Future<(String, String)> seedDuplicateSeriesForIntegration(
   await targetFile.writeAsBytes(const [0x78]);
 
   final dbPath = '$dataDir/library.db';
-  final sql = '''
+  final db = sqlite3.open(dbPath);
+  try {
+    db.execute('BEGIN');
+    db.execute('''
 INSERT INTO library_items (id, kind, title, season, poster_path, created_at_ms) VALUES
   ('$_sourceItemId', 'series', '${_escapeSql(title)}', $season, NULL, 1),
   ('$_targetItemId', 'series', '${_escapeSql(title)}', $season, NULL, 2);
 INSERT INTO library_episodes (id, item_id, idx, title, file_path, duration_ms, position_ms, source_url) VALUES
   ('$_sourceEpId', '$_sourceItemId', 1, '源1', '${_escapeSql(sourceFile.path)}', 10000, 0, NULL),
   ('$_targetEpId', '$_targetItemId', 2, '目标2', '${_escapeSql(targetFile.path)}', 10000, 0, NULL);
-''';
-
-  final result = await Process.run('sqlite3', [dbPath, sql]);
-  if (result.exitCode != 0) {
-    throw StateError(
-      'sqlite3 seed failed (exit ${result.exitCode}): ${result.stderr}',
-    );
+''');
+    db.execute('COMMIT');
+  } catch (error) {
+    db.execute('ROLLBACK');
+    rethrow;
+  } finally {
+    db.dispose();
   }
 
   return (_sourceItemId, _targetItemId);

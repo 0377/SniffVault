@@ -162,6 +162,20 @@ fn merge_delete_orphan_files_removes_conflict_source_file() {
 }
 
 #[test]
+fn merge_rejects_empty_source_series() {
+    let dir = tempdir().unwrap();
+    let mut engine = Engine::open(dir.path()).unwrap();
+    let seed = library_merge_seed::seed_duplicate_series(&engine, "示意剧", Some(1));
+    library_merge_seed::add_episode(&engine, &seed.target_item_id, 1, "目标1", "t1.mp4", 0);
+
+    let err = engine
+        .merge_library_items(&seed.source_item_id, &seed.target_item_id, false)
+        .unwrap_err();
+    assert!(matches!(err, EngineError::InvalidArg(_)));
+    assert_eq!(engine.list_library().unwrap().len(), 2);
+}
+
+#[test]
 fn merge_rejects_mismatched_title_season_or_single() {
     let dir = tempdir().unwrap();
     let mut engine = Engine::open(dir.path()).unwrap();

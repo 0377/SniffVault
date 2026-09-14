@@ -2,7 +2,8 @@ use crate::error::EngineError;
 use crate::ingest;
 use crate::library::delete;
 use crate::library::LibraryStore;
-use crate::types::{LibraryItem, LibraryItemKind};
+use crate::types::{LibraryEpisode, LibraryItem, LibraryItemKind};
+use std::collections::HashSet;
 use std::path::Path;
 
 pub(crate) fn validate_merge_pair(
@@ -27,6 +28,23 @@ pub(crate) fn validate_merge_pair(
     Ok(())
 }
 
+pub(crate) fn orphan_episode_ids_for_merge(
+    library: &LibraryStore,
+    source_eps: &[LibraryEpisode],
+    target_item_id: &str,
+) -> Result<Vec<String>, EngineError> {
+    let mut ids = Vec::new();
+    for ep in source_eps {
+        if library
+            .get_episode_by_item_index(target_item_id, ep.index)?
+            .is_some()
+        {
+            ids.push(ep.id.clone());
+        }
+    }
+    Ok(ids)
+}
+
 pub(crate) fn merge_items(
     library: &LibraryStore,
     media_dir: &Path,
@@ -35,17 +53,14 @@ pub(crate) fn merge_items(
     delete_orphan_files: bool,
 ) -> Result<(), EngineError> {
     let source_eps = library.list_episodes(&source.id)?;
+    let orphan_episode_ids = orphan_episode_ids_for_merge(library, &source_eps, &target.id)?;
+    let orphan_ids: HashSet<_> = orphan_episode_ids.iter().cloned().collect();
 
     let mut migrate: Vec<(String, String)> = Vec::new();
-    let mut orphan_episode_ids: Vec<String> = Vec::new();
     let mut orphan_paths = Vec::new();
 
     for ep in &source_eps {
-        if library
-            .get_episode_by_item_index(&target.id, ep.index)?
-            .is_some()
-        {
-            orphan_episode_ids.push(ep.id.clone());
+        if orphan_ids.contains(&ep.id) {
             if delete_orphan_files {
                 orphan_paths.push(ingest::ensure_path_in_media_dir(media_dir, &ep.file_path)?);
             }
