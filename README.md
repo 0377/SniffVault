@@ -16,7 +16,7 @@
 
 ## 持续集成
 
-合并到 `main` 前须通过 GitHub Actions：**fmt**（ubuntu）、**test + clippy**（Linux / macOS / Windows 三平台）、**flutter-test**（macOS 单元测试）、**flutter-integration**（macOS 引擎 FFI、UI、深链 U8、投送 U10、浏览 U6、片库删除 U11 与片库合并 U11b 集成冒烟，并行 job）。
+合并到 `main` 前须通过 GitHub Actions：**fmt**（ubuntu）、**test + clippy**（Linux / macOS / Windows 三平台）、**flutter-test**（macOS 单元测试）、**flutter-integration**（macOS 引擎 FFI、UI、深链 U8、投送 U10、浏览 U6、片库删除 U11、片库合并 U11b 与片库海报 U11c 集成冒烟，并行 job）。
 
 本地可运行与 CI 相同检查：
 
@@ -188,6 +188,25 @@ cd app && flutter test integration_test/library_rename_merge_test.dart -d macos
 ```
 
 规格见 `docs/superpowers/specs/2026-09-14-library-rename-merge-design.md`。
+
+## 片库海报（Plan 9c）
+
+新完成任务入库时自动下载 `og:image` 封面至 `media_dir/.posters/` 并展示；历史条目可在片库详情 → ⋮ → **抓取封面** / **刷新封面** 手动补抓。封面仅存本机，LAN 投送元数据不含海报路径。
+
+U11c 为 **Engine 级** 冒烟（经 `EngineHost` / FFI）：`seedCachedEpisode` 入库 → 写入 `poster_path` → `listLibrary` 回读 → `removeLibraryItem(deleteFiles: true)` 删除 `.posters` 文件。`enqueueSingle` 自动挂封面与 `refreshLibraryPoster` 由 Rust `library_poster` / `library_poster_ffi_test` 覆盖。
+
+```bash
+# Engine
+cargo fmt --manifest-path engine/Cargo.toml --all -- --check
+cargo test --manifest-path engine/Cargo.toml
+cargo clippy --manifest-path engine/Cargo.toml --all-targets --all-features -- -D warnings
+
+# Flutter widget + U11c 集成（macOS）
+cd app && flutter test
+cd app && flutter test integration_test/library_poster_test.dart -d macos
+```
+
+规格见 `docs/superpowers/specs/2026-09-14-library-poster-design.md`。
 
 ## 可交付 v0.1（Plan 8）
 
