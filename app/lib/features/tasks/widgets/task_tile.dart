@@ -50,6 +50,7 @@ class TaskTile extends StatelessWidget {
     required this.onCancel,
     required this.onRetry,
     required this.onRestore,
+    this.onEditUrlRetry,
   });
 
   final DownloadTask task;
@@ -58,6 +59,7 @@ class TaskTile extends StatelessWidget {
   final VoidCallback onCancel;
   final VoidCallback onRetry;
   final VoidCallback onRestore;
+  final VoidCallback? onEditUrlRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -117,6 +119,22 @@ class TaskTile extends StatelessWidget {
           icon: const Icon(Icons.play_arrow),
           tooltip: '恢复',
           onPressed: onRestore,
+        ),
+      );
+    }
+
+    if (taskCanRetry(task) && onEditUrlRetry != null) {
+      actions.add(
+        PopupMenuButton<void>(
+          key: Key('task_edit_url_menu_${task.id}'),
+          icon: const Icon(Icons.more_vert),
+          onSelected: (_) => onEditUrlRetry!(),
+          itemBuilder: (context) => const [
+            PopupMenuItem<void>(
+              value: 0,
+              child: Text('修改 URL 重试'),
+            ),
+          ],
         ),
       );
     }

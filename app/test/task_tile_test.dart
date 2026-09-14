@@ -202,4 +202,72 @@ void main() {
     );
     expect(indicator.value, isNull);
   });
+
+  testWidgets('W9d-4 edit url menu invokes onEditUrlRetry', (tester) async {
+    const task = DownloadTask(
+      id: 't-failed-edit',
+      title: '第01集',
+      sourceUrl: 'https://example/x.m3u8',
+      status: TaskStatus.failed,
+      errorMessage: 'http error',
+      progressBytes: 0,
+      createdAtMs: 1,
+      updatedAtMs: 1,
+    );
+    var editCalled = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TaskTile(
+            task: task,
+            onPause: () {},
+            onResume: () {},
+            onCancel: () {},
+            onRetry: () {},
+            onRestore: () {},
+            onEditUrlRetry: () => editCalled = true,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('task_edit_url_menu_t-failed-edit')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('修改 URL 重试'));
+    await tester.pumpAndSettle();
+    expect(editCalled, isTrue);
+  });
+
+  testWidgets('W9d-6 needs_sniff failed hides edit url menu', (tester) async {
+    const task = DownloadTask(
+      id: 't-sniff-failed-menu',
+      title: '第01集',
+      sourceUrl: 'https://example/play/1',
+      status: TaskStatus.failed,
+      errorMessage: TaskError.needsSniff,
+      progressBytes: 0,
+      createdAtMs: 1,
+      updatedAtMs: 1,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TaskTile(
+            task: task,
+            onPause: () {},
+            onResume: () {},
+            onCancel: () {},
+            onRetry: () {},
+            onRestore: () {},
+            onEditUrlRetry: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.byKey(const Key('task_edit_url_menu_t-sniff-failed-menu')),
+      findsNothing,
+    );
+  });
 }
