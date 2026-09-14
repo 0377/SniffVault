@@ -350,4 +350,40 @@ impl LibraryStore {
             .execute("DELETE FROM library_items WHERE id=?1", params![id])?;
         Ok(())
     }
+
+    pub(crate) fn apply_merge_in_tx(
+        &self,
+        migrate: &[(String, String)],
+        orphan_episode_ids: &[String],
+        source_item_id: &str,
+    ) -> Result<(), EngineError> {
+        let tx = self.conn.unchecked_transaction()?;
+        for (episode_id, new_item_id) in migrate {
+            let n = tx.execute(
+                "UPDATE library_episodes SET item_id=?1 WHERE id=?2",
+                params![new_item_id, episode_id],
+            )?;
+            if n == 0 {
+                return Err(EngineError::NotFound(format!("episode {episode_id}")));
+            }
+        }
+        for episode_id in orphan_episode_ids {
+            let n = tx.execute(
+                "DELETE FROM library_episodes WHERE id=?1",
+                params![episode_id],
+            )?;
+            if n == 0 {
+                return Err(EngineError::NotFound(format!("episode {episode_id}")));
+            }
+        }
+        let n = tx.execute(
+            "DELETE FROM library_items WHERE id=?1",
+            params![source_item_id],
+        )?;
+        if n == 0 {
+            return Err(EngineError::NotFound(format!("item {source_item_id}")));
+        }
+        tx.commit()?;
+        Ok(())
+    }
 }

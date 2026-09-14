@@ -567,6 +567,41 @@ impl Engine {
         self.library.update_episode_title(episode_id, &title)
     }
 
+    pub fn merge_library_items(
+        &mut self,
+        source_item_id: &str,
+        target_item_id: &str,
+        delete_orphan_files: bool,
+    ) -> Result<(), EngineError> {
+        if source_item_id == target_item_id {
+            return Err(EngineError::InvalidArg(
+                "source and target must differ".into(),
+            ));
+        }
+        let source = self.library.get_item(source_item_id)?;
+        let target = self.library.get_item(target_item_id)?;
+        let source_eps = self.library.list_episodes(source_item_id)?;
+        let orphan_ids: Vec<String> = source_eps
+            .iter()
+            .filter(|ep| {
+                self.library
+                    .get_episode_by_item_index(target_item_id, ep.index)
+                    .ok()
+                    .flatten()
+                    .is_some()
+            })
+            .map(|ep| ep.id.clone())
+            .collect();
+        self.finalize_lan_for_episodes(&orphan_ids)?;
+        crate::library::merge::merge_items(
+            &self.library,
+            &self.media_dir(),
+            &source,
+            &target,
+            delete_orphan_files,
+        )
+    }
+
     fn finalize_lan_for_episodes(&mut self, episode_ids: &[String]) -> Result<(), EngineError> {
         if self.lan.is_none() {
             return Ok(());
