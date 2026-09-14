@@ -466,12 +466,22 @@ pub unsafe extern "C" fn engine_resume_task(
 pub unsafe extern "C" fn engine_retry_task(
     handle: *mut EngineHandle,
     task_id: *const c_char,
+    new_url: *const c_char,
 ) -> *mut c_char {
     let task_id = match parse_c_str(task_id, "task_id") {
         Ok(id) => id,
         Err(err) => return rust_to_c_string(err_json(err)),
     };
-    ffi_call_mut(handle, |engine| engine.retry_task(&task_id))
+    let new_url = if new_url.is_null() {
+        None
+    } else {
+        match parse_c_str(new_url, "new_url") {
+            Ok(s) if s.is_empty() => None,
+            Ok(s) => Some(s),
+            Err(err) => return rust_to_c_string(err_json(err)),
+        }
+    };
+    ffi_call_mut(handle, |engine| engine.retry_task(&task_id, new_url.as_deref()))
 }
 
 #[no_mangle]
