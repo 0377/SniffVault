@@ -5,7 +5,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use support::engine_download::{
     interruptible_mp4_fixture_bytes, output_contains_ftyp, task_by_title,
-    wait_for_any_running_or_progress, wait_for_task, wait_for_task_failed, EngineFixture,
+    wait_for_any_running_or_progress, wait_for_hls_segment_file, wait_for_task,
+    wait_for_task_failed, EngineFixture,
 };
 use support::fixture_server;
 use support::hls_fixture::{build_multi_segment_hls_fixture, fixtures_hls_dir};
@@ -387,7 +388,13 @@ fn orphaned_running_hls_resumes_after_reopen() {
         let mut fx = EngineFixture::open();
         let hls_fixture = fx.data_dir().join("fixtures/hls");
         build_multi_segment_hls_fixture(&hls_fixture, 3);
-        let (addr, _guard) = fixture_server::serve_dir(hls_fixture).await;
+        let seg1_blocked = Arc::new(AtomicBool::new(true));
+        let (addr, _guard) = fixture_server::serve_dir_fail_path_gated(
+            hls_fixture,
+            "segments/seg1.ts",
+            seg1_blocked.clone(),
+        )
+        .await;
         let url = format!("http://{addr}/many.m3u8");
 
         let task_id = fx
@@ -395,22 +402,14 @@ fn orphaned_running_hls_resumes_after_reopen() {
             .enqueue_single("crash-resume", &url, None, None)
             .unwrap();
         fx.engine.start_downloads().unwrap();
-        let temp = fx.media_dir().join(".dl").join(&task_id);
-        let partial_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
-        loop {
-            if temp.join("seg0000.ts").is_file() {
-                break;
-            }
-            let tasks = fx.engine.list_tasks().unwrap();
-            let task = tasks.iter().find(|t| t.id == task_id).unwrap();
-            if task.status == TaskStatus::Completed {
-                panic!("download finished before partial progress could be captured");
-            }
-            if tokio::time::Instant::now() > partial_deadline {
-                panic!("timeout waiting for first HLS segment");
-            }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
+        wait_for_hls_segment_file(
+            &fx.media_dir(),
+            &task_id,
+            0,
+            &fx.engine,
+            Duration::from_secs(30),
+        )
+        .await;
 
         let mut store = TaskStore::open(&fx.data_dir().join("tasks.db")).unwrap();
         let running = store.get(&task_id).unwrap();
@@ -426,6 +425,7 @@ fn orphaned_running_hls_resumes_after_reopen() {
             )
             .unwrap();
 
+        seg1_blocked.store(false, Ordering::SeqCst);
         fx.engine.start_downloads().unwrap();
         wait_for_task(
             &fx.engine,
@@ -452,7 +452,13 @@ fn pause_without_worker_rebuilds_checkpoint_from_temp() {
         let mut fx = EngineFixture::open();
         let hls_fixture = fx.data_dir().join("fixtures/hls");
         build_multi_segment_hls_fixture(&hls_fixture, 3);
-        let (addr, _guard) = fixture_server::serve_dir(hls_fixture).await;
+        let seg1_blocked = Arc::new(AtomicBool::new(true));
+        let (addr, _guard) = fixture_server::serve_dir_fail_path_gated(
+            hls_fixture,
+            "segments/seg1.ts",
+            seg1_blocked.clone(),
+        )
+        .await;
         let url = format!("http://{addr}/many.m3u8");
 
         let task_id = fx
@@ -460,18 +466,14 @@ fn pause_without_worker_rebuilds_checkpoint_from_temp() {
             .enqueue_single("pause-offline", &url, None, None)
             .unwrap();
         fx.engine.start_downloads().unwrap();
-
-        let temp = fx.media_dir().join(".dl").join(&task_id);
-        let partial_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
-        loop {
-            if temp.join("seg0000.ts").is_file() {
-                break;
-            }
-            if tokio::time::Instant::now() > partial_deadline {
-                panic!("timeout waiting for first HLS segment");
-            }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
+        wait_for_hls_segment_file(
+            &fx.media_dir(),
+            &task_id,
+            0,
+            &fx.engine,
+            Duration::from_secs(30),
+        )
+        .await;
 
         fx.engine.stop_downloads().unwrap();
 

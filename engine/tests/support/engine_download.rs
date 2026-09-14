@@ -68,6 +68,38 @@ pub async fn wait_for_task(engine: &Engine, task_id: &str, want: TaskStatus, tim
     }
 }
 
+pub async fn wait_for_hls_segment_file(
+    media_dir: &std::path::Path,
+    task_id: &str,
+    segment_index: u32,
+    engine: &Engine,
+    timeout: Duration,
+) {
+    let seg_path = media_dir
+        .join(".dl")
+        .join(task_id)
+        .join(format!("seg{segment_index:04}.ts"));
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        if seg_path.is_file() {
+            return;
+        }
+        let task = engine
+            .list_tasks()
+            .unwrap()
+            .into_iter()
+            .find(|t| t.id == task_id)
+            .unwrap_or_else(|| panic!("task {task_id} not found"));
+        if task.status == TaskStatus::Completed {
+            panic!("download finished before partial progress could be captured");
+        }
+        if tokio::time::Instant::now() > deadline {
+            panic!("timeout waiting for HLS segment {segment_index}");
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
 pub async fn wait_for_any_running_or_progress(
     engine: &Engine,
     task_id: &str,

@@ -90,6 +90,9 @@ fn read_hls_snapshot(temp_dir: &Path) -> Result<Option<(String, MediaPlaylist)>,
 }
 
 fn scan_hls_segments(temp_dir: &Path) -> Result<Option<HlsSegmentScan>, EngineError> {
+    if !temp_dir.is_dir() {
+        return Ok(None);
+    }
     let mut pairs = Vec::new();
     for entry in std::fs::read_dir(temp_dir)? {
         let entry = entry?;
