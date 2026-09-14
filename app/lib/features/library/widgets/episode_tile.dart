@@ -20,12 +20,14 @@ class EpisodeTile extends StatelessWidget {
     required this.episode,
     required this.onTap,
     this.onCast,
+    this.onRename,
     this.onDelete,
   });
 
   final LibraryEpisode episode;
   final VoidCallback onTap;
   final VoidCallback? onCast;
+  final VoidCallback? onRename;
   final VoidCallback? onDelete;
 
   @override
@@ -51,7 +53,7 @@ class EpisodeTile extends StatelessWidget {
   }
 
   Widget? _buildTrailing(bool showResume) {
-    if (onCast == null && !showResume && onDelete == null) {
+    if (onCast == null && !showResume && onRename == null && onDelete == null) {
       return null;
     }
     return Row(
@@ -70,16 +72,24 @@ class EpisodeTile extends StatelessWidget {
             visualDensity: VisualDensity.compact,
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
-        if (onDelete != null)
+        if (onRename != null || onDelete != null)
           PopupMenuButton<String>(
             key: Key('episode_menu_${episode.id}'),
             onSelected: (value) {
-              if (value == 'delete') {
+              if (value == 'rename') {
+                onRename!();
+              } else if (value == 'delete') {
                 onDelete!();
               }
             },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'delete', child: Text('删除此分集')),
+            itemBuilder: (_) => [
+              if (onRename != null)
+                const PopupMenuItem(value: 'rename', child: Text('重命名')),
+              if (onDelete != null)
+                const PopupMenuItem(
+                  value: 'delete',
+                  child: Text('删除此分集'),
+                ),
             ],
           ),
       ],

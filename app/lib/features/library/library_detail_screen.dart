@@ -10,6 +10,7 @@ import 'package:video_sniffing/ui/error_presenter.dart';
 import 'package:video_sniffing/features/cast/cast_actions.dart';
 import 'package:video_sniffing/features/library/widgets/confirm_delete_dialog.dart';
 import 'package:video_sniffing/features/library/widgets/episode_tile.dart';
+import 'package:video_sniffing/features/library/widgets/rename_dialog.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
 import 'package:video_sniffing/providers/library_provider.dart';
 
@@ -59,9 +60,7 @@ class LibraryDetailScreen extends ConsumerWidget {
                     key: const Key('library_detail_menu'),
                     onSelected: (value) =>
                         _onMenuSelected(context, ref, value, item!, episodes),
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(value: 'delete', child: Text('删除')),
-                    ],
+                    itemBuilder: (_) => _detailMenuItems(item!),
                   ),
               ],
             ),
@@ -109,7 +108,7 @@ class LibraryDetailScreen extends ConsumerWidget {
       );
     }
 
-    final canDeleteEpisode =
+    final canManageEpisode =
         item?.kind == LibraryItemKind.series && episodes.length >= 2;
 
     return ListView.builder(
@@ -123,13 +122,23 @@ class LibraryDetailScreen extends ConsumerWidget {
           onCast: canCast
               ? () => requestCast(context, ref, episode.id)
               : null,
-          onDelete: canDeleteEpisode
+          onRename: canManageEpisode
+              ? () => _renameEpisode(context, ref, episode)
+              : null,
+          onDelete: canManageEpisode
               ? () => _confirmDeleteEpisode(context, ref, episode)
               : null,
         );
       },
     );
   }
+}
+
+List<PopupMenuEntry<String>> _detailMenuItems(LibraryItem item) {
+  return [
+    const PopupMenuItem(value: 'rename', child: Text('重命名')),
+    const PopupMenuItem(value: 'delete', child: Text('删除')),
+  ];
 }
 
 Future<void> _onMenuSelected(
@@ -139,8 +148,78 @@ Future<void> _onMenuSelected(
   LibraryItem item,
   List<LibraryEpisode> episodes,
 ) async {
-  if (value == 'delete') {
+  if (value == 'rename') {
+    await _renameItem(context, ref, item);
+  } else if (value == 'delete') {
     await _confirmDeleteItem(context, ref, item, episodes);
+  }
+}
+
+Future<void> _renameItem(
+  BuildContext context,
+  WidgetRef ref,
+  LibraryItem item,
+) async {
+  final newTitle = await showRenameDialogResult(
+    context,
+    initialTitle: item.title,
+  );
+  if (newTitle == null) {
+    return;
+  }
+
+  final repo = ref.read(engineRepositoryProvider);
+  try {
+    repo.renameLibraryItem(item.id, newTitle);
+    ref.invalidate(libraryProvider);
+
+    if (!context.mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已重命名')),
+    );
+  } on EngineException catch (e) {
+    final message = presentEngineError(e);
+    if (message != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    }
+  }
+}
+
+Future<void> _renameEpisode(
+  BuildContext context,
+  WidgetRef ref,
+  LibraryEpisode episode,
+) async {
+  final newTitle = await showRenameDialogResult(
+    context,
+    initialTitle: episode.title,
+  );
+  if (newTitle == null) {
+    return;
+  }
+
+  final repo = ref.read(engineRepositoryProvider);
+  try {
+    repo.renameEpisode(episode.id, newTitle);
+    ref.invalidate(libraryProvider);
+
+    if (!context.mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已重命名')),
+    );
+  } on EngineException catch (e) {
+    final message = presentEngineError(e);
+    if (message != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    }
   }
 }
 

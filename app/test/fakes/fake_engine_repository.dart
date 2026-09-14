@@ -140,11 +140,11 @@ class FakeEngineRepository implements EngineRepository {
 
   @override
   void renameLibraryItem(String itemId, String title) {
-    lastRenamedItemId = itemId;
-    lastRenamedTitle = title;
     if (renameLibraryItemError != null) {
       throw renameLibraryItemError!;
     }
+    lastRenamedItemId = itemId;
+    lastRenamedTitle = title;
     libraryItems = libraryItems
         .map(
           (item) => item.id == itemId
@@ -179,11 +179,11 @@ class FakeEngineRepository implements EngineRepository {
 
   @override
   void renameEpisode(String episodeId, String title) {
-    lastRenamedEpisodeId = episodeId;
-    lastRenamedEpisodeTitle = title;
     if (renameEpisodeError != null) {
       throw renameEpisodeError!;
     }
+    lastRenamedEpisodeId = episodeId;
+    lastRenamedEpisodeTitle = title;
     for (final entry in episodesByItemId.entries.toList()) {
       final next = entry.value
           .map(
