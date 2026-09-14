@@ -49,7 +49,7 @@ abstract class EngineRepository {
   void startDownloads();
   void pauseTask(String taskId);
   void resumeTask(String taskId);
-  void retryTask(String taskId);
+  void retryTask(String taskId, {String? newUrl});
   void restoreTask(String taskId);
   void cancelTask(String taskId);
   void setTaskMediaUrl(String taskId, String mediaUrl);
@@ -173,7 +173,8 @@ class EngineHostRepository implements EngineRepository {
   void resumeTask(String taskId) => _host.resumeTask(taskId);
 
   @override
-  void retryTask(String taskId) => _host.retryTask(taskId);
+  void retryTask(String taskId, {String? newUrl}) =>
+      _host.retryTask(taskId, newUrl: newUrl);
 
   @override
   void restoreTask(String taskId) => _host.restoreTask(taskId);

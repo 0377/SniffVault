@@ -83,6 +83,8 @@ class FakeEngineRepository implements EngineRepository {
   String? lastPairHost;
   int? lastPairPort;
   String? lastPairPin;
+  String? lastRetryTaskId;
+  String? lastRetryNewUrl;
   final _events = StreamController<TaskEvent>.broadcast();
   final _castEvents = StreamController<CastEvent>.broadcast();
 
@@ -301,7 +303,10 @@ class FakeEngineRepository implements EngineRepository {
   void resumeTask(String taskId) {}
 
   @override
-  void retryTask(String taskId) {}
+  void retryTask(String taskId, {String? newUrl}) {
+    lastRetryTaskId = taskId;
+    lastRetryNewUrl = newUrl;
+  }
 
   @override
   void restoreTask(String taskId) {}
