@@ -65,6 +65,16 @@ class FakeEngineRepository implements EngineRepository {
   EngineException? castEpisodeError;
   EngineException? removeLibraryItemError;
   EngineException? removeEpisodeError;
+  String? lastRenamedItemId;
+  String? lastRenamedTitle;
+  String? lastRenamedEpisodeId;
+  String? lastRenamedEpisodeTitle;
+  EngineException? renameLibraryItemError;
+  EngineException? renameEpisodeError;
+  String? lastMergedSourceId;
+  String? lastMergedTargetId;
+  bool? lastMergeDeleteOrphanFiles;
+  EngineException? mergeLibraryItemsError;
   String? lastPairHost;
   int? lastPairPort;
   String? lastPairPin;
@@ -126,6 +136,110 @@ class FakeEngineRepository implements EngineRepository {
         break;
       }
     }
+  }
+
+  @override
+  void renameLibraryItem(String itemId, String title) {
+    lastRenamedItemId = itemId;
+    lastRenamedTitle = title;
+    if (renameLibraryItemError != null) {
+      throw renameLibraryItemError!;
+    }
+    libraryItems = libraryItems
+        .map(
+          (item) => item.id == itemId
+              ? LibraryItem(
+                  id: item.id,
+                  kind: item.kind,
+                  title: title,
+                  season: item.season,
+                  posterPath: item.posterPath,
+                  createdAtMs: item.createdAtMs,
+                )
+              : item,
+        )
+        .toList();
+    final episodes = episodesByItemId[itemId];
+    if (episodes != null && episodes.length == 1) {
+      final episode = episodes.first;
+      episodesByItemId[itemId] = [
+        LibraryEpisode(
+          id: episode.id,
+          itemId: episode.itemId,
+          index: episode.index,
+          title: title,
+          filePath: episode.filePath,
+          durationMs: episode.durationMs,
+          positionMs: episode.positionMs,
+          sourceUrl: episode.sourceUrl,
+        ),
+      ];
+    }
+  }
+
+  @override
+  void renameEpisode(String episodeId, String title) {
+    lastRenamedEpisodeId = episodeId;
+    lastRenamedEpisodeTitle = title;
+    if (renameEpisodeError != null) {
+      throw renameEpisodeError!;
+    }
+    for (final entry in episodesByItemId.entries.toList()) {
+      final next = entry.value
+          .map(
+            (episode) => episode.id == episodeId
+                ? LibraryEpisode(
+                    id: episode.id,
+                    itemId: episode.itemId,
+                    index: episode.index,
+                    title: title,
+                    filePath: episode.filePath,
+                    durationMs: episode.durationMs,
+                    positionMs: episode.positionMs,
+                    sourceUrl: episode.sourceUrl,
+                  )
+                : episode,
+          )
+          .toList();
+      if (next.any((episode) => episode.id == episodeId)) {
+        episodesByItemId[entry.key] = next;
+        break;
+      }
+    }
+  }
+
+  @override
+  void mergeLibraryItems(
+    String sourceItemId,
+    String targetItemId, {
+    bool deleteOrphanFiles = false,
+  }) {
+    lastMergedSourceId = sourceItemId;
+    lastMergedTargetId = targetItemId;
+    lastMergeDeleteOrphanFiles = deleteOrphanFiles;
+    if (mergeLibraryItemsError != null) {
+      throw mergeLibraryItemsError!;
+    }
+    final sourceEpisodes = episodesByItemId[sourceItemId] ?? [];
+    final targetEpisodes = episodesByItemId[targetItemId] ?? [];
+    final migrated = sourceEpisodes
+        .map(
+          (episode) => LibraryEpisode(
+            id: episode.id,
+            itemId: targetItemId,
+            index: episode.index,
+            title: episode.title,
+            filePath: episode.filePath,
+            durationMs: episode.durationMs,
+            positionMs: episode.positionMs,
+            sourceUrl: episode.sourceUrl,
+          ),
+        )
+        .toList();
+    episodesByItemId[targetItemId] = [...targetEpisodes, ...migrated];
+    episodesByItemId.remove(sourceItemId);
+    libraryItems =
+        libraryItems.where((item) => item.id != sourceItemId).toList();
   }
 
   @override

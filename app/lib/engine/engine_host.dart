@@ -330,6 +330,53 @@ class EngineHost {
     });
   }
 
+  void renameLibraryItem(String itemId, String title) {
+    _withUtf8(itemId, (itemIdPtr) {
+      _withUtf8(title, (titlePtr) {
+        _callSyncVoid(
+          (handle) => _bindings.engineRenameLibraryItem(
+            handle,
+            itemIdPtr,
+            titlePtr,
+          ),
+        );
+      });
+    });
+  }
+
+  void renameEpisode(String episodeId, String title) {
+    _withUtf8(episodeId, (episodeIdPtr) {
+      _withUtf8(title, (titlePtr) {
+        _callSyncVoid(
+          (handle) => _bindings.engineRenameEpisode(
+            handle,
+            episodeIdPtr,
+            titlePtr,
+          ),
+        );
+      });
+    });
+  }
+
+  void mergeLibraryItems(
+    String sourceItemId,
+    String targetItemId, {
+    bool deleteOrphanFiles = false,
+  }) {
+    _withUtf8(sourceItemId, (sourcePtr) {
+      _withUtf8(targetItemId, (targetPtr) {
+        _callSyncVoid(
+          (handle) => _bindings.engineMergeLibraryItems(
+            handle,
+            sourcePtr,
+            targetPtr,
+            deleteOrphanFiles ? 1 : 0,
+          ),
+        );
+      });
+    });
+  }
+
   List<ResourceCandidate> sniffUrls(
     List<SniffEvent> events, {
     String? pageUrl,
