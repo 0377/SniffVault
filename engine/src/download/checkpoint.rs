@@ -75,6 +75,8 @@ fn is_hls_url(url: &str) -> bool {
     lower.contains(".m3u8") || lower.ends_with("m3u8")
 }
 
+type HlsSegmentScan = (Vec<u32>, Vec<String>);
+
 fn read_hls_snapshot(temp_dir: &Path) -> Result<Option<(String, MediaPlaylist)>, EngineError> {
     let url_path = temp_dir.join(HLS_MEDIA_URL_FILE);
     let playlist_path = temp_dir.join(HLS_MEDIA_PLAYLIST_FILE);
@@ -87,7 +89,7 @@ fn read_hls_snapshot(temp_dir: &Path) -> Result<Option<(String, MediaPlaylist)>,
     Ok(Some((media_url, playlist)))
 }
 
-fn scan_hls_segments(temp_dir: &Path) -> Result<Option<(Vec<u32>, Vec<String>)>, EngineError> {
+fn scan_hls_segments(temp_dir: &Path) -> Result<Option<HlsSegmentScan>, EngineError> {
     let mut pairs = Vec::new();
     for entry in std::fs::read_dir(temp_dir)? {
         let entry = entry?;

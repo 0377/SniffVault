@@ -120,18 +120,22 @@ pub async fn download_segment(
     Ok(())
 }
 
+pub(crate) struct SegmentDownloadContext<'a> {
+    pub temp_dir: &'a Path,
+    pub skip_indices: &'a [u32],
+    pub existing_paths: &'a [PathBuf],
+    pub progress: Option<Arc<Mutex<HlsDownloadState>>>,
+    pub on_segment_progress: Option<SegmentProgressCallback>,
+    pub total_segments: u64,
+}
+
 pub async fn download_segments(
     http: &HttpClient,
     playlist: &MediaPlaylist,
     playlist_url: &str,
-    temp_dir: &Path,
-    skip_indices: &[u32],
-    existing_paths: &[PathBuf],
-    progress: Option<Arc<Mutex<HlsDownloadState>>>,
-    on_segment_progress: Option<SegmentProgressCallback>,
-    total_segments: u64,
+    ctx: SegmentDownloadContext<'_>,
 ) -> Result<Vec<PathBuf>, EngineError> {
-    fs::create_dir_all(temp_dir).await?;
+    fs::create_dir_all(ctx.temp_dir).await?;
 
     let aes_key = if let Some(tag) = playlist.encryption.as_ref() {
         Some(fetch_aes128_key(http, &tag.uri, playlist_url).await?)
@@ -139,14 +143,14 @@ pub async fn download_segments(
         None
     };
 
-    let mut paths = existing_paths.to_vec();
+    let mut paths = ctx.existing_paths.to_vec();
     for (index, segment) in playlist.segments.iter().enumerate() {
         let index_u32 = index as u32;
-        if skip_indices.contains(&index_u32) {
+        if ctx.skip_indices.contains(&index_u32) {
             continue;
         }
 
-        let dest = temp_dir.join(format!("seg{index:04}.ts"));
+        let dest = ctx.temp_dir.join(format!("seg{index:04}.ts"));
         download_segment(
             http,
             segment,
@@ -158,7 +162,7 @@ pub async fn download_segments(
         )
         .await?;
         paths.push(dest.clone());
-        if let Some(state) = &progress {
+        if let Some(state) = &ctx.progress {
             let mut s = state.lock().await;
             if !s.segments_done.contains(&index_u32) {
                 s.segments_done.push(index_u32);
@@ -169,8 +173,8 @@ pub async fn download_segments(
             }
         }
         let done = paths.len() as u64;
-        if let Some(on_progress) = &on_segment_progress {
-            on_progress(done, total_segments);
+        if let Some(on_progress) = &ctx.on_segment_progress {
+            on_progress(done, ctx.total_segments);
         }
     }
 

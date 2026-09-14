@@ -10,7 +10,7 @@ use crate::download::hls::merge::merge_segments_to_mp4;
 use crate::download::hls::playlist::{
     parse_media_playlist, select_media_playlist_url, MediaPlaylist,
 };
-use crate::download::hls::segments::download_segments;
+use crate::download::hls::segments::{download_segments, SegmentDownloadContext};
 use crate::download::http::HttpClient;
 use crate::error::EngineError;
 use std::path::{Path, PathBuf};
@@ -169,12 +169,14 @@ pub(crate) async fn download_hls_to_mp4(
         ctx.http,
         &playlist,
         &media_playlist_url,
-        ctx.temp_dir,
-        &skip_indices,
-        &existing_paths,
-        progress.clone(),
-        ctx.on_segment_progress.clone(),
-        total_segments,
+        SegmentDownloadContext {
+            temp_dir: ctx.temp_dir,
+            skip_indices: &skip_indices,
+            existing_paths: &existing_paths,
+            progress: progress.clone(),
+            on_segment_progress: ctx.on_segment_progress.clone(),
+            total_segments,
+        },
     )
     .await?;
 

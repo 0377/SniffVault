@@ -7,6 +7,7 @@ pub trait FfmpegLocator: Send + Sync {
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
+#[derive(Default)]
 pub struct BundledFfmpegLocator {
     data_dir: Option<PathBuf>,
 }
@@ -71,12 +72,6 @@ impl BundledFfmpegLocator {
     }
 }
 
-impl Default for BundledFfmpegLocator {
-    fn default() -> Self {
-        Self { data_dir: None }
-    }
-}
-
 #[cfg_attr(not(test), allow(dead_code))]
 impl FfmpegLocator for BundledFfmpegLocator {
     fn resolve(&self) -> Result<PathBuf, EngineError> {
@@ -101,9 +96,7 @@ impl FfmpegLocator for BundledFfmpegLocator {
 
 fn ffmpeg_not_found_message() -> String {
     if cfg!(target_os = "android") {
-        format!(
-            "未找到 ffmpeg，请重新安装应用；开发构建请执行 engine/scripts/fetch_ffmpeg_android.sh 并重新编译"
-        )
+        "未找到 ffmpeg，请重新安装应用；开发构建请执行 engine/scripts/fetch_ffmpeg_android.sh 并重新编译".to_string()
     } else {
         format!(
             "未找到 ffmpeg，请执行 engine/scripts/fetch_ffmpeg.sh，或确保应用包内存在 Resources/{}",
