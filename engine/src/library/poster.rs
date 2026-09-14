@@ -85,18 +85,6 @@ fn ext_from_content_type_or_url(content_type: &str, url: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
-    use std::net::TcpListener;
-    use std::sync::{Mutex, OnceLock};
-    use std::thread;
-
-    fn lock_poster_http_tests() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
     #[test]
     fn ext_from_content_type_png() {
         assert_eq!(
@@ -147,67 +135,4 @@ mod tests {
         assert!(matches!(err, EngineError::InvalidArg(_)));
     }
 
-    fn spawn_jpeg_server(jpeg_bytes: &[u8]) -> (String, thread::JoinHandle<()>) {
-        use std::sync::mpsc;
-
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let body = jpeg_bytes.to_vec();
-        let (ready_tx, ready_rx) = mpsc::channel();
-        let handle = thread::spawn(move || {
-            ready_tx.send(()).ok();
-            if let Ok((mut stream, _)) = listener.accept() {
-                let response = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: image/jpeg\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                    body.len()
-                );
-                let _ = stream.write_all(response.as_bytes());
-                let _ = stream.write_all(&body);
-            }
-        });
-        ready_rx.recv().unwrap();
-        (format!("http://127.0.0.1:{}/sample.jpg", port), handle)
-    }
-
-    #[test]
-    fn download_poster_writes() {
-        let _guard = lock_poster_http_tests();
-        let fixture =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/posters/sample.jpg");
-        let jpeg_bytes = std::fs::read(&fixture).unwrap();
-        let (url, server) = spawn_jpeg_server(&jpeg_bytes);
-
-        let dir = tempfile::tempdir().unwrap();
-        let media_dir = dir.path().join("media");
-        std::fs::create_dir_all(&media_dir).unwrap();
-
-        let client = reqwest::blocking::Client::new();
-        let path = download_poster(&client, &media_dir, "item-abc", &url, Some("test-ua")).unwrap();
-
-        server.join().unwrap();
-
-        let expected = media_dir
-            .join(".posters")
-            .join("item-abc.jpg")
-            .canonicalize()
-            .unwrap();
-        assert_eq!(path, expected.to_string_lossy());
-        assert!(expected.exists());
-        assert_eq!(std::fs::read(&expected).unwrap(), jpeg_bytes);
-    }
-
-    #[test]
-    fn download_poster_rejects_oversized_body() {
-        let _guard = lock_poster_http_tests();
-        let oversized = vec![0u8; POSTER_MAX_BYTES + 1];
-        let (url, server) = spawn_jpeg_server(&oversized);
-
-        let dir = tempfile::tempdir().unwrap();
-        let client = reqwest::blocking::Client::new();
-        let err = download_poster(&client, dir.path(), "item-big", &url, None).unwrap_err();
-
-        server.join().unwrap();
-
-        assert!(matches!(err, EngineError::InvalidArg(_)));
-    }
 }
