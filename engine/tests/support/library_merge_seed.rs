@@ -44,6 +44,22 @@ pub fn seed_duplicate_series(
     }
 }
 
+pub fn seed_duplicate_series_with_source_poster(
+    engine: &Engine,
+    title: &str,
+    season: Option<u32>,
+    poster_abs_path: &str,
+) -> DuplicateSeriesSeed {
+    let seed = seed_duplicate_series(engine, title, season);
+    let media_dir = engine.media_dir();
+    let data_dir = media_dir.parent().unwrap();
+    let store = LibraryStore::open(&data_dir.join("library.db")).unwrap();
+    store
+        .update_item_poster_path(&seed.source_item_id, poster_abs_path)
+        .expect("seed source poster");
+    seed
+}
+
 pub fn add_episode(
     engine: &Engine,
     item_id: &str,

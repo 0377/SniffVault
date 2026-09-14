@@ -73,5 +73,5 @@ pub(crate) fn merge_items(
         delete::delete_files(&orphan_paths)?;
     }
 
-    library.apply_merge_in_tx(&migrate, &orphan_episode_ids, &source.id)
+    library.apply_merge_in_tx(&migrate, &orphan_episode_ids, &source.id, &target.id)
 }
