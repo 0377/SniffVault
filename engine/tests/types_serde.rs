@@ -147,11 +147,12 @@ fn download_task_json_omits_auth_snapshot() {
         cookie_header: Some("sid=secret".into()),
         referer: Some("https://example.com/page".into()),
         resolved_media_url: None,
-        poster_url: None,
+        poster_url: Some("https://example.com/p.jpg".into()),
     };
     let value = serde_json::to_value(&task).unwrap();
     assert!(value.get("cookie_header").is_none());
     assert!(value.get("referer").is_none());
+    assert!(value.get("poster_url").is_none());
     assert_eq!(value["source_url"], "https://example.com/v.mp4");
     assert!(!serde_json::to_string(&task).unwrap().contains("sid=secret"));
 }

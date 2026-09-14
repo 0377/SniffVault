@@ -68,3 +68,40 @@ fn enqueue_single_with_auth_list_tasks_omits_cookie() {
     unsafe { engine_free_string(listed) };
     unsafe { engine_destroy(handle) };
 }
+
+#[test]
+fn enqueue_single_with_poster_only_opts_persists_poster_url() {
+    let dir = tempdir().unwrap();
+    let path = CString::new(dir.path().to_str().unwrap()).unwrap();
+    let handle = unsafe { engine_open(path.as_ptr()) };
+    assert!(!handle.is_null());
+
+    let title = CString::new("poster").unwrap();
+    let url = CString::new("https://example.com/video.mp4").unwrap();
+    let opts = CString::new(r#"{"poster_url":"https://example.com/p.jpg"}"#).unwrap();
+    let result = unsafe {
+        engine_enqueue_single(
+            handle,
+            title.as_ptr(),
+            url.as_ptr(),
+            std::ptr::null(),
+            opts.as_ptr(),
+        )
+    };
+    assert!(!result.is_null());
+    unsafe { engine_free_string(result) };
+
+    let listed = unsafe { engine_list_tasks(handle) };
+    assert!(!listed.is_null());
+    let json_str = unsafe { CStr::from_ptr(listed).to_str().unwrap() };
+    let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+    assert_eq!(parsed["ok"], true);
+    let tasks = parsed["data"].as_array().unwrap();
+    assert_eq!(tasks.len(), 1);
+    assert_eq!(
+        tasks[0]["poster_url"].as_str(),
+        Some("https://example.com/p.jpg")
+    );
+    unsafe { engine_free_string(listed) };
+    unsafe { engine_destroy(handle) };
+}

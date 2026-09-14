@@ -1,3 +1,4 @@
+use std::io::Read;
 use std::path::Path;
 
 use crate::error::EngineError;
@@ -21,7 +22,7 @@ pub(crate) fn download_poster(
     if let Some(ua) = user_agent {
         req = req.header(reqwest::header::USER_AGENT, ua);
     }
-    let resp = req
+    let mut resp = req
         .send()
         .map_err(|e| EngineError::Message(format!("poster download failed: {e}")))?;
     if !resp.status().is_success() {
@@ -44,17 +45,30 @@ pub(crate) fn download_poster(
     let posters_dir = media_dir.join(".posters");
     std::fs::create_dir_all(&posters_dir)?;
     let dest = posters_dir.join(format!("{item_id}.{ext}"));
-    let bytes = resp
-        .bytes()
-        .map_err(|e| EngineError::Message(format!("poster body: {e}")))?;
-    if bytes.len() > POSTER_MAX_BYTES {
-        return Err(EngineError::InvalidArg("poster exceeds 5 MiB".into()));
-    }
+    let bytes = read_poster_body(&mut resp)?;
     std::fs::write(&dest, &bytes)?;
     let canon = dest
         .canonicalize()
         .map_err(|e| EngineError::InvalidArg(format!("poster path: {e}")))?;
     Ok(canon.to_string_lossy().into())
+}
+
+fn read_poster_body(resp: &mut reqwest::blocking::Response) -> Result<Vec<u8>, EngineError> {
+    let mut bytes = Vec::new();
+    let mut chunk = [0u8; 16 * 1024];
+    loop {
+        let n = resp
+            .read(&mut chunk)
+            .map_err(|e| EngineError::Message(format!("poster body: {e}")))?;
+        if n == 0 {
+            break;
+        }
+        if bytes.len() + n > POSTER_MAX_BYTES {
+            return Err(EngineError::InvalidArg("poster exceeds 5 MiB".into()));
+        }
+        bytes.extend_from_slice(&chunk[..n]);
+    }
+    Ok(bytes)
 }
 
 fn ext_from_content_type_or_url(content_type: &str, url: &str) -> &'static str {

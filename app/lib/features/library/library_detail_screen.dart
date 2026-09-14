@@ -57,20 +57,22 @@ class LibraryDetailScreen extends ConsumerWidget {
           autofocus: true,
           child: Scaffold(
             appBar: AppBar(
-              leading: item != null &&
+              title: item != null &&
                       item.posterPath != null &&
                       item.posterPath!.isNotEmpty
-                  ? Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: PosterThumbnail(
-                        posterPath: item.posterPath,
-                        title: item.title,
-                        width: 48,
-                        height: 48,
-                      ),
+                  ? Row(
+                      children: [
+                        PosterThumbnail(
+                          posterPath: item.posterPath,
+                          title: item.title,
+                          width: 48,
+                          height: 48,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(child: Text(item.title)),
+                      ],
                     )
-                  : null,
-              title: Text(item?.title ?? '片库详情'),
+                  : Text(item?.title ?? '片库详情'),
               actions: [
                 if (item != null)
                   PopupMenuButton<String>(
@@ -195,6 +197,12 @@ Future<void> _refreshPoster(
   LibraryItem item,
 ) async {
   final repo = ref.read(engineRepositoryProvider);
+  final hadPoster = item.posterPath != null && item.posterPath!.isNotEmpty;
+  showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => const Center(child: CircularProgressIndicator()),
+  );
   try {
     repo.refreshLibraryPoster(item.id);
     ref.invalidate(libraryProvider);
@@ -202,16 +210,16 @@ Future<void> _refreshPoster(
     if (!context.mounted) {
       return;
     }
+    Navigator.of(context).pop();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          item.posterPath != null && item.posterPath!.isNotEmpty
-              ? '封面已刷新'
-              : '封面已抓取',
-        ),
+        content: Text(hadPoster ? '封面已刷新' : '封面已抓取'),
       ),
     );
   } on EngineException catch (e) {
+    if (context.mounted) {
+      Navigator.of(context).pop();
+    }
     final message = presentEngineError(e);
     if (message != null && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

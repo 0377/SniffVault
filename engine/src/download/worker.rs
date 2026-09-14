@@ -588,13 +588,7 @@ async fn run_one_task(
             let library_item_id = if let Some(id) = current.library_item_id.clone() {
                 id
             } else {
-                let poster_url = task.poster_url.clone().or_else(|| {
-                    if let Some(parent_id) = &task.parent_id {
-                        tasks.get(parent_id).ok().and_then(|p| p.poster_url.clone())
-                    } else {
-                        None
-                    }
-                });
+                let poster_url = resolve_poster_url_for_ingest(task, &tasks);
                 let user_agent = config.user_agent.as_deref();
                 let ingest_result = if let Some(parent_id) = &task.parent_id {
                     let parent = match tasks.get(parent_id) {
@@ -771,6 +765,14 @@ async fn persist_download_checkpoint(
     Ok(())
 }
 
+fn resolve_poster_url_for_ingest(task: &DownloadTask, tasks: &TaskStore) -> Option<String> {
+    task.poster_url.clone().or_else(|| {
+        task.parent_id
+            .as_ref()
+            .and_then(|parent_id| tasks.get(parent_id).ok().and_then(|p| p.poster_url.clone()))
+    })
+}
+
 fn classify_error(err: EngineError) -> TaskRunOutcome {
     if is_disk_full(&err) {
         TaskRunOutcome::DiskFull
@@ -859,6 +861,7 @@ pub(crate) fn cleanup_download_temp(media_dir: &Path, task_id: &str) {
 mod tests {
     use super::*;
     use crate::download::paths::{output_filename, sanitize_filename};
+    use crate::tasks::TaskStore;
 
     #[test]
     fn sanitize_url_for_log_strips_query() {
@@ -909,6 +912,61 @@ mod tests {
         std::fs::write(&tiny_path, b"ftyp").unwrap();
         let err = validate_download_output(&tiny_path, false).unwrap_err();
         assert_eq!(err.to_string(), "invalid_media");
+    }
+
+    #[test]
+    fn resolve_poster_url_inherits_from_parent_task() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();
+        let parent_id = "parent-1".to_string();
+        store
+            .upsert(&DownloadTask {
+                id: parent_id.clone(),
+                parent_id: None,
+                season: Some(1),
+                title: "Series".into(),
+                source_url: String::new(),
+                quality_label: None,
+                status: TaskStatus::Completed,
+                progress_bytes: 0,
+                total_bytes: None,
+                error_message: None,
+                output_path: None,
+                library_item_id: None,
+                episode_index: None,
+                created_at_ms: 1,
+                updated_at_ms: 1,
+                cookie_header: None,
+                referer: None,
+                resolved_media_url: None,
+                poster_url: Some("https://example.com/p.jpg".into()),
+            })
+            .unwrap();
+        let child = DownloadTask {
+            id: "child-1".into(),
+            parent_id: Some(parent_id),
+            season: Some(1),
+            title: "Ep1".into(),
+            source_url: "https://example.com/1.mp4".into(),
+            quality_label: None,
+            status: TaskStatus::Queued,
+            progress_bytes: 0,
+            total_bytes: None,
+            error_message: None,
+            output_path: None,
+            library_item_id: None,
+            episode_index: Some(1),
+            created_at_ms: 2,
+            updated_at_ms: 2,
+            cookie_header: None,
+            referer: None,
+            resolved_media_url: None,
+            poster_url: None,
+        };
+        assert_eq!(
+            resolve_poster_url_for_ingest(&child, &store).as_deref(),
+            Some("https://example.com/p.jpg")
+        );
     }
 
     #[test]
