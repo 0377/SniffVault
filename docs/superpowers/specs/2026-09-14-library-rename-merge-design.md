@@ -1,7 +1,8 @@
 # 片库重命名与 Series 手动合并设计（Plan 9b）
 
 **日期**: 2026-09-14  
-**状态**: 已定稿  
+**状态**: 已定稿（2026-09-14 review 修订）  
+**修订摘要**: Series 条目标题范围、L9b-9/10、W9b-5/6、U11b 范围、失败 SnackBar 固定  
 **前置**: Plan 9a 片库删除（已合并 main，`v0.1.1`）  
 **父规格**: `docs/superpowers/specs/2026-09-08-library-management-design.md`（§2.3–2.4、§3.2–3.3、§5.1）  
 **后续**: Plan 9c 海报抓取；Plan 9d 设置目录选择器 + 失败任务改 URL 重试  
@@ -36,7 +37,8 @@ Plan 9a 使用户能删除片库条目，但误下标题、重复 Series 壳仍�
 
 - **Engine 是唯一写入口**：重命名、合并均经 `Engine` 公开方法；`LibraryStore` 保持 crate-private。
 - **重命名不改磁盘路径**：仅更新 SQLite 展示字段 `library_items.title`、`library_episodes.title`；`file_path` 不变。
-- **Single 条目重命名同步分集标题**：`kind == Single` 时，`rename_library_item` 在同一事务内将唯一分集的 `title` 设为相同字符串（详情页无分集行菜单，避免标题不一致）。
+- **Single 条目重命名同步分集标题**：`kind == Single` 且 **恰有 1 个分集** 时，`rename_library_item` 在同一事务内将唯一分集的 `title` 设为相同字符串（详情页无分集行菜单，避免标题不一致）。
+- **Series 条目标题与分集标题分离**：`kind == Series` 时，`rename_library_item` **仅** 更新 `library_items.title`，**不** 批量修改各分集 `library_episodes.title`；分集改名走 `rename_episode`。
 - **合并单事务**：分集迁移、`item_id` 更新、源壳删除在 **单一 SQLite 事务** 内完成；`delete_orphan_files=true` 时磁盘删除在事务提交 **之前** 完成，任一步失败则 DB 不变。
 - **idx 冲突保留目标**：目标 Series 已有同 `idx` 分集时，保留 **目标** 行（含 `position_ms`、`file_path`）；丢弃源分集 DB 行；源文件是否删除由 `delete_orphan_files` 决定。
 - **LAN 安全**：对被删除或不再有效的分集 ID 调用与 9a 相同的 LAN 清理（revoke token + 匹配时清 `active_cast`）；`CastMetadata` 仍不含 `source_url`。
@@ -51,7 +53,7 @@ Plan 9a 使用户能删除片库条目，但误下标题、重复 Series 壳仍�
 1. 片库 → 条目详情 → AppBar **更多**（`⋮`）→ **重命名**。
 2. 对话框预填当前标题 → 用户编辑 → **保存**。
 3. 成功：SnackBar「已重命名」→ AppBar 标题与列表刷新（`ref.invalidate(libraryProvider)`）。
-4. 失败：SnackBar 展示引擎错误；对话框关闭或保留由实现选择，但 **不** 显示成功。
+4. 失败：`presentEngineError` + SnackBar 展示引擎错误（对齐 9a 删除）；**不** 显示成功；对话框可关闭或保留，但 **必须** SnackBar。
 
 **Single**：仅 AppBar 菜单提供重命名（与 9a 一致，正文为播放/投送按钮，无分集行）。
 
@@ -103,7 +105,15 @@ pub fn rename_episode(&self, episode_id: &str, title: &str) -> Result<(), Engine
 
 1. 加载条目；不存在 → `NotFound`。
 2. 校验标题。
-3. `BEGIN` → `UPDATE library_items SET title=?` → 若 `kind == Single` 且恰有 1 个分集，则 `UPDATE library_episodes SET title=? WHERE item_id=?` → `COMMIT`。
+3. 调用 `LibraryStore::rename_library_item_titles(item_id, title, single_episode_id)` 在 **单一 SQLite 事务** 内完成步骤 3 的 UPDATE（Engine **不** 直接持有 `conn()` 或开事务）。
+
+**Series 与 Single 行为差异**：
+
+| `kind` | `rename_library_item` 写入范围 |
+|--------|--------------------------------|
+| `Single`（恰 1 分集） | `library_items.title` + 唯一分集 `title` |
+| `Series` | 仅 `library_items.title` |
+| 其它 / 脏数据（分集数 ≠ 1 的 Single） | 仅 `library_items.title`（不猜测同步分集） |
 
 **`rename_episode` 算法**：
 
@@ -157,6 +167,20 @@ pub fn merge_library_items(
 ```rust
 pub fn update_item_title(&self, item_id: &str, title: &str) -> Result<(), EngineError>;
 pub fn update_episode_title(&self, episode_id: &str, title: &str) -> Result<(), EngineError>;
+/// Single 条目重命名：同事务更新 item title；若 `single_episode_id` 为 Some 则同步该分集 title。
+pub fn rename_library_item_titles(
+    &self,
+    item_id: &str,
+    title: &str,
+    single_episode_id: Option<&str>,
+) -> Result<(), EngineError>;
+/// merge 事务门面（merge 模块调用，不暴露 SQL 给 Engine 以外）
+pub(crate) fn apply_merge_in_tx(
+    &self,
+    migrate: &[(String, String)], // (episode_id, new_item_id)
+    orphan_episode_ids: &[String],
+    source_item_id: &str,
+) -> Result<(), EngineError>;
 /// 同事务批量更新分集 item_id（merge 内部使用）
 pub(crate) fn reassign_episode_item_in_tx(
     tx: &Transaction,
@@ -254,12 +278,14 @@ bool isMergeCandidate(LibraryItem source, LibraryItem other) =>
 | L9b-1 | `rename_library_item` 持久化；重启 Engine 后标题仍在 |
 | L9b-2 | Single 重命名条目后唯一分集 title 同步 |
 | L9b-3 | `rename_episode` 仅改分集 title，`file_path` 不变 |
+| L9b-3b | Series 的 `rename_library_item` 仅改条目标题，各分集 title 不变 |
 | L9b-4 | 空标题 / 超长标题 → `InvalidArg` |
 | L9b-5 | 合并：源 2 集迁入空目标，源壳删除，共 2 集 |
 | L9b-6 | idx 冲突：目标第 1 集 progress=5000，源第 1 集 progress=100 → 合并后仍为 5000 |
 | L9b-7 | idx 冲突 + `delete_orphan_files=true` → 源冲突文件删除，目标文件保留 |
 | L9b-8 | title/season 不匹配 / Single 参与 → `InvalidArg` |
-| L9b-9 | merge 中途 DB 失败无部分迁移（事务回滚） |
+| L9b-9 | `delete_orphan_files=true` 且 orphan 路径越界 → `InvalidArg`，两壳与分集 DB 不变 |
+| L9b-10 | 投送 orphan 分集后 merge → `active_cast` 清空，可对其它分集再次 `cast_episode` |
 
 ### 7.2 FFI
 
@@ -276,12 +302,14 @@ bool isMergeCandidate(LibraryItem source, LibraryItem other) =>
 | W9b-2 | 详情菜单重命名成功 invalidate 列表 |
 | W9b-3 | 合并确认默认不删 orphan 文件 |
 | W9b-4 | 合并成功调用 `mergeLibraryItems(source, target, deleteOrphanFiles: false)` |
+| W9b-5 | 重命名失败 SnackBar，Fake 未被调用或条目未变 |
+| W9b-6 | 分集行菜单重命名调用 `renameEpisode` |
 
 ### 7.4 集成
 
 | ID | 场景 |
 |----|------|
-| U11b | FFI/engine：建两个同 title+season Series 各 1 集 → merge → 片库剩 1 条、2 分集 |
+| U11b | **Engine 级**（经 `EngineHost` / FFI）：seed 两个同 title+season Series 壳各 1 集 → `mergeLibraryItems` → 片库剩 1 条、2 分集；**不要求**走完整 UI 向导 |
 
 CI：在既有 `flutter-integration` 矩阵中新增 `library_rename_merge` suite（或扩展现有 `library` job），与 U11 并列本地门禁。
 
