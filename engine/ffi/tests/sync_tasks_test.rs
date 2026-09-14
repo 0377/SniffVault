@@ -1,6 +1,7 @@
 use std::ffi::{CStr, CString};
 
 use tempfile::tempdir;
+use video_sniffing_engine::tasks::TaskStore;
 use video_sniffing_engine_ffi::handle::{engine_destroy, engine_free_string, engine_open};
 use video_sniffing_engine_ffi::sync_dispatch::{engine_enqueue_single, engine_list_tasks};
 
@@ -89,19 +90,17 @@ fn enqueue_single_with_poster_only_opts_persists_poster_url() {
         )
     };
     assert!(!result.is_null());
-    unsafe { engine_free_string(result) };
-
-    let listed = unsafe { engine_list_tasks(handle) };
-    assert!(!listed.is_null());
-    let json_str = unsafe { CStr::from_ptr(listed).to_str().unwrap() };
+    let json_str = unsafe { CStr::from_ptr(result).to_str().unwrap() };
     let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
     assert_eq!(parsed["ok"], true);
-    let tasks = parsed["data"].as_array().unwrap();
-    assert_eq!(tasks.len(), 1);
+    let task_id = parsed["data"].as_str().unwrap();
+    unsafe { engine_free_string(result) };
+    unsafe { engine_destroy(handle) };
+
+    let store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();
+    let task = store.get(task_id).unwrap();
     assert_eq!(
-        tasks[0]["poster_url"].as_str(),
+        task.poster_url.as_deref(),
         Some("https://example.com/p.jpg")
     );
-    unsafe { engine_free_string(listed) };
-    unsafe { engine_destroy(handle) };
 }
