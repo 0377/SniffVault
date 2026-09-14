@@ -1,7 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 use tempfile::tempdir;
 use video_sniffing_engine::library::LibraryStore;
-use video_sniffing_engine::{LibraryEpisode, LibraryItem, LibraryItemKind};
+use video_sniffing_engine::{EngineError, LibraryEpisode, LibraryItem, LibraryItemKind};
 
 fn now_ms() -> i64 {
     SystemTime::now()
@@ -135,4 +135,62 @@ fn remove_episode_missing_returns_not_found() {
     let store = LibraryStore::open(&dir.path().join("library.db")).unwrap();
     let err = store.remove_episode("nope").unwrap_err();
     assert!(err.to_string().contains("not found"));
+}
+
+#[test]
+fn update_item_title_persists() {
+    let dir = tempdir().unwrap();
+    let store = LibraryStore::open(&dir.path().join("library.db")).unwrap();
+    store
+        .upsert_item(&LibraryItem {
+            id: "i1".into(),
+            kind: LibraryItemKind::Single,
+            title: "旧名".into(),
+            season: None,
+            poster_path: None,
+            created_at_ms: 1,
+        })
+        .unwrap();
+    store.update_item_title("i1", "新名").unwrap();
+    let item = store.get_item("i1").unwrap();
+    assert_eq!(item.title, "新名");
+}
+
+#[test]
+fn update_episode_title_persists() {
+    let dir = tempdir().unwrap();
+    let store = LibraryStore::open(&dir.path().join("library.db")).unwrap();
+    store
+        .upsert_item(&LibraryItem {
+            id: "s".into(),
+            kind: LibraryItemKind::Series,
+            title: "剧".into(),
+            season: Some(1),
+            poster_path: None,
+            created_at_ms: 1,
+        })
+        .unwrap();
+    store
+        .upsert_episode(&LibraryEpisode {
+            id: "e1".into(),
+            item_id: "s".into(),
+            index: 1,
+            title: "旧分集名".into(),
+            file_path: "/tmp/e1.mp4".into(),
+            duration_ms: None,
+            position_ms: 0,
+            source_url: None,
+        })
+        .unwrap();
+    store.update_episode_title("e1", "新分集名").unwrap();
+    let ep = store.get_episode("e1").unwrap().unwrap();
+    assert_eq!(ep.title, "新分集名");
+}
+
+#[test]
+fn update_item_title_missing_returns_not_found() {
+    let dir = tempdir().unwrap();
+    let store = LibraryStore::open(&dir.path().join("library.db")).unwrap();
+    let err = store.update_item_title("missing", "x").unwrap_err();
+    assert!(matches!(err, EngineError::NotFound(_)));
 }

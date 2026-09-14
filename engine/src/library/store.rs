@@ -178,6 +178,28 @@ impl LibraryStore {
         Ok(())
     }
 
+    pub fn update_item_title(&self, item_id: &str, title: &str) -> Result<(), EngineError> {
+        let n = self.conn.execute(
+            "UPDATE library_items SET title=?1 WHERE id=?2",
+            params![title, item_id],
+        )?;
+        if n == 0 {
+            return Err(EngineError::NotFound(format!("item {item_id}")));
+        }
+        Ok(())
+    }
+
+    pub fn update_episode_title(&self, episode_id: &str, title: &str) -> Result<(), EngineError> {
+        let n = self.conn.execute(
+            "UPDATE library_episodes SET title=?1 WHERE id=?2",
+            params![title, episode_id],
+        )?;
+        if n == 0 {
+            return Err(EngineError::NotFound(format!("episode {episode_id}")));
+        }
+        Ok(())
+    }
+
     pub fn find_series_by_title_season(
         &self,
         title: &str,
