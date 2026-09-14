@@ -169,6 +169,10 @@ fn resolve_result(outcome: ResolveOutcome, poster_url: Option<String>) -> Resolv
     }
 }
 
+pub(crate) fn extract_poster_url_from_page(html: &str, base_url: &str) -> Option<String> {
+    extract_poster_url(html, base_url)
+}
+
 fn map_media_result(result: ResolveMediaResult) -> ResolveOutcome {
     match result {
         ResolveMediaResult::Single(candidate) => ResolveOutcome::Single(candidate),

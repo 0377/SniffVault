@@ -588,13 +588,21 @@ async fn run_one_task(
             let library_item_id = if let Some(id) = current.library_item_id.clone() {
                 id
             } else {
+                let poster_url = task.poster_url.clone().or_else(|| {
+                    if let Some(parent_id) = &task.parent_id {
+                        tasks.get(parent_id).ok().and_then(|p| p.poster_url.clone())
+                    } else {
+                        None
+                    }
+                });
+                let user_agent = config.user_agent.as_deref();
                 let ingest_result = if let Some(parent_id) = &task.parent_id {
                     let parent = match tasks.get(parent_id) {
                         Ok(p) => p,
                         Err(e) => return TaskRunOutcome::Failed(e),
                     };
                     let episode_index = task.episode_index.unwrap_or(1);
-                    ingest::register_completed_episode(
+                    ingest::register_completed_episode_with_poster(
                         &library,
                         &config.media_dir,
                         &parent.title,
@@ -603,14 +611,18 @@ async fn run_one_task(
                         &task.title,
                         final_path.to_str().unwrap_or_default(),
                         Some(&task.source_url),
+                        poster_url.as_deref(),
+                        user_agent,
                     )
                 } else {
-                    ingest::register_completed_single(
+                    ingest::register_completed_single_with_poster(
                         &library,
                         &config.media_dir,
                         &task.title,
                         final_path.to_str().unwrap_or_default(),
                         Some(&task.source_url),
+                        poster_url.as_deref(),
+                        user_agent,
                     )
                 };
 

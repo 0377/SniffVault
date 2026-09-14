@@ -2,18 +2,40 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::thread;
+use std::time::{Duration, Instant};
 use tempfile::tempdir;
+use video_sniffing_engine::test_api::LibraryStore;
 use video_sniffing_engine::Engine;
 
 #[path = "support/library_merge_seed.rs"]
 mod library_merge_seed;
 
 fn spawn_file_server(root: PathBuf) -> (String, thread::JoinHandle<()>) {
+    spawn_file_server_for(Duration::from_secs(2), root, 1)
+}
+
+fn spawn_file_server_for(
+    timeout: Duration,
+    root: PathBuf,
+    max_requests: usize,
+) -> (String, thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let handle = thread::spawn(move || {
-        if let Ok((mut stream, _)) = listener.accept() {
-            serve_one_request(&mut stream, &root);
+        listener.set_nonblocking(true).ok();
+        let deadline = Instant::now() + timeout;
+        let mut served = 0usize;
+        while Instant::now() < deadline && served < max_requests {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    serve_one_request(&mut stream, &root);
+                    served += 1;
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    thread::sleep(Duration::from_millis(5));
+                }
+                Err(_) => break,
+            }
         }
     });
     (format!("127.0.0.1:{port}"), handle)
@@ -191,4 +213,131 @@ fn register_single_skips_oversized_poster_body() {
         .unwrap();
     server.join().unwrap();
     assert!(item.poster_path.is_none());
+}
+
+fn write_poster_page(dir: &Path, poster_url: &str) -> PathBuf {
+    let page = dir.join("page.html");
+    let html = format!(
+        r#"<!DOCTYPE html><html><head>
+<meta property="og:image" content="{poster_url}">
+</head><body></body></html>"#
+    );
+    std::fs::write(&page, html).unwrap();
+    page
+}
+
+#[test]
+fn refresh_library_poster_from_episode_source_url() {
+    let dir = tempdir().unwrap();
+    let mut engine = Engine::open(dir.path()).unwrap();
+    let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/posters");
+    let (poster_addr, poster_server) = spawn_file_server_for(Duration::from_secs(5), fixtures, 4);
+
+    let page_root = dir.path().join("pages");
+    std::fs::create_dir_all(&page_root).unwrap();
+    let poster_url = format!("http://{}/sample.jpg", poster_addr);
+    write_poster_page(&page_root, &poster_url);
+    let (page_addr, page_server) = spawn_file_server_for(Duration::from_secs(5), page_root, 4);
+
+    let media = engine.media_dir().join("m.mp4");
+    std::fs::write(&media, b"v").unwrap();
+    let page_source = format!("http://{}/page.html", page_addr);
+    let (item, _) = engine
+        .register_completed_single("片", media.to_str().unwrap(), Some(&page_source), None)
+        .unwrap();
+    assert!(item.poster_path.is_none());
+
+    let refreshed = engine.refresh_library_poster(&item.id, None).unwrap();
+    poster_server.join().unwrap();
+    page_server.join().unwrap();
+
+    assert!(refreshed.poster_path.is_some());
+    let path = refreshed.poster_path.as_ref().unwrap();
+    assert!(std::path::Path::new(path).exists());
+    assert!(path.contains(".posters"));
+}
+
+#[test]
+fn remove_library_item_deletes_poster_file() {
+    let dir = tempdir().unwrap();
+    let mut engine = Engine::open(dir.path()).unwrap();
+    let media = engine.media_dir().join("m.mp4");
+    std::fs::write(&media, b"v").unwrap();
+    let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/posters");
+    let (addr, server) = spawn_file_server(fixtures);
+    let poster_url = format!("http://{}/sample.jpg", addr);
+    let (item, _) = engine
+        .register_completed_single("片", media.to_str().unwrap(), None, Some(&poster_url))
+        .unwrap();
+    server.join().unwrap();
+
+    let poster_path = item.poster_path.clone().expect("poster path");
+    assert!(std::path::Path::new(&poster_path).exists());
+
+    engine.remove_library_item(&item.id, true).unwrap();
+    assert!(!std::path::Path::new(&poster_path).exists());
+    assert!(engine.list_library().unwrap().is_empty());
+}
+
+#[test]
+fn refresh_library_poster_overwrites_existing_poster() {
+    let dir = tempdir().unwrap();
+    let mut engine = Engine::open(dir.path()).unwrap();
+    let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/posters");
+    let (poster_addr, poster_server) = spawn_file_server_for(Duration::from_secs(5), fixtures, 6);
+
+    let media = engine.media_dir().join("m.mp4");
+    std::fs::write(&media, b"v").unwrap();
+    let poster_url = format!("http://{}/sample.jpg", poster_addr);
+    let (item, _) = engine
+        .register_completed_single("片", media.to_str().unwrap(), None, Some(&poster_url))
+        .unwrap();
+    let initial_poster = item.poster_path.clone().expect("initial poster");
+
+    let old_png = engine
+        .media_dir()
+        .join(".posters")
+        .join(format!("{}.png", item.id));
+    std::fs::create_dir_all(old_png.parent().unwrap()).unwrap();
+    std::fs::write(&old_png, b"old-poster").unwrap();
+    let old_canon = old_png
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let store =
+        LibraryStore::open(&engine.media_dir().parent().unwrap().join("library.db")).unwrap();
+    store.update_item_poster_path(&item.id, &old_canon).unwrap();
+    assert!(std::path::Path::new(&old_canon).exists());
+
+    let page_root = dir.path().join("pages");
+    std::fs::create_dir_all(&page_root).unwrap();
+    write_poster_page(&page_root, &poster_url);
+    let (page_addr, page_server) = spawn_file_server_for(Duration::from_secs(5), page_root, 4);
+    let page_source = format!("http://{}/page.html", page_addr);
+    let store =
+        LibraryStore::open(&engine.media_dir().parent().unwrap().join("library.db")).unwrap();
+    let eps = store.list_episodes(&item.id).unwrap();
+    let ep = eps[0].clone();
+    store
+        .upsert_episode(&video_sniffing_engine::LibraryEpisode {
+            source_url: Some(page_source),
+            ..ep
+        })
+        .unwrap();
+
+    let refreshed = engine.refresh_library_poster(&item.id, None).unwrap();
+    poster_server.join().unwrap();
+    page_server.join().unwrap();
+
+    let new_poster = refreshed.poster_path.expect("refreshed poster");
+    assert_ne!(new_poster, old_canon);
+    assert!(std::path::Path::new(&new_poster).exists());
+    assert!(!std::path::Path::new(&old_canon).exists());
+    let sample = std::fs::read(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/posters/sample.jpg"),
+    )
+    .unwrap();
+    assert_eq!(std::fs::read(&new_poster).unwrap(), sample);
+    assert_eq!(new_poster, initial_poster);
 }

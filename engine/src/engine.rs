@@ -557,6 +557,83 @@ impl Engine {
         )
     }
 
+    pub fn refresh_library_poster(
+        &mut self,
+        item_id: &str,
+        page_url: Option<&str>,
+    ) -> Result<LibraryItem, EngineError> {
+        use crate::library::poster;
+        use crate::resolve::extract_poster_url_from_page;
+
+        let item = self.library.get_item(item_id)?;
+        let old_poster_path = item.poster_path.clone();
+
+        let fetch_url = match page_url {
+            Some(u) => u.to_string(),
+            None => {
+                let eps = self.library.list_episodes(item_id)?;
+                let first = eps
+                    .into_iter()
+                    .min_by_key(|e| e.index)
+                    .ok_or_else(|| EngineError::InvalidArg("no episodes".into()))?;
+                first.source_url.clone().ok_or_else(|| {
+                    EngineError::InvalidArg("no page url for poster refresh".into())
+                })?
+            }
+        };
+
+        let parsed = url::Url::parse(&fetch_url)
+            .map_err(|e| EngineError::InvalidArg(format!("invalid page url: {e}")))?;
+        let scheme = parsed.scheme();
+        if scheme != "http" && scheme != "https" {
+            return Err(EngineError::InvalidArg("page url must be http(s)".into()));
+        }
+
+        let client = reqwest::blocking::Client::builder()
+            .build()
+            .map_err(|e| EngineError::Message(format!("http client: {e}")))?;
+
+        let mut req = client.get(&fetch_url);
+        if let Some(ua) = self.settings.user_agent.as_deref() {
+            req = req.header(reqwest::header::USER_AGENT, ua);
+        }
+        let resp = req
+            .send()
+            .map_err(|e| EngineError::Message(format!("page fetch failed: {e}")))?;
+        if !resp.status().is_success() {
+            return Err(EngineError::Message(format!("page http {}", resp.status())));
+        }
+        let html = resp
+            .text()
+            .map_err(|e| EngineError::Message(format!("page body: {e}")))?;
+
+        let poster_url = extract_poster_url_from_page(&html, &fetch_url)
+            .ok_or_else(|| EngineError::NotFound("no poster on page".into()))?;
+
+        let media_dir = self.media_dir();
+        let new_path = poster::download_poster(
+            &client,
+            &media_dir,
+            item_id,
+            &poster_url,
+            self.settings.user_agent.as_deref(),
+        )?;
+        ingest::ensure_path_in_media_dir(&media_dir, &new_path)?;
+
+        if let Some(old) = &old_poster_path {
+            if old != &new_path {
+                if let Ok(old_canon) = ingest::ensure_path_in_media_dir(&media_dir, old) {
+                    if let Err(e) = std::fs::remove_file(&old_canon) {
+                        eprintln!("failed to remove old poster: {e}");
+                    }
+                }
+            }
+        }
+
+        self.library.update_item_poster_path(item_id, &new_path)?;
+        self.library.get_item(item_id)
+    }
+
     pub fn rename_library_item(&self, item_id: &str, title: &str) -> Result<(), EngineError> {
         use crate::library::rename::validate_display_title;
         use crate::types::LibraryItemKind;
