@@ -87,7 +87,13 @@ mod tests {
     use super::*;
     use std::io::Write;
     use std::net::TcpListener;
+    use std::sync::{Mutex, OnceLock};
     use std::thread;
+
+    fn lock_poster_http_tests() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
 
     #[test]
     fn ext_from_content_type_png() {
@@ -158,6 +164,7 @@ mod tests {
 
     #[test]
     fn download_poster_writes() {
+        let _guard = lock_poster_http_tests();
         let fixture =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/posters/sample.jpg");
         let jpeg_bytes = std::fs::read(&fixture).unwrap();
@@ -184,6 +191,7 @@ mod tests {
 
     #[test]
     fn download_poster_rejects_oversized_body() {
+        let _guard = lock_poster_http_tests();
         let oversized = vec![0u8; POSTER_MAX_BYTES + 1];
         let (url, server) = spawn_jpeg_server(&oversized);
 
