@@ -200,6 +200,33 @@ impl LibraryStore {
         Ok(())
     }
 
+    pub fn rename_library_item_titles(
+        &self,
+        item_id: &str,
+        title: &str,
+        single_episode_id: Option<&str>,
+    ) -> Result<(), EngineError> {
+        let tx = self.conn.unchecked_transaction()?;
+        let n = tx.execute(
+            "UPDATE library_items SET title=?1 WHERE id=?2",
+            params![title, item_id],
+        )?;
+        if n == 0 {
+            return Err(EngineError::NotFound(format!("item {item_id}")));
+        }
+        if let Some(episode_id) = single_episode_id {
+            let n = tx.execute(
+                "UPDATE library_episodes SET title=?1 WHERE id=?2",
+                params![title, episode_id],
+            )?;
+            if n == 0 {
+                return Err(EngineError::NotFound(format!("episode {episode_id}")));
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn find_series_by_title_season(
         &self,
         title: &str,

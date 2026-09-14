@@ -545,6 +545,28 @@ impl Engine {
         )
     }
 
+    pub fn rename_library_item(&self, item_id: &str, title: &str) -> Result<(), EngineError> {
+        use crate::library::rename::validate_display_title;
+        use crate::types::LibraryItemKind;
+
+        let title = validate_display_title(title)?;
+        let item = self.library.get_item(item_id)?;
+        let single_episode_id =
+            if item.kind == LibraryItemKind::Single && self.library.count_episodes(item_id)? == 1 {
+                Some(self.library.list_episodes(item_id)?[0].id.clone())
+            } else {
+                None
+            };
+        self.library
+            .rename_library_item_titles(item_id, &title, single_episode_id.as_deref())
+    }
+
+    pub fn rename_episode(&self, episode_id: &str, title: &str) -> Result<(), EngineError> {
+        use crate::library::rename::validate_display_title;
+        let title = validate_display_title(title)?;
+        self.library.update_episode_title(episode_id, &title)
+    }
+
     fn finalize_lan_for_episodes(&mut self, episode_ids: &[String]) -> Result<(), EngineError> {
         if self.lan.is_none() {
             return Ok(());
