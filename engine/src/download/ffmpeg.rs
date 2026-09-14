@@ -130,8 +130,6 @@ pub fn run_concat(ffmpeg: &Path, concat_list: &Path, output_mp4: &Path) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use tempfile::tempdir;
 
     #[test]
     fn bundled_path_format() {
@@ -150,6 +148,9 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn resolve_prefers_app_bundle_ffmpeg() {
+        use std::fs;
+        use tempfile::tempdir;
+
         let dir = tempdir().unwrap();
         let exe = dir
             .path()
