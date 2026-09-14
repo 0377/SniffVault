@@ -545,6 +545,63 @@ impl Engine {
         )
     }
 
+    pub fn rename_library_item(&self, item_id: &str, title: &str) -> Result<(), EngineError> {
+        use crate::library::rename::validate_display_title;
+        use crate::types::LibraryItemKind;
+
+        let title = validate_display_title(title)?;
+        let item = self.library.get_item(item_id)?;
+        let single_episode_id =
+            if item.kind == LibraryItemKind::Single && self.library.count_episodes(item_id)? == 1 {
+                Some(self.library.list_episodes(item_id)?[0].id.clone())
+            } else {
+                None
+            };
+        self.library
+            .rename_library_item_titles(item_id, &title, single_episode_id.as_deref())
+    }
+
+    pub fn rename_episode(&self, episode_id: &str, title: &str) -> Result<(), EngineError> {
+        use crate::library::rename::validate_display_title;
+        let title = validate_display_title(title)?;
+        self.library.update_episode_title(episode_id, &title)
+    }
+
+    pub fn merge_library_items(
+        &mut self,
+        source_item_id: &str,
+        target_item_id: &str,
+        delete_orphan_files: bool,
+    ) -> Result<(), EngineError> {
+        if source_item_id == target_item_id {
+            return Err(EngineError::InvalidArg(
+                "source and target must differ".into(),
+            ));
+        }
+        let source = self.library.get_item(source_item_id)?;
+        let target = self.library.get_item(target_item_id)?;
+        crate::library::merge::validate_merge_pair(&source, &target)?;
+        let source_eps = self.library.list_episodes(source_item_id)?;
+        if source_eps.is_empty() {
+            return Err(EngineError::InvalidArg(
+                "source series has no episodes".into(),
+            ));
+        }
+        let orphan_ids = crate::library::merge::orphan_episode_ids_for_merge(
+            &self.library,
+            &source_eps,
+            target_item_id,
+        )?;
+        self.finalize_lan_for_episodes(&orphan_ids)?;
+        crate::library::merge::merge_items(
+            &self.library,
+            &self.media_dir(),
+            &source,
+            &target,
+            delete_orphan_files,
+        )
+    }
+
     fn finalize_lan_for_episodes(&mut self, episode_ids: &[String]) -> Result<(), EngineError> {
         if self.lan.is_none() {
             return Ok(());

@@ -16,7 +16,7 @@
 
 ## 持续集成
 
-合并到 `main` 前须通过 GitHub Actions：**fmt**（ubuntu）、**test + clippy**（Linux / macOS / Windows 三平台）、**flutter-test**（macOS 单元测试）、**flutter-integration**（macOS 引擎 FFI、UI、深链 U8、投送 U10、浏览 U6 与片库删除 U11 集成冒烟，并行 job）。
+合并到 `main` 前须通过 GitHub Actions：**fmt**（ubuntu）、**test + clippy**（Linux / macOS / Windows 三平台）、**flutter-test**（macOS 单元测试）、**flutter-integration**（macOS 引擎 FFI、UI、深链 U8、投送 U10、浏览 U6、片库删除 U11 与片库合并 U11b 集成冒烟，并行 job）。
 
 本地可运行与 CI 相同检查：
 
@@ -176,6 +176,18 @@ cd app && flutter test integration_test/library_delete_test.dart -d macos
 ```
 
 规格见 `docs/superpowers/specs/2026-09-08-library-management-design.md`。
+
+## 片库重命名与 Series 合并（Plan 9b）
+
+片库详情 → ⋮ → 重命名条目或分集；可将两个同剧名同季数的 Series 壳合并为一个，idx 冲突时保留目标分集及其播放进度。合并不修改磁盘文件名。
+
+U11b 为 **Engine 级** merge 冒烟（经 `EngineHost` / FFI，不走完整 UI 向导）：seed 两个同 title+season Series 壳各 1 集 → `mergeLibraryItems` → 片库剩 1 条 Series、目标下 2 分集。
+
+```bash
+cd app && flutter test integration_test/library_rename_merge_test.dart -d macos
+```
+
+规格见 `docs/superpowers/specs/2026-09-14-library-rename-merge-design.md`。
 
 ## 可交付 v0.1（Plan 8）
 

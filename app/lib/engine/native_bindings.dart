@@ -72,6 +72,41 @@ typedef EngineRemoveEpisode = Pointer<Char> Function(
   int deleteFiles,
 );
 
+typedef EngineRenameLibraryItemNative = Pointer<Char> Function(
+  Pointer<Void> handle,
+  Pointer<Utf8> itemId,
+  Pointer<Utf8> title,
+);
+typedef EngineRenameLibraryItem = Pointer<Char> Function(
+  Pointer<Void> handle,
+  Pointer<Utf8> itemId,
+  Pointer<Utf8> title,
+);
+
+typedef EngineRenameEpisodeNative = Pointer<Char> Function(
+  Pointer<Void> handle,
+  Pointer<Utf8> episodeId,
+  Pointer<Utf8> title,
+);
+typedef EngineRenameEpisode = Pointer<Char> Function(
+  Pointer<Void> handle,
+  Pointer<Utf8> episodeId,
+  Pointer<Utf8> title,
+);
+
+typedef EngineMergeLibraryItemsNative = Pointer<Char> Function(
+  Pointer<Void> handle,
+  Pointer<Utf8> sourceItemId,
+  Pointer<Utf8> targetItemId,
+  Uint8 deleteOrphanFiles,
+);
+typedef EngineMergeLibraryItems = Pointer<Char> Function(
+  Pointer<Void> handle,
+  Pointer<Utf8> sourceItemId,
+  Pointer<Utf8> targetItemId,
+  int deleteOrphanFiles,
+);
+
 typedef EngineListTasksNative = Pointer<Char> Function(Pointer<Void> handle);
 typedef EngineListTasks = Pointer<Char> Function(Pointer<Void> handle);
 
@@ -333,6 +368,14 @@ class NativeBindings {
             EngineRemoveLibraryItem>('engine_remove_library_item'),
         engineRemoveEpisode = lib.lookupFunction<EngineRemoveEpisodeNative,
             EngineRemoveEpisode>('engine_remove_episode'),
+        engineRenameLibraryItem = lib.lookupFunction<
+            EngineRenameLibraryItemNative,
+            EngineRenameLibraryItem>('engine_rename_library_item'),
+        engineRenameEpisode = lib.lookupFunction<EngineRenameEpisodeNative,
+            EngineRenameEpisode>('engine_rename_episode'),
+        engineMergeLibraryItems = lib.lookupFunction<
+            EngineMergeLibraryItemsNative,
+            EngineMergeLibraryItems>('engine_merge_library_items'),
         engineListTasks =
             lib.lookupFunction<EngineListTasksNative, EngineListTasks>(
           'engine_list_tasks',
@@ -459,6 +502,9 @@ class NativeBindings {
   final EngineSetEpisodePosition engineSetEpisodePosition;
   final EngineRemoveLibraryItem engineRemoveLibraryItem;
   final EngineRemoveEpisode engineRemoveEpisode;
+  final EngineRenameLibraryItem engineRenameLibraryItem;
+  final EngineRenameEpisode engineRenameEpisode;
+  final EngineMergeLibraryItems engineMergeLibraryItems;
   final EngineListTasks engineListTasks;
   final EngineEnqueueSingle engineEnqueueSingle;
   final EngineEnqueueEpisodes engineEnqueueEpisodes;

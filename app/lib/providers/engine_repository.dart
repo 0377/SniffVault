@@ -19,6 +19,13 @@ abstract class EngineRepository {
   List<LibraryEpisode> listEpisodes(String itemId);
   void removeLibraryItem(String itemId, {bool deleteFiles});
   void removeEpisode(String episodeId, {bool deleteFiles});
+  void renameLibraryItem(String itemId, String title);
+  void renameEpisode(String episodeId, String title);
+  void mergeLibraryItems(
+    String sourceItemId,
+    String targetItemId, {
+    bool deleteOrphanFiles,
+  });
   List<DownloadTask> listTasks();
 
   String enqueueSingle({
@@ -91,6 +98,26 @@ class EngineHostRepository implements EngineRepository {
   @override
   void removeEpisode(String episodeId, {bool deleteFiles = true}) =>
       _host.removeEpisode(episodeId, deleteFiles: deleteFiles);
+
+  @override
+  void renameLibraryItem(String itemId, String title) =>
+      _host.renameLibraryItem(itemId, title);
+
+  @override
+  void renameEpisode(String episodeId, String title) =>
+      _host.renameEpisode(episodeId, title);
+
+  @override
+  void mergeLibraryItems(
+    String sourceItemId,
+    String targetItemId, {
+    bool deleteOrphanFiles = false,
+  }) =>
+      _host.mergeLibraryItems(
+        sourceItemId,
+        targetItemId,
+        deleteOrphanFiles: deleteOrphanFiles,
+      );
 
   @override
   List<DownloadTask> listTasks() => _host.listTasks();

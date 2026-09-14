@@ -178,6 +178,55 @@ impl LibraryStore {
         Ok(())
     }
 
+    pub fn update_item_title(&self, item_id: &str, title: &str) -> Result<(), EngineError> {
+        let n = self.conn.execute(
+            "UPDATE library_items SET title=?1 WHERE id=?2",
+            params![title, item_id],
+        )?;
+        if n == 0 {
+            return Err(EngineError::NotFound(format!("item {item_id}")));
+        }
+        Ok(())
+    }
+
+    pub fn update_episode_title(&self, episode_id: &str, title: &str) -> Result<(), EngineError> {
+        let n = self.conn.execute(
+            "UPDATE library_episodes SET title=?1 WHERE id=?2",
+            params![title, episode_id],
+        )?;
+        if n == 0 {
+            return Err(EngineError::NotFound(format!("episode {episode_id}")));
+        }
+        Ok(())
+    }
+
+    pub fn rename_library_item_titles(
+        &self,
+        item_id: &str,
+        title: &str,
+        single_episode_id: Option<&str>,
+    ) -> Result<(), EngineError> {
+        let tx = self.conn.unchecked_transaction()?;
+        let n = tx.execute(
+            "UPDATE library_items SET title=?1 WHERE id=?2",
+            params![title, item_id],
+        )?;
+        if n == 0 {
+            return Err(EngineError::NotFound(format!("item {item_id}")));
+        }
+        if let Some(episode_id) = single_episode_id {
+            let n = tx.execute(
+                "UPDATE library_episodes SET title=?1 WHERE id=?2",
+                params![title, episode_id],
+            )?;
+            if n == 0 {
+                return Err(EngineError::NotFound(format!("episode {episode_id}")));
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn find_series_by_title_season(
         &self,
         title: &str,
@@ -299,6 +348,42 @@ impl LibraryStore {
     pub fn remove_item(&self, id: &str) -> Result<(), EngineError> {
         self.conn
             .execute("DELETE FROM library_items WHERE id=?1", params![id])?;
+        Ok(())
+    }
+
+    pub(crate) fn apply_merge_in_tx(
+        &self,
+        migrate: &[(String, String)],
+        orphan_episode_ids: &[String],
+        source_item_id: &str,
+    ) -> Result<(), EngineError> {
+        let tx = self.conn.unchecked_transaction()?;
+        for (episode_id, new_item_id) in migrate {
+            let n = tx.execute(
+                "UPDATE library_episodes SET item_id=?1 WHERE id=?2",
+                params![new_item_id, episode_id],
+            )?;
+            if n == 0 {
+                return Err(EngineError::NotFound(format!("episode {episode_id}")));
+            }
+        }
+        for episode_id in orphan_episode_ids {
+            let n = tx.execute(
+                "DELETE FROM library_episodes WHERE id=?1",
+                params![episode_id],
+            )?;
+            if n == 0 {
+                return Err(EngineError::NotFound(format!("episode {episode_id}")));
+            }
+        }
+        let n = tx.execute(
+            "DELETE FROM library_items WHERE id=?1",
+            params![source_item_id],
+        )?;
+        if n == 0 {
+            return Err(EngineError::NotFound(format!("item {source_item_id}")));
+        }
+        tx.commit()?;
         Ok(())
     }
 }
