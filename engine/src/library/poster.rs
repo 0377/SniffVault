@@ -92,7 +92,9 @@ mod tests {
 
     fn lock_poster_http_tests() -> std::sync::MutexGuard<'static, ()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     #[test]
@@ -146,10 +148,14 @@ mod tests {
     }
 
     fn spawn_jpeg_server(jpeg_bytes: &[u8]) -> (String, thread::JoinHandle<()>) {
+        use std::sync::mpsc;
+
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let body = jpeg_bytes.to_vec();
+        let (ready_tx, ready_rx) = mpsc::channel();
         let handle = thread::spawn(move || {
+            ready_tx.send(()).ok();
             if let Ok((mut stream, _)) = listener.accept() {
                 let response = format!(
                     "HTTP/1.1 200 OK\r\nContent-Type: image/jpeg\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -159,6 +165,7 @@ mod tests {
                 let _ = stream.write_all(&body);
             }
         });
+        ready_rx.recv().unwrap();
         (format!("http://127.0.0.1:{}/sample.jpg", port), handle)
     }
 
