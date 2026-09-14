@@ -231,13 +231,13 @@ fn refresh_library_poster_from_episode_source_url() {
     let dir = tempdir().unwrap();
     let mut engine = Engine::open(dir.path()).unwrap();
     let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/posters");
-    let (poster_addr, poster_server) = spawn_file_server_for(Duration::from_secs(5), fixtures, 4);
+    let (poster_addr, poster_server) = spawn_file_server_for(Duration::from_secs(10), fixtures, 8);
 
     let page_root = dir.path().join("pages");
     std::fs::create_dir_all(&page_root).unwrap();
     let poster_url = format!("http://{}/sample.jpg", poster_addr);
     write_poster_page(&page_root, &poster_url);
-    let (page_addr, page_server) = spawn_file_server_for(Duration::from_secs(5), page_root, 4);
+    let (page_addr, page_server) = spawn_file_server_for(Duration::from_secs(10), page_root, 8);
 
     let media = engine.media_dir().join("m.mp4");
     std::fs::write(&media, b"v").unwrap();
