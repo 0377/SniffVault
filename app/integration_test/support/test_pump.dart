@@ -29,6 +29,12 @@ Future<void> pumpEngineEvents(WidgetTester tester) async {
   } on TimeoutException {
     // Do not return while pump is still in flight — that causes guarded conflicts
     // when the next expect() runs. Prefer waiting out a slow CI frame.
-    await tester.pump(const Duration(milliseconds: 1));
+    try {
+      await tester.pump(const Duration(milliseconds: 1)).timeout(
+        const Duration(seconds: 5),
+      );
+    } on TimeoutException {
+      // Engine-only integration tests may run without runApp; no frames will schedule.
+    }
   }
 }
