@@ -515,6 +515,7 @@ impl Engine {
         self.library.set_position(episode_id, position_ms)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn register_completed_episode(
         &mut self,
         series_title: &str,

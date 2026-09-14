@@ -44,6 +44,7 @@ pub fn seed_duplicate_series(
     }
 }
 
+#[allow(dead_code)]
 pub fn seed_duplicate_series_with_source_poster(
     engine: &Engine,
     title: &str,

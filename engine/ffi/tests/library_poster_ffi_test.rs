@@ -86,8 +86,7 @@ fn refresh_library_poster_ffi_returns_item() {
     let dir = tempdir().unwrap();
     let mut engine = Engine::open(dir.path()).unwrap();
     let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/fixtures/posters");
-    let (poster_addr, poster_server) =
-        spawn_file_server_for(Duration::from_secs(5), fixtures, 4);
+    let (poster_addr, poster_server) = spawn_file_server_for(Duration::from_secs(5), fixtures, 4);
 
     let page_root = dir.path().join("pages");
     std::fs::create_dir_all(&page_root).unwrap();
@@ -110,9 +109,8 @@ fn refresh_library_poster_ffi_returns_item() {
     assert!(!handle.is_null());
 
     let item_id_c = CString::new(item_id).unwrap();
-    let result = unsafe {
-        engine_refresh_library_poster(handle, item_id_c.as_ptr(), std::ptr::null())
-    };
+    let result =
+        unsafe { engine_refresh_library_poster(handle, item_id_c.as_ptr(), std::ptr::null()) };
     assert!(!result.is_null());
 
     let json_str = unsafe { CStr::from_ptr(result).to_str().unwrap() };
