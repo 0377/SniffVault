@@ -1,11 +1,11 @@
 # 片库重命名与 Series 手动合并设计（Plan 9b）
 
 **日期**: 2026-09-14  
-**状态**: 待审阅  
+**状态**: 已定稿  
 **前置**: Plan 9a 片库删除（已合并 main，`v0.1.1`）  
 **父规格**: `docs/superpowers/specs/2026-09-08-library-management-design.md`（§2.3–2.4、§3.2–3.3、§5.1）  
 **后续**: Plan 9c 海报抓取；Plan 9d 设置目录选择器 + 失败任务改 URL 重试  
-**实现计划**: 待 `writing-plans` 生成 `docs/superpowers/plans/2026-09-14-library-rename-merge.md`
+**实现计划**: `docs/superpowers/plans/2026-09-14-library-rename-merge.md`
 
 ---
 
