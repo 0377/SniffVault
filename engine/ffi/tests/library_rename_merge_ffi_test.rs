@@ -36,7 +36,7 @@ fn rename_and_merge_ffi_ok_json() {
     let media = engine.media_dir().join("a.mp4");
     fs::write(&media, b"x").unwrap();
     let (item, _) = engine
-        .register_completed_single("旧", media.to_str().unwrap(), None)
+        .register_completed_single("旧", media.to_str().unwrap(), None, None)
         .unwrap();
     let (src, tgt) = seed_dup(&engine);
     let store =
@@ -90,7 +90,15 @@ fn rename_episode_ffi_ok_json() {
     let media = engine.media_dir().join("ep1.mp4");
     fs::write(&media, b"x").unwrap();
     let (item, ep) = engine
-        .register_completed_episode("示意剧", Some(1), 1, "第1集", media.to_str().unwrap(), None)
+        .register_completed_episode(
+            "示意剧",
+            Some(1),
+            1,
+            "第1集",
+            media.to_str().unwrap(),
+            None,
+            None,
+        )
         .unwrap();
     let ep_id_str = ep.id.clone();
     drop(engine);
@@ -124,7 +132,7 @@ fn rename_ffi_invalid_title_returns_error_json() {
     let media = engine.media_dir().join("a.mp4");
     fs::write(&media, b"x").unwrap();
     let (item, _) = engine
-        .register_completed_single("x", media.to_str().unwrap(), None)
+        .register_completed_single("x", media.to_str().unwrap(), None, None)
         .unwrap();
     drop(engine);
 

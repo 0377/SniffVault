@@ -1,4 +1,5 @@
 use crate::error::EngineError;
+use crate::library::poster;
 use crate::library::LibraryStore;
 use crate::types::{LibraryEpisode, LibraryItem, LibraryItemKind};
 use std::path::{Path, PathBuf};
@@ -28,8 +29,38 @@ pub fn ensure_path_in_media_dir(media_dir: &Path, file_path: &str) -> Result<Pat
     Ok(canon)
 }
 
+pub(crate) fn maybe_attach_poster(
+    library: &LibraryStore,
+    media_dir: &Path,
+    item_id: &str,
+    poster_url: &str,
+    user_agent: Option<&str>,
+) {
+    if let Ok(item) = library.get_item(item_id) {
+        if item.poster_path.is_some() {
+            return;
+        }
+    }
+    let client = match reqwest::blocking::Client::builder().build() {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    match poster::download_poster(&client, media_dir, item_id, poster_url, user_agent) {
+        Ok(path) => {
+            if let Err(e) = ensure_path_in_media_dir(media_dir, &path) {
+                eprintln!("poster path rejected: {e}");
+                return;
+            }
+            if let Err(e) = library.update_item_poster_path(item_id, &path) {
+                eprintln!("poster db update failed: {e}");
+            }
+        }
+        Err(e) => eprintln!("poster download skipped: {e}"),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
-pub fn register_completed_episode(
+pub(crate) fn register_completed_episode_with_poster(
     library: &LibraryStore,
     media_dir: &Path,
     series_title: &str,
@@ -38,6 +69,8 @@ pub fn register_completed_episode(
     episode_title: &str,
     file_path: &str,
     source_url: Option<&str>,
+    poster_url: Option<&str>,
+    user_agent: Option<&str>,
 ) -> Result<(LibraryItem, LibraryEpisode), EngineError> {
     let canon = ensure_path_in_media_dir(media_dir, file_path)?;
     let existing = library.find_series_by_title_season(series_title, season)?;
@@ -77,15 +110,21 @@ pub fn register_completed_episode(
     let episode = library
         .get_episode_by_item_index(&item.id, episode_index)?
         .ok_or_else(|| EngineError::Message("episode missing after upsert".into()))?;
+    if let Some(url) = poster_url {
+        maybe_attach_poster(library, media_dir, &item.id, url, user_agent);
+    }
+    let item = library.get_item(&item.id)?;
     Ok((item, episode))
 }
 
-pub fn register_completed_single(
+pub(crate) fn register_completed_single_with_poster(
     library: &LibraryStore,
     media_dir: &Path,
     title: &str,
     file_path: &str,
     source_url: Option<&str>,
+    poster_url: Option<&str>,
+    user_agent: Option<&str>,
 ) -> Result<(LibraryItem, LibraryEpisode), EngineError> {
     let canon = ensure_path_in_media_dir(media_dir, file_path)?;
     let item = LibraryItem {
@@ -108,5 +147,46 @@ pub fn register_completed_single(
         source_url: source_url.map(|s| s.to_string()),
     };
     library.upsert_episode(&episode)?;
+    if let Some(url) = poster_url {
+        maybe_attach_poster(library, media_dir, &item.id, url, user_agent);
+    }
+    let item = library.get_item(&item.id)?;
     Ok((item, episode))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn register_completed_episode(
+    library: &LibraryStore,
+    media_dir: &Path,
+    series_title: &str,
+    season: Option<u32>,
+    episode_index: u32,
+    episode_title: &str,
+    file_path: &str,
+    source_url: Option<&str>,
+) -> Result<(LibraryItem, LibraryEpisode), EngineError> {
+    register_completed_episode_with_poster(
+        library,
+        media_dir,
+        series_title,
+        season,
+        episode_index,
+        episode_title,
+        file_path,
+        source_url,
+        None,
+        None,
+    )
+}
+
+pub fn register_completed_single(
+    library: &LibraryStore,
+    media_dir: &Path,
+    title: &str,
+    file_path: &str,
+    source_url: Option<&str>,
+) -> Result<(LibraryItem, LibraryEpisode), EngineError> {
+    register_completed_single_with_poster(
+        library, media_dir, title, file_path, source_url, None, None,
+    )
 }

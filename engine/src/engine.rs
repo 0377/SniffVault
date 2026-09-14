@@ -10,8 +10,8 @@ use crate::settings;
 use crate::tasks::TaskStore;
 use crate::types::{
     DownloadAuth, DownloadLogEntry, DownloadTask, EngineSettings, LibraryEpisode, LibraryItem,
-    Quality, ResolveOptions, ResolveUrlResult, ResourceCandidate, SniffEvent,
-    TaskEvent, TaskEventKind, TaskStatus,
+    Quality, ResolveOptions, ResolveUrlResult, ResourceCandidate, SniffEvent, TaskEvent,
+    TaskEventKind, TaskStatus,
 };
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc};
@@ -523,8 +523,9 @@ impl Engine {
         episode_title: &str,
         file_path: &str,
         source_url: Option<&str>,
+        poster_url: Option<&str>,
     ) -> Result<(LibraryItem, LibraryEpisode), EngineError> {
-        ingest::register_completed_episode(
+        ingest::register_completed_episode_with_poster(
             &self.library,
             &self.media_dir(),
             series_title,
@@ -533,6 +534,8 @@ impl Engine {
             episode_title,
             file_path,
             source_url,
+            poster_url,
+            self.settings.user_agent.as_deref(),
         )
     }
 
@@ -541,13 +544,16 @@ impl Engine {
         title: &str,
         file_path: &str,
         source_url: Option<&str>,
+        poster_url: Option<&str>,
     ) -> Result<(LibraryItem, LibraryEpisode), EngineError> {
-        ingest::register_completed_single(
+        ingest::register_completed_single_with_poster(
             &self.library,
             &self.media_dir(),
             title,
             file_path,
             source_url,
+            poster_url,
+            self.settings.user_agent.as_deref(),
         )
     }
 
