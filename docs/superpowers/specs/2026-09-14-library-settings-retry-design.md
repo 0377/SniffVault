@@ -1,11 +1,11 @@
 # 设置目录选择器与失败任务改 URL 重试设计（Plan 9d）
 
 **日期**: 2026-09-14  
-**状态**: 已定稿（2026-09-14 PM 定稿：一次性交付 9d → v0.2.0）  
+**状态**: 已定稿（2026-09-14 review 修订：checkpoint/.dl 清理、TV helper、测试矩阵）  
 **前置**: Plan 9a 片库删除（`v0.1.1`）、Plan 9b 重命名与合并、Plan 9c 海报抓取与展示（均已合并 main）  
 **父规格**: `docs/superpowers/specs/2026-09-08-library-management-design.md`（§2.6、§5.3）  
 **后续**: **`v0.2.0` tag**（9a–9d 全部验收后）  
-**实现计划**: `docs/superpowers/plans/2026-09-14-library-settings-retry.md`（本 spec 批准后编写）
+**实现计划**: `docs/superpowers/plans/2026-09-14-library-settings-retry.md`
 
 ---
 
@@ -40,6 +40,7 @@ Plan 9a–9c 使片库「能删、能改名、能合并、有封面」，但设�
 - **快路径保留**：失败任务刷新图标 = 立即 `retry_task(id, None)`，与现网行为一致。
 - **改 URL 为显式路径**：仅通过「修改 URL 重试」菜单打开对话框，避免网络抖动类失败多一次点击。
 - **`needs_sniff` 失败不走改 URL 重试**：`error_message == "needs_sniff"` 的失败任务仍走 Plan 9「嗅探补全」；`retry_task` 继续拒绝此类任务。
+- **改 URL 须清断点**：与快路径不同，改 `source_url` 时必须清空 `checkpoint_json` 与 `.dl/{task_id}`，避免旧断点续传到新 URL。
 - **LAN / 片库不受影响**：本 Plan 不修改 `CastMetadata`、片库 schema 或投送逻辑。
 
 ---
@@ -54,18 +55,21 @@ Plan 9a–9c 使片库「能删、能改名、能合并、有封面」，但设�
 4. 用户点 **保存** → `Engine::save_settings` 校验目录名 → 在 `data_dir/SniffVault` 创建目录（若不存在）→ 持久化 `settings.json`。
 5. 成功：SnackBar「设置已保存」；失败：字段下方或 SnackBar 展示引擎错误（如目录名含 `/`、为空）。
 
-**说明文案**（`InputDecoration.helperText` 或字段下方小字，常驻）：
+**说明文案**（`InputDecoration.helperText`，常驻；手机/桌面与 TV 分文案）：
 
-> 此处为应用数据目录下的文件夹名称；选择外置路径时仅采用文件夹名，不会自动搬移已有缓存文件。
+| 平台 | helperText |
+|------|------------|
+| 手机 / 桌面 | `此处为应用数据目录下的文件夹名称；选择外置路径时仅采用文件夹名，不会自动搬移已有缓存文件。` |
+| Android TV | `此处为应用数据目录下的文件夹名称。`（**不** 提及选择器或外置路径） |
 
 **手填兜底**：用户仍可直接编辑 TextField；行为与现网一致（`validate_media_dir` 校验）。
 
-**Android TV**：隐藏 **选择文件夹** 按钮与相关说明中的选择器提及；仅展示当前 `media_dir` 文本（只读或可编辑，与现网 TextField 一致，**不** 调用 `file_picker`）。
+**Android TV**：隐藏 **选择文件夹** 按钮；**不** 调用 `file_picker`；helper 仅用 TV 行文案（见上表）。
 
 ### 2.2 失败任务立即重试（快路径）
 
 1. 任务页 → 失败子任务/单任务行 → 点 **刷新** 图标。
-2. `retry_task(task_id, None)` → 状态 `Failed → Queued`，清空 `error_message`；**不** 修改 `source_url` / `resolved_media_url` / 进度字段。
+2. `retry_task(task_id, None)` → 状态 `Failed → Queued`，清空 `error_message`；**不** 修改 `source_url` / `resolved_media_url` / 进度字段 / `checkpoint_json`；**不** 删除 `.dl/{task_id}` 临时目录（保留断点续传能力）。
 3. `DownloadCoordinator.ensureDownloads()` 继续调度。
 
 父任务 **批量重试**（`batch_retry_button`）：对每个可重试子任务调用 `retry_task(id, None)`；**不** 弹 URL 对话框。
@@ -109,7 +113,7 @@ pub fn retry_task(
 
 1. `set_task_status(id, Queued, None)`（清空 `error_message`）。
 2. 若存在 `parent_id`，`sync_parent_status`。
-3. **不** 修改 `source_url`、`resolved_media_url`、`progress_bytes`、`total_bytes`、`output_path`。
+3. **不** 修改 `source_url`、`resolved_media_url`、`progress_bytes`、`total_bytes`、`output_path`、`checkpoint_json`；**不** 删除 `.dl/{task_id}`。
 
 **`new_url == Some(url)`**：
 
@@ -121,10 +125,12 @@ pub fn retry_task(
    - `progress_bytes = 0`；
    - `total_bytes = None`；
    - `output_path = None`；
+   - `checkpoint_json = NULL`；
    - `error_message = None`；
    - `status = Queued`。
-4. 若存在 `parent_id`，`sync_parent_status`。
-5. **不** 修改 `cookie_header` / `referer` / `poster_url`（用户改的是资源页 URL，鉴权上下文保留；若新页需新 Cookie，用户应重新从浏览入队——v0.3 可增强）。
+4. 调用 `cleanup_download_temp(media_dir, task_id)` 删除 `{media_dir}/.dl/{task_id}/`（与 `cancel_task` 同源辅助，目录不存在视为成功）。
+5. 若存在 `parent_id`，`sync_parent_status`。
+6. **不** 修改 `cookie_header` / `referer` / `poster_url`（用户改的是资源页 URL，鉴权上下文保留；若新页需新 Cookie，用户应重新从浏览入队——v0.3 可增强）。
 
 **`TaskStore` 增量**（crate-private）：
 
@@ -236,7 +242,7 @@ void retryTask(String taskId, {String? newUrl});
 | 选择结果 basename 为空（如根路径） | SnackBar「无法识别文件夹名称」；不写入字段 |
 | `retry_task` 非 Failed | `InvalidArg` |
 | `needs_sniff` 失败任务 | `InvalidArg`；UI 不显示改 URL 入口 |
-| `new_url` trim 后为空 | `InvalidArg`；对话框内联错误或 SnackBar |
+| `new_url` trim 后为空 | 对话框内联错误「URL 不能为空」（**不**关闭对话框）；不调用 Engine |
 | `new_url` 与当前 `source_url` 相同 | 等价快路径，成功 |
 | 任务不存在 | `NotFound` |
 
@@ -249,7 +255,7 @@ void retryTask(String taskId, {String? newUrl});
 | ID | 场景 |
 |----|------|
 | L9d-1 | `retry_task(id, None)`：Failed → Queued，清 `error_message`，`source_url` 不变 |
-| L9d-2 | `retry_task(id, Some(new))`：更新 `source_url`，清空 `resolved_media_url`、`progress_bytes`、`total_bytes`、`output_path` |
+| L9d-2 | `retry_task(id, Some(new))`：更新 `source_url`，清空 `resolved_media_url`、`progress_bytes`、`total_bytes`、`output_path`、`checkpoint_json`；`.dl/{id}` 已删除 |
 | L9d-3 | `new_url` 与现 `source_url` 相同 → 同 L9d-1 |
 | L9d-4 | `retry_task` 拒绝 `needs_sniff` 失败（沿用现有用例，签名扩展后仍通过） |
 | L9d-5 | `retry_task` 拒绝非 Failed |
@@ -270,11 +276,12 @@ void retryTask(String taskId, {String? newUrl});
 | W9d-1 | `mediaDirNameFromPickerResult`：`/foo/bar/SniffVault` → `SniffVault`；`null` → `null` |
 | W9d-2 | 设置页：点 `settings_pick_media_dir`（注入 mock `FilePicker`）→ 字段更新为 basename |
 | W9d-3 | TV：`isTelevisionProvider == true` 时不显示 `settings_pick_media_dir` |
-| W9d-4 | 失败任务：菜单「修改 URL 重试」→ 对话框确认 → `FakeEngineRepository` 收到 `newUrl` |
-| W9d-5 | 失败任务：刷新图标 → `newUrl == null` |
+| W9d-4 | `TaskTile`：菜单「修改 URL 重试」触发 `onEditUrlRetry` |
+| W9d-4b | `TasksScreen`（或等效接线测）：对话框确认 → `FakeEngineRepository.lastRetryNewUrl` 为编辑后 URL |
+| W9d-5 | 失败任务：刷新图标 → `FakeEngineRepository.lastRetryNewUrl == null` |
 | W9d-6 | `needs_sniff` 失败：无改 URL 菜单（沿用 / 扩展现有 `task_tile_test`） |
 
-`file_picker` 在 widget 测试中用 **method channel mock** 或把 `pickMediaDirectory` 抽象为 `MediaDirPicker` 接口并在测试中注入 fake（实现时二选一，优先可测性）。
+目录选择器 widget 测试 **统一** 使用可注入的 `MediaDirectoryPicker` 接口（**不** 依赖 method channel mock）。
 
 ### 7.4 集成
 
@@ -282,7 +289,7 @@ void retryTask(String taskId, {String? newUrl});
 |----|------|
 | U11d | Engine 级（经 `EngineHost` / FFI）：seed Failed 任务 → `retryTask(id, newUrl: …)` → `listTasks` 为 Queued 且 `sourceUrl` 更新；**不要求**完整下载跑通 |
 
-CI：并入现有 `flutter-integration` matrix，新增 `library` 或 `settings` suite job 跑 `integration_test/library_settings_retry_test.dart`（与 U11b/U11c 模式一致）。
+CI：并入现有 `flutter-integration` matrix，新增 **`library_settings_retry`** suite job 跑 `integration_test/library_settings_retry_test.dart`（与 U11b/U11c 模式一致）。
 
 ---
 
@@ -319,6 +326,6 @@ CI：并入现有 `flutter-integration` matrix，新增 `library` 或 `settings`
 | Android TV | **隐藏**选择文件夹 |
 | 重试快路径 | 刷新图标 → `retry_task(id, None)` |
 | 改 URL | 菜单 + 对话框 → `retry_task(id, Some(url))` |
-| 改 URL 时重置 | `resolved_media_url`、进度、`output_path`；保留 cookie/referer |
+| 改 URL 时重置 | `resolved_media_url`、进度、`output_path`、`checkpoint_json`、`.dl/{id}`；保留 cookie/referer |
 | `needs_sniff` | **拒绝** `retry_task`；无改 URL 菜单 |
 | 测试反模式 | 删除 `requeue_failed_task` 直写 TaskStore |

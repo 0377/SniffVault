@@ -1,10 +1,12 @@
 # Plan 9d 设置目录选择器与失败任务改 URL 重试 Implementation Plan
 
+> **修订**: 2026-09-14 review（checkpoint/.dl 清理、TV helper 分文案、W9d-4b/5、L9d-1 显式断言）
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 设置页可通过系统目录选择器配置 `media_dir`（保留手填；TV 隐藏选择器）；失败任务支持快路径重试与「修改 URL 重试」；Engine 扩展 `retry_task` 为唯一任务 URL 写入口；验收后推送 `v0.2.0` tag。
 
-**Architecture:** `TaskStore::requeue_failed_with_url` 原子更新失败任务的 `source_url` 与进度字段；`Engine::retry_task(id, new_url)` 统一校验后分支快路径/改 URL；FFI 第三参数可空 → Dart `EngineHost`；Flutter 侧 `mediaDirNameFromPickerResult` + 可注入 `MediaDirectoryPicker`；任务 UI 保留刷新图标，新增 `RetryUrlDialog` 与 `PopupMenuButton`。
+**Architecture:** `TaskStore::requeue_failed_with_url` 原子更新失败任务的 `source_url`、进度与 `checkpoint_json`；改 URL 分支另调 `cleanup_download_temp` 清 `.dl/{id}`；`Engine::retry_task(id, new_url)` 统一校验后分支快路径/改 URL；FFI 第三参数可空 → Dart `EngineHost`；Flutter 侧 `mediaDirNameFromPickerResult` + 可注入 `MediaDirectoryPicker`；任务 UI 保留刷新图标，新增 `RetryUrlDialog` 与 `PopupMenuButton`。
 
 **Tech Stack:** Rust (`rusqlite`)、C FFI（Cargokit）、Flutter + Riverpod + `file_picker` + `path`
 
@@ -14,11 +16,11 @@
 
 - **Engine 是唯一任务 URL 写入口**：`source_url` 更新仅经 `Engine::retry_task`；禁止测试/Flutter 直写 `TaskStore` 改 URL（删除 `requeue_failed_task`）
 - **`media_dir` 语义不变**：单层相对目录名；目录选择器 **仅取 basename**；`save_settings` 在 `data_dir` 下 `create_dir_all`；**不搬移已有媒体文件**
-- **快路径**：`retry_task(id, None)` 仅 `Failed → Queued` + 清 `error_message`；不改 `source_url` / `resolved_media_url` / 进度
-- **改 URL 路径**：`retry_task(id, Some(url))` 更新 `source_url`，清空 `resolved_media_url`、`progress_bytes`、`total_bytes`、`output_path`
+- **快路径**：`retry_task(id, None)` 仅 `Failed → Queued` + 清 `error_message`；不改 `source_url` / `resolved_media_url` / 进度 / `checkpoint_json`；不删 `.dl/{id}`
+- **改 URL 路径**：`retry_task(id, Some(url))` 更新 `source_url`，清空 `resolved_media_url`、`progress_bytes`、`total_bytes`、`output_path`、`checkpoint_json`；调用 `cleanup_download_temp(media_dir, task_id)`
 - **`needs_sniff` 失败**：`retry_task` 拒绝；UI 无「修改 URL 重试」菜单
 - **改 URL 时保留** `cookie_header` / `referer` / `poster_url`
-- **Android TV**：隐藏 `settings_pick_media_dir`；不调用 `file_picker`
+- **Android TV**：隐藏 `settings_pick_media_dir`；不调用 `file_picker`；helper 仅用 TV 文案（不提选择器）
 - **依赖**：`file_picker: ^8.0.0`（或 `flutter pub add file_picker` 解析到的兼容版本）；**不** 引入 `file_selector`
 - **验证命令**（仓库根目录）：`cargo fmt --check`、`cargo test --manifest-path engine/Cargo.toml`、`cargo clippy --manifest-path engine/Cargo.toml --all-targets --all-features -- -D warnings`；`cd app && flutter test`；`cd app && flutter test integration_test/library_settings_retry_test.dart -d macos`
 - **`docs/` 在 `.gitignore`**：提交文档用 `git add -f docs/...`
@@ -51,7 +53,8 @@
 | `app/test/media_dir_picker_test.dart` | W9d-1 |
 | `app/test/settings_media_dir_picker_test.dart` | W9d-2、W9d-3 |
 | `app/test/retry_url_dialog_test.dart` | 对话框单测 |
-| `app/test/task_tile_test.dart` | W9d-4..W9d-6 |
+| `app/test/task_tile_test.dart` | W9d-4、W9d-6 |
+| `app/test/tasks_retry_url_test.dart` | W9d-4b、W9d-5 |
 | `app/integration_test/library_settings_retry_test.dart` | U11d |
 | `.github/workflows/ci.yml` | `library_settings_retry` suite |
 | `README.md` | Plan 9d 节 + `v0.2.0` |
@@ -77,7 +80,7 @@
 #[test]
 fn requeue_failed_with_url_resets_progress_and_media_cache() {
     let dir = tempfile::tempdir().unwrap();
-    let store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();
+    let mut store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();
     store
         .upsert(&DownloadTask {
             id: "f1".into(),
@@ -103,6 +106,19 @@ fn requeue_failed_with_url_resets_progress_and_media_cache() {
         .unwrap();
 
     store
+        .save_checkpoint(
+            "f1",
+            &Checkpoint {
+                version: 1,
+                body: CheckpointBody::Mp4 {
+                    temp_dir: "/tmp/.dl/f1".into(),
+                    part_path: "/tmp/.dl/f1/part".into(),
+                    bytes_done: 100,
+                },
+            },
+        )
+        .unwrap();
+    store
         .requeue_failed_with_url("f1", "https://new.example/good.mp4")
         .unwrap();
 
@@ -114,10 +130,13 @@ fn requeue_failed_with_url_resets_progress_and_media_cache() {
     assert!(task.output_path.is_none());
     assert!(task.error_message.is_none());
     assert!(task.resolved_media_url.is_none());
+    assert!(store.load_checkpoint("f1").unwrap().is_none());
     assert_eq!(task.cookie_header.as_deref(), Some("sid=1"));
     assert_eq!(task.referer.as_deref(), Some("https://page.example/"));
 }
 ```
+
+（测试文件顶部 `use video_sniffing_engine::download::checkpoint::{Checkpoint, CheckpointBody};`。）
 
 - [ ] **Step 2: 运行测试确认失败**
 
@@ -137,6 +156,7 @@ pub fn requeue_failed_with_url(&self, id: &str, source_url: &str) -> Result<(), 
                progress_bytes=0,
                total_bytes=NULL,
                output_path=NULL,
+               checkpoint_json=NULL,
                error_message=NULL,
                status=?2,
                updated_at_ms=?3
@@ -187,6 +207,8 @@ git commit -m "feat(engine): TaskStore 增加失败任务改 URL 重入队"
 
 将 `engine/tests/retry_task_test.rs` 中所有 `engine.retry_task("...")` 改为 `engine.retry_task("...", None)`。
 
+在 `retry_task_failed_to_queued_clears_error` 中 **显式断言** `source_url` 不变（L9d-1）。
+
 追加新测试：
 
 ```rust
@@ -222,6 +244,32 @@ fn retry_task_with_new_url_updates_source_and_clears_progress() {
     assert_eq!(task.progress_bytes, 0);
     assert!(task.total_bytes.is_none());
     assert!(task.output_path.is_none());
+    let store = TaskStore::open(&path).unwrap();
+    assert!(store.load_checkpoint("failed2").unwrap().is_none());
+}
+
+#[test]
+fn retry_task_with_new_url_cleans_dl_temp_dir() {
+    let dir = tempdir().unwrap();
+    let mut engine = Engine::open(dir.path()).unwrap();
+    let media_dir = engine.media_dir();
+    let dl_dir = media_dir.join(".dl").join("failed3");
+    std::fs::create_dir_all(&dl_dir).unwrap();
+    std::fs::write(dl_dir.join("part.bin"), b"partial").unwrap();
+
+    let path = dir.path().join("tasks.db");
+    {
+        let store = TaskStore::open(&path).unwrap();
+        let mut task = sample("failed3", None, TaskStatus::Failed, Some("http error"));
+        task.source_url = "https://example.com/old.mp4".into();
+        store.upsert(&task).unwrap();
+    }
+
+    engine
+        .retry_task("failed3", Some("https://example.com/new.mp4"))
+        .unwrap();
+
+    assert!(!dl_dir.exists());
 }
 
 #[test]
@@ -344,6 +392,7 @@ pub fn retry_task(
                     .set_task_status(task_id, TaskStatus::Queued, None)?;
             } else {
                 self.tasks.requeue_failed_with_url(task_id, trimmed)?;
+                crate::download::worker::cleanup_download_temp(&self.media_dir(), task_id);
             }
         }
     }
@@ -405,7 +454,7 @@ use std::ffi::{CStr, CString};
 
 use tempfile::tempdir;
 use video_sniffing_engine::tasks::TaskStore;
-use video_sniffing_engine::{DownloadTask, Engine, TaskStatus};
+use video_sniffing_engine::{DownloadTask, TaskStatus};
 use video_sniffing_engine_ffi::handle::{engine_destroy, engine_free_string, engine_open};
 use video_sniffing_engine_ffi::sync_dispatch::{engine_list_tasks, engine_retry_task};
 
@@ -710,6 +759,8 @@ class FilePickerMediaDirectoryPicker implements MediaDirectoryPicker {
 
 Run: `cd app && flutter pub add file_picker path`
 
+若 Android/iOS 真机目录选择失败，按 `file_picker` 文档补权限；CI widget 测不依赖真机选择器。
+
 - [ ] **Step 5: 运行测试**
 
 Run: `cd app && flutter test test/media_dir_picker_test.dart`  
@@ -821,6 +872,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('settings_pick_media_dir')), findsNothing);
+    expect(find.textContaining('选择外置路径'), findsNothing);
+    expect(find.textContaining('应用数据目录下的文件夹名称'), findsOneWidget);
   });
 }
 ```
@@ -835,7 +888,9 @@ Expected: FAIL — Key not found / constructor missing
 要点：
 
 1. 构造函数增加 `final MediaDirectoryPicker? directoryPicker;`
-2. `media_dir` TextField 增加 `helperText: '此处为应用数据目录下的文件夹名称；选择外置路径时仅采用文件夹名，不会自动搬移已有缓存文件。'`
+2. `media_dir` TextField 的 `helperText` 按平台分支（`ref.watch(isTelevisionProvider)`）：
+   - TV：`此处为应用数据目录下的文件夹名称。`
+   - 其它：`此处为应用数据目录下的文件夹名称；选择外置路径时仅采用文件夹名，不会自动搬移已有缓存文件。`
 3. 非 TV 时在 TextField 下方增加：
 
 ```dart
@@ -1048,7 +1103,8 @@ git commit -m "feat(app): 失败任务修改 URL 重试对话框"
 - Modify: `app/lib/features/tasks/widgets/parent_task_group.dart`
 - Modify: `app/lib/features/tasks/tasks_screen.dart`
 - Modify: `app/test/task_tile_test.dart`
-- Modify: `app/test/tasks_needs_sniff_test.dart`（若 TaskTile 构造函数变更导致编译失败）
+- Create: `app/test/tasks_retry_url_test.dart`
+- Modify: `app/test/tasks_needs_sniff_test.dart`（若 `TaskTile` 构造函数变更导致编译失败）
 
 **Interfaces:**
 - Consumes: Task 4 `retryTask(id, newUrl:)`；Task 7 `showRetryUrlDialog`
@@ -1059,7 +1115,7 @@ git commit -m "feat(app): 失败任务修改 URL 重试对话框"
 在 `app/test/task_tile_test.dart` 追加：
 
 ```dart
-testWidgets('W9d-4 edit url retry menu invokes onEditUrlRetry', (tester) async {
+testWidgets('W9d-4 edit url menu invokes onEditUrlRetry', (tester) async {
   const task = DownloadTask(
     id: 't-failed-edit',
     title: '第01集',
@@ -1133,8 +1189,13 @@ Expected: FAIL — `onEditUrlRetry` not defined
 - [ ] **Step 3: 更新 `TaskTile`**
 
 ```dart
-// task_tile.dart — 构造函数增加
+// task_tile.dart — 构造函数增加（默认 null，避免破坏现有调用点）
 final VoidCallback? onEditUrlRetry;
+
+const TaskTile({
+  ...
+  this.onEditUrlRetry,
+});
 
 // _buildActions 内，taskCanRetry 且 onEditUrlRetry != null 时：
 if (taskCanRetry(task) && onEditUrlRetry != null) {
@@ -1182,13 +1243,35 @@ Future<void> _editUrlRetry(BuildContext context, WidgetRef ref, DownloadTask tas
 
 快路径 `onRetry` 保持 `repo.retryTask(taskId)`（`newUrl` 默认 null）。
 
-- [ ] **Step 5: 写 W9d-5（可选与 TasksScreen 集成测）**
+实现前运行 `rg 'TaskTile\\(' app/test app/lib` 确认所有调用点编译通过（`onEditUrlRetry` 可选故多数无需改）。
 
-在 `task_tile_test.dart` 已有「failed task shows retry button」用例即覆盖 W9d-5 快路径；确认 `onRetry` 仍被调用且与菜单独立。
+- [ ] **Step 5: 写 W9d-4b / W9d-5 接线测试**
+
+```dart
+// app/test/tasks_retry_url_test.dart — 抽取 TasksScreen 失败重试逻辑为可测 widget，
+// 或 ProviderScope + 最小 tasks 列表 + FakeEngineRepository
+
+testWidgets('W9d-4b edit url dialog calls retryTask with newUrl', (tester) async {
+  final fake = FakeEngineRepository();
+  // pump 含一条 failed 任务的 TasksScreen（override tasksProvider / engineRepositoryProvider）
+  // 打开菜单 → 修改 URL 重试 → 对话框输入新 URL → 确认
+  expect(fake.lastRetryTaskId, 't-failed');
+  expect(fake.lastRetryNewUrl, 'https://new.example/v.mp4');
+});
+
+testWidgets('W9d-5 refresh icon calls retryTask without newUrl', (tester) async {
+  final fake = FakeEngineRepository();
+  // tap 刷新图标
+  expect(fake.lastRetryTaskId, 't-failed');
+  expect(fake.lastRetryNewUrl, isNull);
+});
+```
+
+（具体 pump 方式与现有 `tasks_needs_sniff_test.dart` 对齐；若 `TasksScreen` 过重，可将 `_editUrlRetry` 提取为 `lib/features/tasks/retry_url_actions.dart` 顶层函数便于单测。）
 
 - [ ] **Step 6: 运行 widget 测试**
 
-Run: `cd app && flutter test test/task_tile_test.dart test/tasks_needs_sniff_test.dart`  
+Run: `cd app && flutter test test/task_tile_test.dart test/tasks_retry_url_test.dart test/tasks_needs_sniff_test.dart`  
 Expected: PASS
 
 - [ ] **Step 7: Commit**
@@ -1197,7 +1280,8 @@ Expected: PASS
 git add app/lib/features/tasks/widgets/task_tile.dart \
   app/lib/features/tasks/widgets/parent_task_group.dart \
   app/lib/features/tasks/tasks_screen.dart \
-  app/test/task_tile_test.dart
+  app/test/task_tile_test.dart \
+  app/test/tasks_retry_url_test.dart
 git commit -m "feat(app): 任务页支持修改 URL 后重试"
 ```
 
@@ -1243,11 +1327,13 @@ INSERT INTO download_tasks (
   progress_bytes, total_bytes, error_message, output_path,
   library_item_id, episode_index, created_at_ms, updated_at_ms,
   cookie_header, referer, resolved_media_url, poster_url
+  checkpoint_json
 ) VALUES (
   '$taskId', NULL, NULL, 'u11d', 'https://old.example/bad.mp4', NULL, 'failed',
   100, 200, 'http error', NULL,
   NULL, NULL, 1, 1,
-  NULL, NULL, 'https://cdn.example/old.m3u8', NULL
+  NULL, NULL, 'https://cdn.example/old.m3u8', NULL,
+  '{"media_url":"https://cdn.example/old.m3u8"}'
 );
 ''');
       } finally {
@@ -1261,6 +1347,16 @@ INSERT INTO download_tasks (
       expect(task.sourceUrl, 'https://new.example/good.mp4');
       expect(task.resolvedMediaUrl, isNull);
       expect(task.progressBytes, 0);
+
+      final db2 = sqlite3.open('${dataDir.path}/tasks.db');
+      try {
+        final checkpoint = db2.select(
+          "SELECT checkpoint_json FROM download_tasks WHERE id='$taskId'",
+        );
+        expect(checkpoint.first.columnAt(0), isNull);
+      } finally {
+        db2.dispose();
+      }
     } finally {
       host.dispose();
     }
@@ -1357,10 +1453,12 @@ git commit -m "docs: Plan 9d 实现计划与 README v0.2.0 说明"
 | F9d-1、F9d-2 | Task 3 |
 | W9d-1 | Task 5 |
 | W9d-2、W9d-3 | Task 6 |
-| W9d-4..W9d-6 | Task 8 |
+| W9d-4、W9d-6 | Task 8 |
+| W9d-4b、W9d-5 | Task 8（`tasks_retry_url_test.dart`） |
 | U11d + CI | Task 9 |
 | `file_picker` + basename 策略 | Task 5–6 |
-| TV 隐藏选择器 | Task 6 |
+| TV 隐藏选择器 + helper 分文案 | Task 6 |
+| `checkpoint_json` + `.dl` 清理 | Task 1–2 |
 | `retry_task` 快路径/改 URL | Task 2–4、8 |
 | README + v0.2.0 | Task 10 |
 | 删除 `requeue_failed_task` | Task 2 |
