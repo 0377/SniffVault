@@ -257,6 +257,7 @@ mod tests {
             cookie_header: None,
             referer: None,
             resolved_media_url: None,
+            poster_url: None,
         }
     }
 
@@ -331,6 +332,7 @@ mod tests {
             cookie_header: None,
             referer: None,
             resolved_media_url: None,
+            poster_url: None,
         };
 
         let checkpoint = rebuild_checkpoint_from_temp(&media_dir, &task)
@@ -385,6 +387,7 @@ mod tests {
             cookie_header: None,
             referer: None,
             resolved_media_url: None,
+            poster_url: None,
         };
 
         let checkpoint = rebuild_checkpoint_from_temp(&media_dir, &task)
@@ -427,6 +430,7 @@ mod tests {
             cookie_header: None,
             referer: None,
             resolved_media_url: None,
+            poster_url: None,
         };
 
         let checkpoint = rebuild_checkpoint_from_temp(&media_dir, &task)
@@ -472,6 +476,7 @@ mod tests {
             cookie_header: None,
             referer: None,
             resolved_media_url: Some("https://example.com/media.m3u8".into()),
+            poster_url: None,
         };
         store.upsert(&task).unwrap();
 

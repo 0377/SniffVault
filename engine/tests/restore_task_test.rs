@@ -28,6 +28,7 @@ fn sample(
         cookie_header: None,
         referer: None,
         resolved_media_url: resolved_media_url.map(|s| s.into()),
+        poster_url: None,
     }
 }
 

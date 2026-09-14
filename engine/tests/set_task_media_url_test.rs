@@ -22,6 +22,7 @@ fn sample(id: &str, status: TaskStatus, error_message: Option<&str>) -> Download
         cookie_header: None,
         referer: None,
         resolved_media_url: None,
+        poster_url: None,
     }
 }
 

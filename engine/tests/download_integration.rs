@@ -31,7 +31,7 @@ fn player_page_resolves_and_downloads_mp4() {
         let page_url = format!("http://{addr}/html/player_page.html");
 
         fx.engine
-            .enqueue_single("from-player", &page_url, None, None)
+            .enqueue_single("from-player", &page_url, None, None, None)
             .unwrap();
         fx.engine.start_downloads().unwrap();
         wait_for_task(
@@ -62,7 +62,7 @@ fn player_page_without_media_sets_needs_sniff() {
         let page_url = format!("http://{addr}/html/empty_player.html");
 
         fx.engine
-            .enqueue_single("empty-player", &page_url, None, None)
+            .enqueue_single("empty-player", &page_url, None, None, None)
             .unwrap();
         fx.engine.start_downloads().unwrap();
 
@@ -124,7 +124,7 @@ fn resolved_media_url_skips_l2_fetch() {
 
         let task_id = fx
             .engine
-            .enqueue_single("pre-resolved", &page_url, None, None)
+            .enqueue_single("pre-resolved", &page_url, None, None, None)
             .unwrap();
         let store = TaskStore::open(&fx.data_dir().join("tasks.db")).unwrap();
         store.set_resolved_media_url(&task_id, &mp4_url).unwrap();
@@ -164,7 +164,7 @@ fn mp4_download_registers() {
         let url = format!("http://{addr}/sample.mp4");
 
         fx.engine
-            .enqueue_single("sample", &url, None, None)
+            .enqueue_single("sample", &url, None, None, None)
             .unwrap();
         fx.engine.start_downloads().unwrap();
         wait_for_task(
@@ -202,7 +202,10 @@ fn mp4_resume_after_stop() {
         let (addr, _guard) =
             fixture_server::serve_dir_throttled(fixture_dir, 8_192, Duration::from_millis(5)).await;
         let url = format!("http://{addr}/large.mp4");
-        let task_id = fx.engine.enqueue_single("large", &url, None, None).unwrap();
+        let task_id = fx
+            .engine
+            .enqueue_single("large", &url, None, None, None)
+            .unwrap();
 
         fx.engine.start_downloads().unwrap();
 
@@ -294,7 +297,7 @@ fn hls_plain_registers() {
         let url = format!("http://{addr}/media.m3u8");
 
         fx.engine
-            .enqueue_single("hls-plain", &url, None, None)
+            .enqueue_single("hls-plain", &url, None, None, None)
             .unwrap();
         fx.engine.start_downloads().unwrap();
         wait_for_task(
@@ -335,7 +338,7 @@ fn hls_failure_retry_resumes_and_completes() {
 
         let task_id = fx
             .engine
-            .enqueue_single("hls-retry", &url, None, None)
+            .enqueue_single("hls-retry", &url, None, None, None)
             .unwrap();
         fx.engine.start_downloads().unwrap();
         wait_for_task_failed(&fx.engine, &task_id, Duration::from_secs(30)).await;
@@ -399,7 +402,7 @@ fn orphaned_running_hls_resumes_after_reopen() {
 
         let task_id = fx
             .engine
-            .enqueue_single("crash-resume", &url, None, None)
+            .enqueue_single("crash-resume", &url, None, None, None)
             .unwrap();
         fx.engine.start_downloads().unwrap();
         wait_for_hls_segment_file(
@@ -463,7 +466,7 @@ fn pause_without_worker_rebuilds_checkpoint_from_temp() {
 
         let task_id = fx
             .engine
-            .enqueue_single("pause-offline", &url, None, None)
+            .enqueue_single("pause-offline", &url, None, None, None)
             .unwrap();
         fx.engine.start_downloads().unwrap();
         wait_for_hls_segment_file(
@@ -504,7 +507,7 @@ fn hls_aes128_registers() {
         let url = format!("http://{addr}/encrypted.m3u8");
 
         fx.engine
-            .enqueue_single("hls-aes128", &url, None, None)
+            .enqueue_single("hls-aes128", &url, None, None, None)
             .unwrap();
         fx.engine.start_downloads().unwrap();
         wait_for_task(
@@ -534,7 +537,7 @@ fn hls_master_highest_registers() {
         let url = format!("http://{addr}/master.m3u8");
 
         fx.engine
-            .enqueue_single("hls-master", &url, Some("highest"), None)
+            .enqueue_single("hls-master", &url, Some("highest"), None, None)
             .unwrap();
         fx.engine.start_downloads().unwrap();
         wait_for_task(
@@ -575,6 +578,7 @@ fn series_partial_failure_resume() {
                     (2, "第2集".into(), bad_url),
                     (3, "第3集".into(), good_mp4.clone()),
                 ],
+                None,
                 None,
                 None,
             )
@@ -650,7 +654,7 @@ fn pause_and_cancel() {
         // Pause path: interrupt mid-download, resume, complete.
         let pause_task_id = fx
             .engine
-            .enqueue_single("pause-me", &url, None, None)
+            .enqueue_single("pause-me", &url, None, None, None)
             .unwrap();
         fx.engine.start_downloads().unwrap();
 
@@ -687,7 +691,7 @@ fn pause_and_cancel() {
         // Cancel path: start another download and cancel it.
         let cancel_task_id = fx
             .engine
-            .enqueue_single("cancel-me", &url, None, None)
+            .enqueue_single("cancel-me", &url, None, None, None)
             .unwrap();
         if wait_for_any_running_or_progress(&fx.engine, &cancel_task_id, Duration::from_secs(5))
             .await
@@ -724,7 +728,7 @@ fn mp4_download_sends_enqueued_cookie() {
         };
         let id = fx
             .engine
-            .enqueue_single("authed", &url, None, Some(&auth))
+            .enqueue_single("authed", &url, None, Some(&auth), None)
             .unwrap();
         fx.engine.start_downloads().unwrap();
         wait_for_task(

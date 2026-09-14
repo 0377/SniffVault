@@ -16,6 +16,7 @@ fn enqueue_series_persists_season_on_parent_and_children() {
             ],
             Some("1080p"),
             None,
+            None,
         )
         .unwrap();
 

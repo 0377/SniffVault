@@ -131,6 +131,7 @@ impl Engine {
         episodes: &[(u32, String, String)],
         quality_label: Option<&str>,
         auth: Option<&DownloadAuth>,
+        poster_url: Option<&str>,
     ) -> Result<(String, Vec<String>), EngineError> {
         if episodes.is_empty() {
             return Err(EngineError::InvalidArg("episodes must not be empty".into()));
@@ -139,6 +140,7 @@ impl Engine {
         let parent_id = Uuid::new_v4().to_string();
         let cookie_header = auth.and_then(|a| a.cookies.clone());
         let referer = auth.and_then(|a| a.referer.clone());
+        let poster = poster_url.map(|s| s.to_string());
         let mut child_ids = Vec::new();
         let mut child_tasks = Vec::new();
         for (index, title, url) in episodes {
@@ -163,6 +165,7 @@ impl Engine {
                 cookie_header: cookie_header.clone(),
                 referer: referer.clone(),
                 resolved_media_url: None,
+                poster_url: poster.clone(),
             });
         }
         self.tasks.upsert_parent_with_children(
@@ -185,6 +188,7 @@ impl Engine {
                 cookie_header,
                 referer,
                 resolved_media_url: None,
+                poster_url: poster,
             },
             &child_tasks,
         )?;
@@ -197,6 +201,7 @@ impl Engine {
         url: &str,
         quality_label: Option<&str>,
         auth: Option<&DownloadAuth>,
+        poster_url: Option<&str>,
     ) -> Result<String, EngineError> {
         if url.is_empty() {
             return Err(EngineError::InvalidArg("url must not be empty".into()));
@@ -222,6 +227,7 @@ impl Engine {
             cookie_header: auth.and_then(|a| a.cookies.clone()),
             referer: auth.and_then(|a| a.referer.clone()),
             resolved_media_url: None,
+            poster_url: poster_url.map(|s| s.to_string()),
         })?;
         Ok(id)
     }

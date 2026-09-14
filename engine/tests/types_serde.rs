@@ -86,6 +86,7 @@ fn episode_list_and_task_status_defaults() {
         cookie_header: None,
         referer: None,
         resolved_media_url: None,
+        poster_url: None,
     };
 }
 
@@ -146,6 +147,7 @@ fn download_task_json_omits_auth_snapshot() {
         cookie_header: Some("sid=secret".into()),
         referer: Some("https://example.com/page".into()),
         resolved_media_url: None,
+        poster_url: None,
     };
     let value = serde_json::to_value(&task).unwrap();
     assert!(value.get("cookie_header").is_none());

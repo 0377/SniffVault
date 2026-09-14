@@ -920,6 +920,7 @@ mod tests {
             cookie_header: None,
             referer: None,
             resolved_media_url: None,
+            poster_url: None,
         };
         assert_eq!(output_filename(&task), "第1集_S1E3.mp4");
     }
