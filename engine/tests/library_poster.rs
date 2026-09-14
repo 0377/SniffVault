@@ -11,7 +11,7 @@ use video_sniffing_engine::Engine;
 mod library_merge_seed;
 
 fn spawn_file_server(root: PathBuf) -> (String, thread::JoinHandle<()>) {
-    spawn_file_server_for(Duration::from_secs(2), root, 1)
+    spawn_file_server_for(Duration::from_secs(5), root, 8)
 }
 
 fn spawn_file_server_for(
