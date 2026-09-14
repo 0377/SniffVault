@@ -68,6 +68,7 @@ class _AddScreenState extends ConsumerState<AddScreen> {
             appBar: AppBar(title: const Text('确认下载')),
             body: ResolveWizard(
               outcome: result.outcome,
+              posterUrl: result.posterUrl,
               defaultQualityLabel: settings.defaultQualityLabel,
               resolveQualities: repo.resolveQualities,
               enqueueSingle: repo.enqueueSingle,

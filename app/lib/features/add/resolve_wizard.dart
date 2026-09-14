@@ -11,6 +11,7 @@ typedef EnqueueSingleCallback = String Function({
   required String url,
   String? qualityLabel,
   DownloadAuth? auth,
+  String? posterUrl,
 });
 typedef EnqueueEpisodesCallback = EnqueueEpisodesResult Function({
   required String listTitle,
@@ -18,6 +19,7 @@ typedef EnqueueEpisodesCallback = EnqueueEpisodesResult Function({
   required List<(int index, String title, String url)> episodes,
   String? qualityLabel,
   DownloadAuth? auth,
+  String? posterUrl,
 });
 
 class ResolveWizard extends StatefulWidget {
@@ -25,6 +27,7 @@ class ResolveWizard extends StatefulWidget {
     super.key,
     required this.outcome,
     required this.onEnqueue,
+    this.posterUrl,
     this.resolveQualities,
     this.enqueueSingle,
     this.enqueueEpisodes,
@@ -35,6 +38,7 @@ class ResolveWizard extends StatefulWidget {
 
   final ResolveOutcome outcome;
   final Future<void> Function(BuildContext context) onEnqueue;
+  final String? posterUrl;
   final ResolveQualitiesCallback? resolveQualities;
   final EnqueueSingleCallback? enqueueSingle;
   final EnqueueEpisodesCallback? enqueueEpisodes;
@@ -124,6 +128,7 @@ class _ResolveWizardState extends State<ResolveWizard> {
         url: candidate.url,
         qualityLabel: _selectedQuality?.label ?? widget.defaultQualityLabel,
         auth: widget.auth,
+        posterUrl: widget.posterUrl,
       );
       await widget.onEnqueue(context);
     } finally {
@@ -149,6 +154,7 @@ class _ResolveWizardState extends State<ResolveWizard> {
             .toList(),
         qualityLabel: widget.defaultQualityLabel,
         auth: widget.auth,
+        posterUrl: widget.posterUrl,
       );
       await widget.onEnqueue(context);
     } finally {

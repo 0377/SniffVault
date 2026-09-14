@@ -6,10 +6,12 @@ class BrowseResolveArgs {
   const BrowseResolveArgs({
     required this.outcome,
     this.auth,
+    this.posterUrl,
   });
 
   final ResolveOutcome outcome;
   final DownloadAuth? auth;
+  final String? posterUrl;
 }
 
 final browseResolveProvider = StateProvider<BrowseResolveArgs?>((ref) => null);
