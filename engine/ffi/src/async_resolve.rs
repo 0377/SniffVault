@@ -42,7 +42,14 @@ fn spawn_resolve_url(
     handle.runtime.spawn(async move {
         let result = resolve_url_for_ffi(user_agent.as_deref(), &url, opts).await;
         let callback = match result {
-            Ok(data) => json!({ "request_id": request_id, "ok": true, "data": data }),
+            Ok(result) => json!({
+                "request_id": request_id,
+                "ok": true,
+                "data": json!({
+                    "outcome": result.outcome,
+                    "poster_url": result.poster_url,
+                }),
+            }),
             Err(err) => json!({
                 "request_id": request_id,
                 "ok": false,

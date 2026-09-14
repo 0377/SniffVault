@@ -19,14 +19,15 @@ async fn r1_direct_mp4_is_single() {
     let engine = Engine::open(dir.path()).unwrap();
     let (addr, _guard) = fixture_server::serve_dir(fixture_server::fixtures_dir()).await;
     let url = format!("http://{addr}/sample.mp4");
-    let outcome = engine
+    let result = engine
         .resolve_url(&url, ResolveOptions::default())
         .await
         .unwrap();
-    match outcome {
+    match result.outcome {
         ResolveOutcome::Single(c) => assert_eq!(c.kind, MediaKind::Mp4),
         _ => panic!("expected single mp4"),
     }
+    assert!(result.poster_url.is_none());
 }
 
 #[tokio::test]
@@ -36,11 +37,11 @@ async fn r2_master_m3u8_is_candidates_with_quality() {
     let (addr, _guard) =
         fixture_server::serve_dir(fixture_server::fixtures_dir().join("hls")).await;
     let url = format!("http://{addr}/master.m3u8");
-    let outcome = engine
+    let result = engine
         .resolve_url(&url, ResolveOptions::default())
         .await
         .unwrap();
-    match outcome {
+    match result.outcome {
         ResolveOutcome::Candidates(list) => {
             assert!(list.len() >= 2);
             assert!(list.iter().any(|c| c.quality.as_ref().is_some()));
@@ -56,11 +57,11 @@ async fn r3_media_m3u8_is_single_hls() {
     let (addr, _guard) =
         fixture_server::serve_dir(fixture_server::fixtures_dir().join("hls")).await;
     let url = format!("http://{addr}/media.m3u8");
-    let outcome = engine
+    let result = engine
         .resolve_url(&url, ResolveOptions::default())
         .await
         .unwrap();
-    match outcome {
+    match result.outcome {
         ResolveOutcome::Single(c) => assert_eq!(c.kind, MediaKind::Hls),
         _ => panic!("expected single hls"),
     }
@@ -73,7 +74,7 @@ async fn r4_series_page_is_episode_list() {
     let (addr, _guard) =
         fixture_server::serve_dir(fixture_server::fixtures_dir().join("html")).await;
     let url = format!("http://{addr}/series_page.html");
-    let outcome = engine
+    let result = engine
         .resolve_url(
             &url,
             ResolveOptions {
@@ -83,7 +84,7 @@ async fn r4_series_page_is_episode_list() {
         )
         .await
         .unwrap();
-    match outcome {
+    match result.outcome {
         ResolveOutcome::EpisodeList(list) => {
             assert_eq!(list.title, "测试剧");
             assert!(list.episodes.len() >= 3);
@@ -101,11 +102,11 @@ async fn r5_embedded_m3u8_resolves_master() {
     let page_url = format!("http://{addr}/embedded_m3u8.html");
     let expected_master = format!("http://{addr}/master.m3u8");
 
-    let outcome = engine
+    let result = engine
         .resolve_url(&page_url, ResolveOptions::default())
         .await
         .unwrap();
-    match outcome {
+    match result.outcome {
         ResolveOutcome::Single(c) => {
             assert_eq!(c.url, expected_master);
             assert_eq!(c.kind, MediaKind::Hls);
@@ -156,7 +157,7 @@ async fn r6_cookie_auth() {
         .await
         .unwrap();
     assert!(matches!(
-        denied,
+        denied.outcome,
         ResolveOutcome::NeedsBrowser { reason } if reason == "auth_required"
     ));
 
@@ -172,7 +173,7 @@ async fn r6_cookie_auth() {
         .await
         .unwrap();
     assert!(matches!(
-        ok,
+        ok.outcome,
         ResolveOutcome::NeedsBrowser { reason } if reason == "no_media_found"
     ));
     handle.abort();

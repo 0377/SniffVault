@@ -205,3 +205,9 @@ pub enum ResolveOutcome {
     EpisodeList(EpisodeList),
     NeedsBrowser { reason: String },
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResolveUrlResult {
+    pub outcome: ResolveOutcome,
+    pub poster_url: Option<String>,
+}

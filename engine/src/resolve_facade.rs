@@ -1,12 +1,12 @@
 use crate::download::http::HttpClient;
 use crate::error::EngineError;
-use crate::types::{Quality, ResolveOptions, ResolveOutcome};
+use crate::types::{Quality, ResolveOptions, ResolveUrlResult};
 
 pub async fn resolve_url_for_ffi(
     user_agent: Option<&str>,
     url: &str,
     opts: ResolveOptions,
-) -> Result<ResolveOutcome, EngineError> {
+) -> Result<ResolveUrlResult, EngineError> {
     let http = HttpClient::new(user_agent)?;
     crate::resolve::resolve_url(&http, url, opts).await
 }

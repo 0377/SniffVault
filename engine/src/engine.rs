@@ -10,8 +10,8 @@ use crate::settings;
 use crate::tasks::TaskStore;
 use crate::types::{
     DownloadAuth, DownloadLogEntry, DownloadTask, EngineSettings, LibraryEpisode, LibraryItem,
-    Quality, ResolveOptions, ResolveOutcome, ResourceCandidate, SniffEvent, TaskEvent,
-    TaskEventKind, TaskStatus,
+    Quality, ResolveOptions, ResolveUrlResult, ResourceCandidate, SniffEvent,
+    TaskEvent, TaskEventKind, TaskStatus,
 };
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc};
@@ -102,7 +102,7 @@ impl Engine {
         &self,
         url: &str,
         opts: ResolveOptions,
-    ) -> Result<ResolveOutcome, EngineError> {
+    ) -> Result<ResolveUrlResult, EngineError> {
         let http = crate::download::http::HttpClient::new(self.settings.user_agent.as_deref())?;
         crate::resolve::resolve_url(&http, url, opts).await
     }

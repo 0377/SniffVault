@@ -30,6 +30,11 @@ pub(crate) fn download_poster(
             resp.status()
         )));
     }
+    if let Some(len) = resp.content_length() {
+        if len > POSTER_MAX_BYTES as u64 {
+            return Err(EngineError::InvalidArg("poster exceeds 5 MiB".into()));
+        }
+    }
     let ct = resp
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
