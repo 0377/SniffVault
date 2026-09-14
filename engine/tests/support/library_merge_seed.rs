@@ -54,14 +54,8 @@ pub fn add_episode(
 ) -> LibraryEpisode {
     let media = engine.media_dir().join(file_name);
     fs::write(&media, b"x").unwrap();
-    let store = LibraryStore::open(
-        &engine
-            .media_dir()
-            .parent()
-            .unwrap()
-            .join("library.db"),
-    )
-    .unwrap();
+    let store =
+        LibraryStore::open(&engine.media_dir().parent().unwrap().join("library.db")).unwrap();
     let ep = LibraryEpisode {
         id: Uuid::new_v4().to_string(),
         item_id: item_id.into(),

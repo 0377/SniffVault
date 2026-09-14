@@ -188,34 +188,24 @@ fn merge_aborts_when_orphan_path_outside_media_dir() {
     let dir = tempdir().unwrap();
     let mut engine = Engine::open(dir.path()).unwrap();
     let seed = library_merge_seed::seed_duplicate_series(&engine, "示意剧", Some(1));
-    let target_ep = library_merge_seed::add_episode(
-        &engine,
-        &seed.target_item_id,
-        1,
-        "目标1",
-        "t1.mp4",
-        5000,
-    );
-    let source_ep = library_merge_seed::add_episode(
-        &engine,
-        &seed.source_item_id,
-        1,
-        "源1",
-        "s1.mp4",
-        100,
-    );
+    let target_ep =
+        library_merge_seed::add_episode(&engine, &seed.target_item_id, 1, "目标1", "t1.mp4", 5000);
+    let source_ep =
+        library_merge_seed::add_episode(&engine, &seed.source_item_id, 1, "源1", "s1.mp4", 100);
     let outside = dir.path().join("outside.mp4");
     std::fs::write(&outside, b"x").unwrap();
-    library_dirty::inject_outside_file_path(&engine, &seed.source_item_id, outside.to_str().unwrap());
+    library_dirty::inject_outside_file_path(
+        &engine,
+        &seed.source_item_id,
+        outside.to_str().unwrap(),
+    );
     let _ = source_ep;
     let _ = target_ep;
 
     let err = engine
         .merge_library_items(&seed.source_item_id, &seed.target_item_id, true)
         .unwrap_err();
-    assert!(
-        err.to_string().contains("media") || err.to_string().contains("media_dir")
-    );
+    assert!(err.to_string().contains("media") || err.to_string().contains("media_dir"));
     assert_eq!(engine.list_library().unwrap().len(), 2);
 }
 
@@ -242,14 +232,8 @@ fn merge_orphan_after_cast_allows_new_cast() {
     sender.pair_peer("127.0.0.1", port, &pin).unwrap();
 
     let seed = library_merge_seed::seed_duplicate_series(&sender, "示意剧", Some(1));
-    let orphan = library_merge_seed::add_episode(
-        &sender,
-        &seed.source_item_id,
-        1,
-        "源1",
-        "orphan.mp4",
-        0,
-    );
+    let orphan =
+        library_merge_seed::add_episode(&sender, &seed.source_item_id, 1, "源1", "orphan.mp4", 0);
     library_merge_seed::add_episode(&sender, &seed.target_item_id, 1, "目标1", "keep.mp4", 0);
     sender
         .cast_episode(&orphan.id, &receiver.settings().device_id)
@@ -260,14 +244,8 @@ fn merge_orphan_after_cast_allows_new_cast() {
         .unwrap();
     assert!(!sender.has_active_cast());
 
-    let migrated = library_merge_seed::add_episode(
-        &sender,
-        &seed.target_item_id,
-        2,
-        "第2集",
-        "ep2.mp4",
-        0,
-    );
+    let migrated =
+        library_merge_seed::add_episode(&sender, &seed.target_item_id, 2, "第2集", "ep2.mp4", 0);
     sender
         .cast_episode(&migrated.id, &receiver.settings().device_id)
         .unwrap();

@@ -185,7 +185,9 @@ pub unsafe extern "C" fn engine_rename_library_item(
         Ok(s) => s,
         Err(err) => return rust_to_c_string(err_json(err)),
     };
-    ffi_call(handle, |engine| engine.rename_library_item(&item_id, &title).map(|_| ()))
+    ffi_call(handle, |engine| {
+        engine.rename_library_item(&item_id, &title).map(|_| ())
+    })
 }
 
 #[no_mangle]
@@ -202,7 +204,9 @@ pub unsafe extern "C" fn engine_rename_episode(
         Ok(s) => s,
         Err(err) => return rust_to_c_string(err_json(err)),
     };
-    ffi_call(handle, |engine| engine.rename_episode(&episode_id, &title).map(|_| ()))
+    ffi_call(handle, |engine| {
+        engine.rename_episode(&episode_id, &title).map(|_| ())
+    })
 }
 
 #[no_mangle]

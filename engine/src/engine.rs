@@ -580,7 +580,13 @@ impl Engine {
         }
         let source = self.library.get_item(source_item_id)?;
         let target = self.library.get_item(target_item_id)?;
+        crate::library::merge::validate_merge_pair(&source, &target)?;
         let source_eps = self.library.list_episodes(source_item_id)?;
+        if source_eps.is_empty() {
+            return Err(EngineError::InvalidArg(
+                "source series has no episodes".into(),
+            ));
+        }
         let orphan_ids: Vec<String> = source_eps
             .iter()
             .filter(|ep| {

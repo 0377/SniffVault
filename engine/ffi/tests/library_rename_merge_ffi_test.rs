@@ -5,15 +5,13 @@ use video_sniffing_engine::test_api::LibraryStore;
 use video_sniffing_engine::{Engine, LibraryEpisode, LibraryItem, LibraryItemKind};
 use video_sniffing_engine_ffi::handle::{engine_destroy, engine_free_string, engine_open};
 use video_sniffing_engine_ffi::sync_dispatch::{
-    engine_list_episodes, engine_list_library, engine_merge_library_items,
-    engine_rename_episode, engine_rename_library_item,
+    engine_list_episodes, engine_list_library, engine_merge_library_items, engine_rename_episode,
+    engine_rename_library_item,
 };
 
 fn seed_dup(engine: &Engine) -> (String, String) {
-    let store = LibraryStore::open(
-        &engine.media_dir().parent().unwrap().join("library.db"),
-    )
-    .unwrap();
+    let store =
+        LibraryStore::open(&engine.media_dir().parent().unwrap().join("library.db")).unwrap();
     let a = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa".to_string();
     let b = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb".to_string();
     for (id, created) in [(&a, 1_i64), (&b, 2_i64)] {
@@ -41,10 +39,8 @@ fn rename_and_merge_ffi_ok_json() {
         .register_completed_single("旧", media.to_str().unwrap(), None)
         .unwrap();
     let (src, tgt) = seed_dup(&engine);
-    let store = LibraryStore::open(
-        &engine.media_dir().parent().unwrap().join("library.db"),
-    )
-    .unwrap();
+    let store =
+        LibraryStore::open(&engine.media_dir().parent().unwrap().join("library.db")).unwrap();
     let ep = LibraryEpisode {
         id: "cccccccc-cccc-cccc-cccc-cccccccccccc".to_string(),
         item_id: src.clone(),
@@ -94,14 +90,7 @@ fn rename_episode_ffi_ok_json() {
     let media = engine.media_dir().join("ep1.mp4");
     fs::write(&media, b"x").unwrap();
     let (item, ep) = engine
-        .register_completed_episode(
-            "示意剧",
-            Some(1),
-            1,
-            "第1集",
-            media.to_str().unwrap(),
-            None,
-        )
+        .register_completed_episode("示意剧", Some(1), 1, "第1集", media.to_str().unwrap(), None)
         .unwrap();
     let ep_id_str = ep.id.clone();
     drop(engine);
