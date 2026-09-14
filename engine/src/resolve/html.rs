@@ -125,6 +125,26 @@ pub(crate) fn pick_preferred_media_url(urls: &[String]) -> Option<String> {
         .cloned()
 }
 
+pub(crate) fn extract_poster_url(html: &str, base_url: &str) -> Option<String> {
+    static META_RE: OnceLock<Regex> = OnceLock::new();
+    let re = META_RE.get_or_init(|| {
+        Regex::new(
+            r#"(?is)<meta\s+[^>]*property\s*=\s*["']og:image["'][^>]*content\s*=\s*["']([^"']+)["'][^>]*>|<meta\s+[^>]*content\s*=\s*["']([^"']+)["'][^>]*property\s*=\s*["']og:image["'][^>]*>"#,
+        )
+        .unwrap()
+    });
+    let caps = re.captures(html)?;
+    let raw = caps.get(1).or_else(|| caps.get(2))?.as_str().trim();
+    if raw.is_empty() {
+        return None;
+    }
+    if raw.starts_with("http://") || raw.starts_with("https://") {
+        return Some(raw.to_string());
+    }
+    let base = Url::parse(base_url).ok()?;
+    base.join(raw).ok().map(|u| u.to_string())
+}
+
 fn is_blacklisted_href(href: &str) -> bool {
     let trimmed = href.trim();
     if trimmed.is_empty() || trimmed == "#" || trimmed.starts_with('#') {
@@ -304,5 +324,29 @@ mod tests {
         "#;
         let urls = scan_media_urls(html, "http://example.com/page");
         assert_eq!(urls.len(), 1);
+    }
+
+    #[test]
+    fn extract_poster_url_absolute() {
+        let html = include_str!("../../tests/fixtures/html/og_image_absolute.html");
+        assert_eq!(
+            extract_poster_url(html, "https://example.com/show/1"),
+            Some("https://cdn.example.com/poster.jpg".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_poster_url_relative() {
+        let html = include_str!("../../tests/fixtures/html/og_image_relative.html");
+        assert_eq!(
+            extract_poster_url(html, "https://example.com/show/1"),
+            Some("https://example.com/images/cover.png".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_poster_url_missing_returns_none() {
+        let html = include_str!("../../tests/fixtures/html/no_og_image.html");
+        assert_eq!(extract_poster_url(html, "https://example.com/show/1"), None);
     }
 }
