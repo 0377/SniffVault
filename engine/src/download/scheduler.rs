@@ -68,6 +68,7 @@ mod tests {
             cookie_header: None,
             referer: None,
             resolved_media_url: None,
+            poster_url: None,
         }
     }
 

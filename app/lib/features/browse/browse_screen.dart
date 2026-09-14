@@ -348,8 +348,9 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
         return;
       }
       ref.read(browseResolveProvider.notifier).state = BrowseResolveArgs(
-        outcome: outcome,
+        outcome: outcome.outcome,
         auth: session.auth,
+        posterUrl: outcome.posterUrl,
       );
       context.push('/browse/wizard');
     } on EngineException catch (e) {
@@ -371,6 +372,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
       ref.read(browseResolveProvider.notifier).state = BrowseResolveArgs(
         outcome: ResolveOutcomeCandidates([candidate]),
         auth: session.auth,
+        posterUrl: session.outcome?.posterUrl,
       );
       context.push('/browse/wizard');
     } on EngineException catch (e) {
@@ -510,6 +512,7 @@ class BrowseWizardPage extends ConsumerWidget {
       appBar: AppBar(title: const Text('确认下载')),
       body: ResolveWizard(
         outcome: args.outcome,
+        posterUrl: args.posterUrl,
         auth: args.auth,
         defaultQualityLabel: settings.defaultQualityLabel,
         resolveQualities: (url) => repo.resolveQualities(url, opts: opts),

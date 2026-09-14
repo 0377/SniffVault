@@ -123,7 +123,7 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: ResolveWizard(
-            outcome: session.outcome!,
+            outcome: session.outcome!.outcome,
             auth: session.auth,
             enqueueSingle: fake.enqueueSingle,
             onEnqueue: (_) async {},

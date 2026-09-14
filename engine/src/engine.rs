@@ -10,7 +10,7 @@ use crate::settings;
 use crate::tasks::TaskStore;
 use crate::types::{
     DownloadAuth, DownloadLogEntry, DownloadTask, EngineSettings, LibraryEpisode, LibraryItem,
-    Quality, ResolveOptions, ResolveOutcome, ResourceCandidate, SniffEvent, TaskEvent,
+    Quality, ResolveOptions, ResolveUrlResult, ResourceCandidate, SniffEvent, TaskEvent,
     TaskEventKind, TaskStatus,
 };
 use std::path::{Path, PathBuf};
@@ -102,7 +102,7 @@ impl Engine {
         &self,
         url: &str,
         opts: ResolveOptions,
-    ) -> Result<ResolveOutcome, EngineError> {
+    ) -> Result<ResolveUrlResult, EngineError> {
         let http = crate::download::http::HttpClient::new(self.settings.user_agent.as_deref())?;
         crate::resolve::resolve_url(&http, url, opts).await
     }
@@ -131,6 +131,7 @@ impl Engine {
         episodes: &[(u32, String, String)],
         quality_label: Option<&str>,
         auth: Option<&DownloadAuth>,
+        poster_url: Option<&str>,
     ) -> Result<(String, Vec<String>), EngineError> {
         if episodes.is_empty() {
             return Err(EngineError::InvalidArg("episodes must not be empty".into()));
@@ -139,6 +140,7 @@ impl Engine {
         let parent_id = Uuid::new_v4().to_string();
         let cookie_header = auth.and_then(|a| a.cookies.clone());
         let referer = auth.and_then(|a| a.referer.clone());
+        let poster = poster_url.map(|s| s.to_string());
         let mut child_ids = Vec::new();
         let mut child_tasks = Vec::new();
         for (index, title, url) in episodes {
@@ -163,6 +165,7 @@ impl Engine {
                 cookie_header: cookie_header.clone(),
                 referer: referer.clone(),
                 resolved_media_url: None,
+                poster_url: poster.clone(),
             });
         }
         self.tasks.upsert_parent_with_children(
@@ -185,6 +188,7 @@ impl Engine {
                 cookie_header,
                 referer,
                 resolved_media_url: None,
+                poster_url: poster,
             },
             &child_tasks,
         )?;
@@ -197,6 +201,7 @@ impl Engine {
         url: &str,
         quality_label: Option<&str>,
         auth: Option<&DownloadAuth>,
+        poster_url: Option<&str>,
     ) -> Result<String, EngineError> {
         if url.is_empty() {
             return Err(EngineError::InvalidArg("url must not be empty".into()));
@@ -222,6 +227,7 @@ impl Engine {
             cookie_header: auth.and_then(|a| a.cookies.clone()),
             referer: auth.and_then(|a| a.referer.clone()),
             resolved_media_url: None,
+            poster_url: poster_url.map(|s| s.to_string()),
         })?;
         Ok(id)
     }
@@ -509,6 +515,7 @@ impl Engine {
         self.library.set_position(episode_id, position_ms)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn register_completed_episode(
         &mut self,
         series_title: &str,
@@ -517,8 +524,9 @@ impl Engine {
         episode_title: &str,
         file_path: &str,
         source_url: Option<&str>,
+        poster_url: Option<&str>,
     ) -> Result<(LibraryItem, LibraryEpisode), EngineError> {
-        ingest::register_completed_episode(
+        ingest::register_completed_episode_with_poster(
             &self.library,
             &self.media_dir(),
             series_title,
@@ -527,6 +535,8 @@ impl Engine {
             episode_title,
             file_path,
             source_url,
+            poster_url,
+            self.settings.user_agent.as_deref(),
         )
     }
 
@@ -535,14 +545,94 @@ impl Engine {
         title: &str,
         file_path: &str,
         source_url: Option<&str>,
+        poster_url: Option<&str>,
     ) -> Result<(LibraryItem, LibraryEpisode), EngineError> {
-        ingest::register_completed_single(
+        ingest::register_completed_single_with_poster(
             &self.library,
             &self.media_dir(),
             title,
             file_path,
             source_url,
+            poster_url,
+            self.settings.user_agent.as_deref(),
         )
+    }
+
+    pub fn refresh_library_poster(
+        &mut self,
+        item_id: &str,
+        page_url: Option<&str>,
+    ) -> Result<LibraryItem, EngineError> {
+        use crate::library::poster;
+        use crate::resolve::extract_poster_url_from_page;
+
+        let item = self.library.get_item(item_id)?;
+        let old_poster_path = item.poster_path.clone();
+
+        let fetch_url = match page_url {
+            Some(u) => u.to_string(),
+            None => {
+                let eps = self.library.list_episodes(item_id)?;
+                let first = eps
+                    .into_iter()
+                    .min_by_key(|e| e.index)
+                    .ok_or_else(|| EngineError::InvalidArg("no episodes".into()))?;
+                first.source_url.clone().ok_or_else(|| {
+                    EngineError::InvalidArg("no page url for poster refresh".into())
+                })?
+            }
+        };
+
+        let parsed = url::Url::parse(&fetch_url)
+            .map_err(|e| EngineError::InvalidArg(format!("invalid page url: {e}")))?;
+        let scheme = parsed.scheme();
+        if scheme != "http" && scheme != "https" {
+            return Err(EngineError::InvalidArg("page url must be http(s)".into()));
+        }
+
+        let client = reqwest::blocking::Client::builder()
+            .build()
+            .map_err(|e| EngineError::Message(format!("http client: {e}")))?;
+
+        let mut req = client.get(&fetch_url);
+        if let Some(ua) = self.settings.user_agent.as_deref() {
+            req = req.header(reqwest::header::USER_AGENT, ua);
+        }
+        let resp = req
+            .send()
+            .map_err(|e| EngineError::Message(format!("page fetch failed: {e}")))?;
+        if !resp.status().is_success() {
+            return Err(EngineError::Message(format!("page http {}", resp.status())));
+        }
+        let html = resp
+            .text()
+            .map_err(|e| EngineError::Message(format!("page body: {e}")))?;
+
+        let poster_url = extract_poster_url_from_page(&html, &fetch_url)
+            .ok_or_else(|| EngineError::NotFound("no poster on page".into()))?;
+
+        let media_dir = self.media_dir();
+        let new_path = poster::download_poster(
+            &client,
+            &media_dir,
+            item_id,
+            &poster_url,
+            self.settings.user_agent.as_deref(),
+        )?;
+        ingest::ensure_path_in_media_dir(&media_dir, &new_path)?;
+
+        if let Some(old) = &old_poster_path {
+            if old != &new_path {
+                if let Ok(old_canon) = ingest::ensure_path_in_media_dir(&media_dir, old) {
+                    if let Err(e) = std::fs::remove_file(&old_canon) {
+                        eprintln!("failed to remove old poster: {e}");
+                    }
+                }
+            }
+        }
+
+        self.library.update_item_poster_path(item_id, &new_path)?;
+        self.library.get_item(item_id)
     }
 
     pub fn rename_library_item(&self, item_id: &str, title: &str) -> Result<(), EngineError> {

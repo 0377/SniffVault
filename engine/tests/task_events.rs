@@ -14,7 +14,7 @@ fn start_downloads_emits_task_updated() {
         let url = format!("http://{addr}/sample.mp4");
 
         fx.engine
-            .enqueue_single("sample", &url, None, None)
+            .enqueue_single("sample", &url, None, None, None)
             .unwrap();
         fx.engine.start_downloads().unwrap();
         let rx = fx.engine.take_task_event_receiver().unwrap();

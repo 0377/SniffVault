@@ -1,6 +1,7 @@
 use std::ffi::{CStr, CString};
 
 use tempfile::tempdir;
+use video_sniffing_engine::tasks::TaskStore;
 use video_sniffing_engine_ffi::handle::{engine_destroy, engine_free_string, engine_open};
 use video_sniffing_engine_ffi::sync_dispatch::{engine_enqueue_single, engine_list_tasks};
 
@@ -67,4 +68,39 @@ fn enqueue_single_with_auth_list_tasks_omits_cookie() {
     );
     unsafe { engine_free_string(listed) };
     unsafe { engine_destroy(handle) };
+}
+
+#[test]
+fn enqueue_single_with_poster_only_opts_persists_poster_url() {
+    let dir = tempdir().unwrap();
+    let path = CString::new(dir.path().to_str().unwrap()).unwrap();
+    let handle = unsafe { engine_open(path.as_ptr()) };
+    assert!(!handle.is_null());
+
+    let title = CString::new("poster").unwrap();
+    let url = CString::new("https://example.com/video.mp4").unwrap();
+    let opts = CString::new(r#"{"poster_url":"https://example.com/p.jpg"}"#).unwrap();
+    let result = unsafe {
+        engine_enqueue_single(
+            handle,
+            title.as_ptr(),
+            url.as_ptr(),
+            std::ptr::null(),
+            opts.as_ptr(),
+        )
+    };
+    assert!(!result.is_null());
+    let json_str = unsafe { CStr::from_ptr(result).to_str().unwrap() };
+    let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+    assert_eq!(parsed["ok"], true);
+    let task_id = parsed["data"].as_str().unwrap();
+    unsafe { engine_free_string(result) };
+    unsafe { engine_destroy(handle) };
+
+    let store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();
+    let task = store.get(task_id).unwrap();
+    assert_eq!(
+        task.poster_url.as_deref(),
+        Some("https://example.com/p.jpg")
+    );
 }

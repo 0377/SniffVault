@@ -8,9 +8,9 @@ use reqwest::StatusCode;
 use crate::download::hls::playlist::list_master_variants;
 use crate::download::http::HttpClient;
 use crate::error::EngineError;
-use crate::types::{MediaKind, Quality, ResolveOptions, ResolveOutcome};
+use crate::types::{MediaKind, Quality, ResolveOptions, ResolveOutcome, ResolveUrlResult};
 
-use html::{extract_episode_list, pick_preferred_media_url, scan_media_urls};
+use html::{extract_episode_list, extract_poster_url, pick_preferred_media_url, scan_media_urls};
 use media::{
     candidates_from_m3u8_body, classify_entry_url, make_candidate, EntryKind, ResolveMediaResult,
 };
@@ -19,51 +19,67 @@ pub(crate) async fn resolve_url(
     http: &HttpClient,
     url: &str,
     opts: ResolveOptions,
-) -> Result<ResolveOutcome, EngineError> {
+) -> Result<ResolveUrlResult, EngineError> {
     let page_url = opts.page_url.clone().or_else(|| Some(url.to_string()));
     let page_url_ref = page_url.as_deref();
     let default_title = page_url_ref.unwrap_or(url);
 
     match classify_entry_url(url) {
         EntryKind::DirectMp4 => {
-            return Ok(ResolveOutcome::Single(make_candidate(
-                url.to_string(),
-                MediaKind::Mp4,
+            return Ok(resolve_result(
+                ResolveOutcome::Single(make_candidate(
+                    url.to_string(),
+                    MediaKind::Mp4,
+                    None,
+                    page_url_ref,
+                )),
                 None,
-                page_url_ref,
-            )));
+            ));
         }
         EntryKind::M3u8 => {
             let (status, body) = fetch::fetch_playlist_or_page(http, url, &opts).await?;
             if is_auth_required(status) {
-                return Ok(ResolveOutcome::NeedsBrowser {
-                    reason: "auth_required".into(),
-                });
+                return Ok(resolve_result(
+                    ResolveOutcome::NeedsBrowser {
+                        reason: "auth_required".into(),
+                    },
+                    None,
+                ));
             }
             ensure_fetch_success(status)?;
             let result = candidates_from_m3u8_body(&body, url, page_url_ref)?;
-            return Ok(map_media_result(result));
+            return Ok(resolve_result(map_media_result(result), None));
         }
         EntryKind::WebPage => {}
     }
 
     let (status, html) = fetch::fetch_playlist_or_page(http, url, &opts).await?;
+    let poster_url = extract_poster_url(&html, url);
     if is_auth_required(status) {
-        return Ok(ResolveOutcome::NeedsBrowser {
-            reason: "auth_required".into(),
-        });
+        return Ok(resolve_result(
+            ResolveOutcome::NeedsBrowser {
+                reason: "auth_required".into(),
+            },
+            poster_url,
+        ));
     }
     ensure_fetch_success(status)?;
 
     if let Some(episode_list) = extract_episode_list(&html, url, default_title) {
-        return Ok(ResolveOutcome::EpisodeList(episode_list));
+        return Ok(resolve_result(
+            ResolveOutcome::EpisodeList(episode_list),
+            poster_url,
+        ));
     }
 
     let media_urls = scan_media_urls(&html, url);
     if media_urls.is_empty() {
-        return Ok(ResolveOutcome::NeedsBrowser {
-            reason: "no_media_found".into(),
-        });
+        return Ok(resolve_result(
+            ResolveOutcome::NeedsBrowser {
+                reason: "no_media_found".into(),
+            },
+            poster_url,
+        ));
     }
 
     let candidates: Vec<_> = media_urls
@@ -75,9 +91,15 @@ pub(crate) async fn resolve_url(
         .collect();
 
     if candidates.len() == 1 {
-        Ok(ResolveOutcome::Single(candidates[0].clone()))
+        Ok(resolve_result(
+            ResolveOutcome::Single(candidates[0].clone()),
+            poster_url,
+        ))
     } else {
-        Ok(ResolveOutcome::Candidates(candidates))
+        Ok(resolve_result(
+            ResolveOutcome::Candidates(candidates),
+            poster_url,
+        ))
     }
 }
 
@@ -140,6 +162,17 @@ fn ensure_fetch_success(status: StatusCode) -> Result<(), EngineError> {
     }
 }
 
+fn resolve_result(outcome: ResolveOutcome, poster_url: Option<String>) -> ResolveUrlResult {
+    ResolveUrlResult {
+        outcome,
+        poster_url,
+    }
+}
+
+pub(crate) fn extract_poster_url_from_page(html: &str, base_url: &str) -> Option<String> {
+    extract_poster_url(html, base_url)
+}
+
 fn map_media_result(result: ResolveMediaResult) -> ResolveOutcome {
     match result {
         ResolveMediaResult::Single(candidate) => ResolveOutcome::Single(candidate),
@@ -163,14 +196,15 @@ mod pipeline_tests {
     #[tokio::test]
     async fn direct_mp4_returns_single_without_network() {
         let http = HttpClient::new(None).unwrap();
-        let outcome = resolve_url(
+        let result = resolve_url(
             &http,
             "https://cdn.example/clip.mp4",
             ResolveOptions::default(),
         )
         .await
         .unwrap();
-        assert!(matches!(outcome, ResolveOutcome::Single(_)));
+        assert!(matches!(result.outcome, ResolveOutcome::Single(_)));
+        assert!(result.poster_url.is_none());
     }
 
     #[tokio::test]
@@ -228,13 +262,14 @@ mod pipeline_tests {
 
         let http = HttpClient::new(None).unwrap();
         let url = format!("http://{addr}/empty");
-        let outcome = resolve_url(&http, &url, ResolveOptions::default())
+        let result = resolve_url(&http, &url, ResolveOptions::default())
             .await
             .unwrap();
         assert!(matches!(
-            outcome,
+            result.outcome,
             ResolveOutcome::NeedsBrowser { reason } if reason == "no_media_found"
         ));
+        assert!(result.poster_url.is_none());
         handle.abort();
     }
 }

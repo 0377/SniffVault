@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:video_sniffing/engine/models/library_item.dart';
 import 'package:video_sniffing/engine/models/library_item_kind.dart';
+import 'package:video_sniffing/features/library/widgets/poster_thumbnail.dart';
 import 'package:video_sniffing/providers/library_provider.dart';
 
 const _itemKeyPrefix = 'tv_library_item_';
@@ -110,20 +111,11 @@ class _TvLibraryGridTileState extends State<TvLibraryGridTile> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Center(
-                          child: Icon(
-                            Icons.movie_outlined,
-                            size: 48,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                        ),
+                      child: PosterThumbnail(
+                        posterPath: widget.item.posterPath,
+                        title: widget.item.title,
+                        width: double.infinity,
+                        height: double.infinity,
                       ),
                     ),
                     const SizedBox(height: 8),

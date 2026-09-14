@@ -162,6 +162,7 @@ async fn worker_downloads_mp4_and_registers_library() {
             cookie_header: None,
             referer: None,
             resolved_media_url: None,
+            poster_url: None,
         })
         .unwrap();
 
@@ -187,6 +188,7 @@ async fn worker_downloads_mp4_and_registers_library() {
             cookie_header: None,
             referer: None,
             resolved_media_url: None,
+            poster_url: None,
         })
         .unwrap();
 
@@ -270,6 +272,7 @@ async fn worker_downloads_hls_and_registers_library() {
             cookie_header: None,
             referer: None,
             resolved_media_url: None,
+            poster_url: None,
         })
         .unwrap();
 
@@ -327,6 +330,7 @@ async fn worker_cancel_cleans_temp_dir() {
             cookie_header: None,
             referer: None,
             resolved_media_url: None,
+            poster_url: None,
         })
         .unwrap();
 
@@ -390,6 +394,7 @@ async fn worker_pause_preserves_temp_dir() {
             cookie_header: None,
             referer: None,
             resolved_media_url: None,
+            poster_url: None,
         })
         .unwrap();
 
@@ -482,6 +487,7 @@ async fn worker_hls_failure_preserves_checkpoint_for_retry() {
             cookie_header: None,
             referer: None,
             resolved_media_url: None,
+            poster_url: None,
         })
         .unwrap();
 

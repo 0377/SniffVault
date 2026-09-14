@@ -1,8 +1,8 @@
 use crate::download::checkpoint::Checkpoint;
 use crate::error::EngineError;
 use crate::tasks::schema::{
-    DB_PRAGMAS, TASK_MIGRATION_V2, TASK_MIGRATION_V3, TASK_MIGRATION_V4, TASK_SCHEMA,
-    TASK_SCHEMA_VERSION,
+    DB_PRAGMAS, TASK_MIGRATION_V2, TASK_MIGRATION_V3, TASK_MIGRATION_V4, TASK_MIGRATION_V5,
+    TASK_SCHEMA, TASK_SCHEMA_VERSION,
 };
 use crate::types::{DownloadTask, TaskStatus};
 use rusqlite::{params, Connection};
@@ -75,6 +75,13 @@ impl TaskStore {
             let tx = conn.unchecked_transaction()?;
             Self::apply_alter_statements(&tx, TASK_MIGRATION_V4)?;
             tx.execute("PRAGMA user_version = 4", [])?;
+            tx.commit()?;
+        }
+        let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        if version < 5 {
+            let tx = conn.unchecked_transaction()?;
+            Self::apply_alter_statements(&tx, TASK_MIGRATION_V5)?;
+            tx.execute("PRAGMA user_version = 5", [])?;
             tx.commit()?;
         }
         Ok(())
@@ -179,6 +186,7 @@ impl TaskStore {
             cookie_header: row.get(15)?,
             referer: row.get(16)?,
             resolved_media_url: row.get(17)?,
+            poster_url: row.get(18)?,
         })
     }
 
@@ -192,8 +200,8 @@ impl TaskStore {
                  id, parent_id, season, title, source_url, quality_label, status,
                  progress_bytes, total_bytes, error_message, output_path,
                  library_item_id, episode_index, created_at_ms, updated_at_ms,
-                 cookie_header, referer, resolved_media_url
-               ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)
+                 cookie_header, referer, resolved_media_url, poster_url
+               ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)
                ON CONFLICT(id) DO UPDATE SET
                  parent_id=excluded.parent_id,
                  season=excluded.season,
@@ -210,7 +218,8 @@ impl TaskStore {
                  updated_at_ms=excluded.updated_at_ms,
                  cookie_header=excluded.cookie_header,
                  referer=excluded.referer,
-                 resolved_media_url=excluded.resolved_media_url"#,
+                 resolved_media_url=excluded.resolved_media_url,
+                 poster_url=excluded.poster_url"#,
             params![
                 task.id,
                 task.parent_id,
@@ -230,6 +239,7 @@ impl TaskStore {
                 task.cookie_header,
                 task.referer,
                 task.resolved_media_url,
+                task.poster_url,
             ],
         )?;
         Ok(())
@@ -283,7 +293,7 @@ impl TaskStore {
                 r#"SELECT id, parent_id, season, title, source_url, quality_label, status,
                           progress_bytes, total_bytes, error_message, output_path,
                           library_item_id, episode_index, created_at_ms, updated_at_ms,
-                          cookie_header, referer, resolved_media_url
+                          cookie_header, referer, resolved_media_url, poster_url
                    FROM download_tasks WHERE id=?1"#,
                 params![id],
                 Self::row_to_task,
@@ -299,7 +309,7 @@ impl TaskStore {
             r#"SELECT id, parent_id, season, title, source_url, quality_label, status,
                       progress_bytes, total_bytes, error_message, output_path,
                       library_item_id, episode_index, created_at_ms, updated_at_ms,
-                      cookie_header, referer, resolved_media_url
+                      cookie_header, referer, resolved_media_url, poster_url
                FROM download_tasks ORDER BY created_at_ms DESC"#,
         )?;
         let rows = stmt.query_map([], Self::row_to_task)?;
@@ -315,7 +325,7 @@ impl TaskStore {
             r#"SELECT id, parent_id, season, title, source_url, quality_label, status,
                       progress_bytes, total_bytes, error_message, output_path,
                       library_item_id, episode_index, created_at_ms, updated_at_ms,
-                      cookie_header, referer, resolved_media_url
+                      cookie_header, referer, resolved_media_url, poster_url
                FROM download_tasks WHERE parent_id=?1 ORDER BY episode_index ASC"#,
         )?;
         let rows = stmt.query_map(params![parent_id], Self::row_to_task)?;
@@ -456,7 +466,7 @@ impl TaskStore {
             r#"SELECT id, parent_id, season, title, source_url, quality_label, status,
                       progress_bytes, total_bytes, error_message, output_path,
                       library_item_id, episode_index, created_at_ms, updated_at_ms,
-                      cookie_header, referer, resolved_media_url
+                      cookie_header, referer, resolved_media_url, poster_url
                FROM download_tasks
                WHERE status='queued'
                  AND source_url != ''

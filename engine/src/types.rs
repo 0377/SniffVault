@@ -131,6 +131,9 @@ pub struct DownloadTask {
     /// L2/L3 解析出的媒体直链；Worker 下载时优先使用。
     #[serde(default)]
     pub resolved_media_url: Option<String>,
+    /// 页面 og:image 封面 URL；仅本机 tasks.db 持久化。
+    #[serde(default, skip_serializing)]
+    pub poster_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -201,4 +204,10 @@ pub enum ResolveOutcome {
     Candidates(Vec<ResourceCandidate>),
     EpisodeList(EpisodeList),
     NeedsBrowser { reason: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResolveUrlResult {
+    pub outcome: ResolveOutcome,
+    pub poster_url: Option<String>,
 }

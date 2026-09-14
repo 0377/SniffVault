@@ -88,20 +88,36 @@ pub(crate) fn parse_json_c_str<T: for<'de> Deserialize<'de>>(
 }
 
 #[derive(Debug, Deserialize)]
-struct EnqueueAuthJson {
+struct EnqueueOptsJson {
     cookies: Option<String>,
     referer: Option<String>,
+    poster_url: Option<String>,
 }
 
-fn parse_enqueue_auth(opts_json: *const c_char) -> Result<Option<DownloadAuth>, EngineError> {
+struct EnqueueOpts {
+    auth: Option<DownloadAuth>,
+    poster_url: Option<String>,
+}
+
+fn parse_enqueue_opts(opts_json: *const c_char) -> Result<EnqueueOpts, EngineError> {
     if opts_json.is_null() {
-        return Ok(None);
+        return Ok(EnqueueOpts {
+            auth: None,
+            poster_url: None,
+        });
     }
-    let parsed: EnqueueAuthJson = parse_json_c_str(opts_json, "opts_json")?;
-    Ok(Some(DownloadAuth {
-        cookies: parsed.cookies,
-        referer: parsed.referer,
-    }))
+    let parsed: EnqueueOptsJson = parse_json_c_str(opts_json, "opts_json")?;
+    let auth = match (parsed.cookies.as_ref(), parsed.referer.as_ref()) {
+        (None, None) => None,
+        _ => Some(DownloadAuth {
+            cookies: parsed.cookies,
+            referer: parsed.referer,
+        }),
+    };
+    Ok(EnqueueOpts {
+        auth,
+        poster_url: parsed.poster_url,
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -114,6 +130,8 @@ struct EnqueueEpisodesArgs {
     cookies: Option<String>,
     #[serde(default)]
     referer: Option<String>,
+    #[serde(default)]
+    poster_url: Option<String>,
 }
 
 #[no_mangle]
@@ -251,6 +269,26 @@ pub unsafe extern "C" fn engine_remove_library_item(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn engine_refresh_library_poster(
+    handle: *mut EngineHandle,
+    item_id: *const c_char,
+    page_url: *const c_char,
+) -> *mut c_char {
+    let item_id = match parse_c_str(item_id, "item_id") {
+        Ok(id) => id,
+        Err(err) => return rust_to_c_string(err_json(err)),
+    };
+    let page_url = match parse_optional_c_str(page_url, "page_url") {
+        Ok(url) => url,
+        Err(err) => return rust_to_c_string(err_json(err)),
+    };
+    ffi_call_mut(handle, |engine| {
+        let item = engine.refresh_library_poster(&item_id, page_url.as_deref())?;
+        Ok(serde_json::json!({ "item": item }))
+    })
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn engine_remove_episode(
     handle: *mut EngineHandle,
     episode_id: *const c_char,
@@ -291,12 +329,18 @@ pub unsafe extern "C" fn engine_enqueue_single(
         Ok(s) => s,
         Err(err) => return rust_to_c_string(err_json(err)),
     };
-    let auth = match parse_enqueue_auth(opts_json) {
-        Ok(auth) => auth,
+    let opts = match parse_enqueue_opts(opts_json) {
+        Ok(opts) => opts,
         Err(err) => return rust_to_c_string(err_json(err)),
     };
     ffi_call_mut(handle, |engine| {
-        engine.enqueue_single(&title, &url, quality_label.as_deref(), auth.as_ref())
+        engine.enqueue_single(
+            &title,
+            &url,
+            quality_label.as_deref(),
+            opts.auth.as_ref(),
+            opts.poster_url.as_deref(),
+        )
     })
 }
 
@@ -320,6 +364,7 @@ pub unsafe extern "C" fn engine_enqueue_episodes(
             &args.episodes,
             args.quality_label.as_deref(),
             Some(&auth),
+            args.poster_url.as_deref(),
         )
     })
 }

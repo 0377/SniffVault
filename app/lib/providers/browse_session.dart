@@ -39,7 +39,7 @@ class BrowseSession extends ChangeNotifier {
   Uri? currentUrl;
   Uri? pendingLoadUrl;
   DownloadAuth? auth;
-  ResolveOutcome? outcome;
+  ResolveUrlResult? outcome;
   List<ResourceCandidate> candidates = const [];
 
   List<SniffEvent> get sniffEvents => _accumulator.events;

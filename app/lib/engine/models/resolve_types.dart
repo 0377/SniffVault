@@ -339,6 +339,37 @@ class ResolveOutcomeNeedsBrowser extends ResolveOutcome {
   int get hashCode => reason.hashCode;
 }
 
+class ResolveUrlResult {
+  const ResolveUrlResult({required this.outcome, this.posterUrl});
+
+  final ResolveOutcome outcome;
+  final String? posterUrl;
+
+  factory ResolveUrlResult.fromJson(Map<String, dynamic> json) {
+    return ResolveUrlResult(
+      outcome: ResolveOutcome.fromJson(
+        json['outcome'] as Map<String, dynamic>? ?? json,
+      ),
+      posterUrl: json['poster_url'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'outcome': outcome.toJson(),
+        if (posterUrl != null) 'poster_url': posterUrl,
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ResolveUrlResult &&
+          outcome == other.outcome &&
+          posterUrl == other.posterUrl;
+
+  @override
+  int get hashCode => Object.hash(outcome, posterUrl);
+}
+
 bool _listEquals<T>(List<T> a, List<T> b) {
   if (a.length != b.length) return false;
   for (var i = 0; i < a.length; i++) {

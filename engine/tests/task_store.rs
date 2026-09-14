@@ -22,6 +22,7 @@ fn sample(id: &str, parent: Option<&str>, status: TaskStatus) -> DownloadTask {
         cookie_header: None,
         referer: None,
         resolved_media_url: None,
+        poster_url: None,
     }
 }
 
@@ -63,6 +64,7 @@ fn list_runnable_tasks_excludes_parent_container() {
             cookie_header: None,
             referer: None,
             resolved_media_url: None,
+            poster_url: None,
         })
         .unwrap();
 
@@ -99,6 +101,7 @@ fn count_running_downloads_excludes_parent_container() {
             cookie_header: None,
             referer: None,
             resolved_media_url: None,
+            poster_url: None,
         })
         .unwrap();
     store

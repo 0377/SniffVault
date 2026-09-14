@@ -43,6 +43,7 @@ fn lan_pair_and_cast_metadata_has_no_source_url() {
             "Pilot",
             file.to_str().unwrap(),
             Some("https://secret.example/stream?token=abc"),
+            None,
         )
         .unwrap();
 

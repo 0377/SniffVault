@@ -55,7 +55,7 @@ class _AddScreenState extends ConsumerState<AddScreen> {
     if (!mounted) return;
 
     try {
-      final outcome = await LoadingOverlay.run(
+      final result = await LoadingOverlay.run(
         context,
         () => repo.resolveUrl(url),
       );
@@ -67,7 +67,8 @@ class _AddScreenState extends ConsumerState<AddScreen> {
           builder: (context) => Scaffold(
             appBar: AppBar(title: const Text('确认下载')),
             body: ResolveWizard(
-              outcome: outcome,
+              outcome: result.outcome,
+              posterUrl: result.posterUrl,
               defaultQualityLabel: settings.defaultQualityLabel,
               resolveQualities: repo.resolveQualities,
               enqueueSingle: repo.enqueueSingle,

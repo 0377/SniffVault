@@ -10,7 +10,7 @@ fn seed_single(engine: &mut Engine, file_name: &str) -> (String, String) {
     let media = engine.media_dir().join(file_name);
     fs::write(&media, b"video-bytes").unwrap();
     let (item, ep) = engine
-        .register_completed_single("测试片", media.to_str().unwrap(), None)
+        .register_completed_single("测试片", media.to_str().unwrap(), None, None)
         .unwrap();
     (item.id, ep.id)
 }
@@ -47,7 +47,7 @@ fn remove_rejects_outside_path_when_delete_files() {
     let media = engine.media_dir().join("good.mp4");
     fs::write(&media, b"x").unwrap();
     let (item, _) = engine
-        .register_completed_single("片", media.to_str().unwrap(), None)
+        .register_completed_single("片", media.to_str().unwrap(), None, None)
         .unwrap();
     let outside = dir.path().join("outside.mp4");
     fs::write(&outside, b"x").unwrap();
@@ -65,7 +65,7 @@ fn remove_allows_dirty_path_when_keep_files() {
     let media = engine.media_dir().join("good.mp4");
     fs::write(&media, b"x").unwrap();
     let (item, _) = engine
-        .register_completed_single("片", media.to_str().unwrap(), None)
+        .register_completed_single("片", media.to_str().unwrap(), None, None)
         .unwrap();
     let outside = dir.path().join("outside.mp4");
     fs::write(&outside, b"x").unwrap();
@@ -123,7 +123,7 @@ fn remove_episode_after_cast_allows_new_cast() {
     let f1 = sender.media_dir().join("ep1.mp4");
     fs::write(&f1, b"x").unwrap();
     let (_, ep1) = sender
-        .register_completed_single("片1", f1.to_str().unwrap(), None)
+        .register_completed_single("片1", f1.to_str().unwrap(), None, None)
         .unwrap();
     sender
         .cast_episode(&ep1.id, &receiver.settings().device_id)
@@ -135,7 +135,7 @@ fn remove_episode_after_cast_allows_new_cast() {
     let f2 = sender.media_dir().join("ep2.mp4");
     fs::write(&f2, b"x").unwrap();
     let (_, ep2) = sender
-        .register_completed_single("片2", f2.to_str().unwrap(), None)
+        .register_completed_single("片2", f2.to_str().unwrap(), None, None)
         .unwrap();
     sender
         .cast_episode(&ep2.id, &receiver.settings().device_id)

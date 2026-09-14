@@ -189,6 +189,21 @@ impl LibraryStore {
         Ok(())
     }
 
+    pub fn update_item_poster_path(
+        &self,
+        item_id: &str,
+        poster_path: &str,
+    ) -> Result<(), EngineError> {
+        let n = self.conn.execute(
+            "UPDATE library_items SET poster_path=?1 WHERE id=?2",
+            params![poster_path, item_id],
+        )?;
+        if n == 0 {
+            return Err(EngineError::NotFound(format!("item {item_id}")));
+        }
+        Ok(())
+    }
+
     pub fn update_episode_title(&self, episode_id: &str, title: &str) -> Result<(), EngineError> {
         let n = self.conn.execute(
             "UPDATE library_episodes SET title=?1 WHERE id=?2",
@@ -351,11 +366,46 @@ impl LibraryStore {
         Ok(())
     }
 
+    pub(crate) fn migrate_poster_path_in_tx(
+        tx: &rusqlite::Transaction,
+        source_item_id: &str,
+        target_item_id: &str,
+    ) -> Result<(), EngineError> {
+        let source_poster: Option<String> = tx
+            .query_row(
+                "SELECT poster_path FROM library_items WHERE id=?1",
+                params![source_item_id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .flatten();
+        if source_poster.is_none() {
+            return Ok(());
+        }
+        let target_poster: Option<String> = tx
+            .query_row(
+                "SELECT poster_path FROM library_items WHERE id=?1",
+                params![target_item_id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .flatten();
+        if target_poster.is_some() {
+            return Ok(());
+        }
+        tx.execute(
+            "UPDATE library_items SET poster_path=?1 WHERE id=?2",
+            params![source_poster, target_item_id],
+        )?;
+        Ok(())
+    }
+
     pub(crate) fn apply_merge_in_tx(
         &self,
         migrate: &[(String, String)],
         orphan_episode_ids: &[String],
         source_item_id: &str,
+        target_item_id: &str,
     ) -> Result<(), EngineError> {
         let tx = self.conn.unchecked_transaction()?;
         for (episode_id, new_item_id) in migrate {
@@ -376,6 +426,7 @@ impl LibraryStore {
                 return Err(EngineError::NotFound(format!("episode {episode_id}")));
             }
         }
+        Self::migrate_poster_path_in_tx(&tx, source_item_id, target_item_id)?;
         let n = tx.execute(
             "DELETE FROM library_items WHERE id=?1",
             params![source_item_id],

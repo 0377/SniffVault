@@ -14,7 +14,7 @@ fn library_delete_ffi_remove_library_item_ok_json() {
     let media = engine.media_dir().join("f.mp4");
     fs::write(&media, b"x").unwrap();
     let (item, _) = engine
-        .register_completed_single("片", media.to_str().unwrap(), None)
+        .register_completed_single("片", media.to_str().unwrap(), None, None)
         .unwrap();
     drop(engine);
 
@@ -52,6 +52,7 @@ fn library_delete_ffi_remove_episode_ok_json() {
             "第1集",
             media1.to_str().unwrap(),
             None,
+            None,
         )
         .unwrap();
     let (_, ep2) = engine
@@ -61,6 +62,7 @@ fn library_delete_ffi_remove_episode_ok_json() {
             2,
             "第2集",
             media2.to_str().unwrap(),
+            None,
             None,
         )
         .unwrap();

@@ -16,6 +16,7 @@ fn enqueue_series_persists_season_on_parent_and_children() {
             ],
             Some("1080p"),
             None,
+            None,
         )
         .unwrap();
 
@@ -48,6 +49,7 @@ fn register_completed_merges_and_dedupes_episode_index() {
             "第1集",
             media.to_str().unwrap(),
             Some("https://ex/1.m3u8"),
+            None,
         )
         .unwrap();
 
@@ -60,6 +62,7 @@ fn register_completed_merges_and_dedupes_episode_index() {
             2,
             "第2集",
             media2.to_str().unwrap(),
+            None,
             None,
         )
         .unwrap();
@@ -74,6 +77,7 @@ fn register_completed_merges_and_dedupes_episode_index() {
             1,
             "第1集-重下",
             media1b.to_str().unwrap(),
+            None,
             None,
         )
         .unwrap();
@@ -94,6 +98,7 @@ fn register_rejects_path_outside_media_dir() {
             1,
             "第1集",
             outside.to_str().unwrap(),
+            None,
             None,
         )
         .unwrap_err();
@@ -156,7 +161,12 @@ fn register_completed_single_creates_single_item() {
     std::fs::write(&media, b"fake").unwrap();
 
     let (item, ep) = engine
-        .register_completed_single("单片", media.to_str().unwrap(), Some("https://ex/m.mp4"))
+        .register_completed_single(
+            "单片",
+            media.to_str().unwrap(),
+            Some("https://ex/m.mp4"),
+            None,
+        )
         .unwrap();
     assert_eq!(item.title, "单片");
     assert_eq!(ep.index, 1);
@@ -172,7 +182,15 @@ fn set_episode_position_persists_after_reopen() {
     std::fs::write(&media, b"fake").unwrap();
 
     let (item, ep) = engine
-        .register_completed_episode("示意剧", Some(1), 1, "第1集", media.to_str().unwrap(), None)
+        .register_completed_episode(
+            "示意剧",
+            Some(1),
+            1,
+            "第1集",
+            media.to_str().unwrap(),
+            None,
+            None,
+        )
         .unwrap();
     engine.set_episode_position(&ep.id, 42_000).unwrap();
     drop(engine);

@@ -13,6 +13,7 @@ import 'package:video_sniffing/features/library/widgets/confirm_delete_dialog.da
 import 'package:video_sniffing/features/library/widgets/confirm_merge_dialog.dart';
 import 'package:video_sniffing/features/library/widgets/episode_tile.dart';
 import 'package:video_sniffing/features/library/widgets/merge_target_picker_sheet.dart';
+import 'package:video_sniffing/features/library/widgets/poster_thumbnail.dart';
 import 'package:video_sniffing/features/library/widgets/rename_dialog.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
 import 'package:video_sniffing/providers/library_provider.dart';
@@ -56,7 +57,22 @@ class LibraryDetailScreen extends ConsumerWidget {
           autofocus: true,
           child: Scaffold(
             appBar: AppBar(
-              title: Text(item?.title ?? '片库详情'),
+              title: item != null &&
+                      item.posterPath != null &&
+                      item.posterPath!.isNotEmpty
+                  ? Row(
+                      children: [
+                        PosterThumbnail(
+                          posterPath: item.posterPath,
+                          title: item.title,
+                          width: 48,
+                          height: 48,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(child: Text(item.title)),
+                      ],
+                    )
+                  : Text(item?.title ?? '片库详情'),
               actions: [
                 if (item != null)
                   PopupMenuButton<String>(
@@ -143,7 +159,13 @@ List<PopupMenuEntry<String>> _detailMenuItems(
   List<LibraryItem> allItems,
 ) {
   final candidates = mergeCandidatesFor(item, allItems);
+  final hasPoster = item.posterPath != null && item.posterPath!.isNotEmpty;
   return [
+    PopupMenuItem(
+      value: 'refresh_poster',
+      key: const Key('library_poster_refresh_menu'),
+      child: Text(hasPoster ? '刷新封面' : '抓取封面'),
+    ),
     const PopupMenuItem(value: 'rename', child: Text('重命名')),
     if (candidates.isNotEmpty)
       const PopupMenuItem(value: 'merge', child: Text('合并到…')),
@@ -158,12 +180,52 @@ Future<void> _onMenuSelected(
   LibraryItem item,
   List<LibraryEpisode> episodes,
 ) async {
-  if (value == 'rename') {
+  if (value == 'refresh_poster') {
+    await _refreshPoster(context, ref, item);
+  } else if (value == 'rename') {
     await _renameItem(context, ref, item);
   } else if (value == 'merge') {
     await _mergeItem(context, ref, item, episodes);
   } else if (value == 'delete') {
     await _confirmDeleteItem(context, ref, item, episodes);
+  }
+}
+
+Future<void> _refreshPoster(
+  BuildContext context,
+  WidgetRef ref,
+  LibraryItem item,
+) async {
+  final repo = ref.read(engineRepositoryProvider);
+  final hadPoster = item.posterPath != null && item.posterPath!.isNotEmpty;
+  showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => const Center(child: CircularProgressIndicator()),
+  );
+  try {
+    repo.refreshLibraryPoster(item.id);
+    ref.invalidate(libraryProvider);
+
+    if (!context.mounted) {
+      return;
+    }
+    Navigator.of(context).pop();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(hadPoster ? '封面已刷新' : '封面已抓取'),
+      ),
+    );
+  } on EngineException catch (e) {
+    if (context.mounted) {
+      Navigator.of(context).pop();
+    }
+    final message = presentEngineError(e);
+    if (message != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    }
   }
 }
 

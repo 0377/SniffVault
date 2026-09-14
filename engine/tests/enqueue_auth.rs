@@ -22,6 +22,47 @@ fn sample_task(id: &str) -> DownloadTask {
         cookie_header: None,
         referer: None,
         resolved_media_url: None,
+        poster_url: None,
+    }
+}
+
+#[test]
+fn enqueue_single_persists_poster_url() {
+    let dir = tempdir().unwrap();
+    let mut engine = Engine::open(dir.path()).unwrap();
+    let id = engine
+        .enqueue_single("t", "https://x/v.mp4", None, None, Some("https://x/p.jpg"))
+        .unwrap();
+    drop(engine);
+    let store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();
+    let task = store.get(&id).unwrap();
+    assert_eq!(task.poster_url.as_deref(), Some("https://x/p.jpg"));
+}
+
+#[test]
+fn enqueue_episodes_copies_poster_url_to_children() {
+    let dir = tempdir().unwrap();
+    let mut engine = Engine::open(dir.path()).unwrap();
+    let (parent_id, child_ids) = engine
+        .enqueue_episodes(
+            "show",
+            Some(1),
+            &[
+                (1, "e1".into(), "https://x/1.mp4".into()),
+                (2, "e2".into(), "https://x/2.mp4".into()),
+            ],
+            None,
+            None,
+            Some("https://x/poster.jpg"),
+        )
+        .unwrap();
+    drop(engine);
+    let store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();
+    let parent = store.get(&parent_id).unwrap();
+    assert_eq!(parent.poster_url.as_deref(), Some("https://x/poster.jpg"));
+    for child_id in child_ids {
+        let child = store.get(&child_id).unwrap();
+        assert_eq!(child.poster_url.as_deref(), Some("https://x/poster.jpg"));
     }
 }
 
@@ -34,7 +75,7 @@ fn enqueue_single_persists_auth_on_task() {
         referer: Some("https://x/page".into()),
     };
     let id = engine
-        .enqueue_single("t", "https://x/v.mp4", None, Some(&auth))
+        .enqueue_single("t", "https://x/v.mp4", None, Some(&auth), None)
         .unwrap();
     drop(engine);
     let store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();
@@ -58,6 +99,7 @@ fn enqueue_episodes_copies_auth_to_parent_and_children() {
             &[(1, "e1".into(), "https://x/1.mp4".into())],
             None,
             Some(&auth),
+            None,
         )
         .unwrap();
     let store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();
@@ -73,7 +115,7 @@ fn enqueue_episodes_empty_writes_nothing() {
     let dir = tempdir().unwrap();
     let mut engine = Engine::open(dir.path()).unwrap();
     assert!(engine
-        .enqueue_episodes("show", None, &[], None, None)
+        .enqueue_episodes("show", None, &[], None, None, None)
         .is_err());
     assert!(engine.list_tasks().unwrap().is_empty());
 }

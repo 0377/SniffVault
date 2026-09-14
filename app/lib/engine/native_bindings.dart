@@ -107,6 +107,17 @@ typedef EngineMergeLibraryItems = Pointer<Char> Function(
   int deleteOrphanFiles,
 );
 
+typedef EngineRefreshLibraryPosterNative = Pointer<Char> Function(
+  Pointer<Void> handle,
+  Pointer<Utf8> itemId,
+  Pointer<Utf8> pageUrl,
+);
+typedef EngineRefreshLibraryPoster = Pointer<Char> Function(
+  Pointer<Void> handle,
+  Pointer<Utf8> itemId,
+  Pointer<Utf8> pageUrl,
+);
+
 typedef EngineListTasksNative = Pointer<Char> Function(Pointer<Void> handle);
 typedef EngineListTasks = Pointer<Char> Function(Pointer<Void> handle);
 
@@ -376,6 +387,9 @@ class NativeBindings {
         engineMergeLibraryItems = lib.lookupFunction<
             EngineMergeLibraryItemsNative,
             EngineMergeLibraryItems>('engine_merge_library_items'),
+        engineRefreshLibraryPoster = lib.lookupFunction<
+            EngineRefreshLibraryPosterNative,
+            EngineRefreshLibraryPoster>('engine_refresh_library_poster'),
         engineListTasks =
             lib.lookupFunction<EngineListTasksNative, EngineListTasks>(
           'engine_list_tasks',
@@ -505,6 +519,7 @@ class NativeBindings {
   final EngineRenameLibraryItem engineRenameLibraryItem;
   final EngineRenameEpisode engineRenameEpisode;
   final EngineMergeLibraryItems engineMergeLibraryItems;
+  final EngineRefreshLibraryPoster engineRefreshLibraryPoster;
   final EngineListTasks engineListTasks;
   final EngineEnqueueSingle engineEnqueueSingle;
   final EngineEnqueueEpisodes engineEnqueueEpisodes;

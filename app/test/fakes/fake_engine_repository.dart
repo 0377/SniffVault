@@ -48,6 +48,11 @@ class FakeEngineRepository implements EngineRepository {
   List<LibraryItem> libraryItems;
   List<DownloadTask> tasks;
   DownloadAuth? lastEnqueueAuth;
+  String? lastEnqueuePosterUrl;
+  String? lastRefreshPosterItemId;
+  String? lastRefreshPosterPageUrl;
+  LibraryItem? refreshPosterResult;
+  EngineException? refreshLibraryPosterError;
   ResolveOptions? lastResolveOpts;
   ResolveOptions? lastResolveQualitiesOpts;
   List<ResourceCandidate> sniffResults = const [];
@@ -106,6 +111,20 @@ class FakeEngineRepository implements EngineRepository {
   @override
   List<LibraryEpisode> listEpisodes(String itemId) =>
       episodesByItemId[itemId] ?? [];
+
+  @override
+  LibraryItem refreshLibraryPoster(String itemId, {String? pageUrl}) {
+    lastRefreshPosterItemId = itemId;
+    lastRefreshPosterPageUrl = pageUrl;
+    if (refreshLibraryPosterError != null) {
+      throw refreshLibraryPosterError!;
+    }
+    if (refreshPosterResult != null) {
+      return refreshPosterResult!;
+    }
+    final item = libraryItems.firstWhere((i) => i.id == itemId);
+    return item;
+  }
 
   @override
   void removeLibraryItem(String itemId, {bool deleteFiles = true}) {
@@ -251,8 +270,10 @@ class FakeEngineRepository implements EngineRepository {
     required String url,
     String? qualityLabel,
     DownloadAuth? auth,
+    String? posterUrl,
   }) {
     lastEnqueueAuth = auth;
+    lastEnqueuePosterUrl = posterUrl;
     return 'fake-task-id';
   }
 
@@ -263,8 +284,10 @@ class FakeEngineRepository implements EngineRepository {
     required List<(int index, String title, String url)> episodes,
     String? qualityLabel,
     DownloadAuth? auth,
+    String? posterUrl,
   }) {
     lastEnqueueAuth = auth;
+    lastEnqueuePosterUrl = posterUrl;
     return const EnqueueEpisodesResult(parentId: 'parent', childIds: ['c1']);
   }
 
@@ -293,10 +316,12 @@ class FakeEngineRepository implements EngineRepository {
   void setEpisodePosition(String episodeId, int positionMs) {}
 
   @override
-  Future<ResolveOutcome> resolveUrl(String url, {ResolveOptions? opts}) async {
+  Future<ResolveUrlResult> resolveUrl(String url, {ResolveOptions? opts}) async {
     lastResolveOpts = opts;
-    return ResolveOutcomeSingle(
-      ResourceCandidate(id: '1', url: url, kind: MediaKind.mp4),
+    return ResolveUrlResult(
+      outcome: ResolveOutcomeSingle(
+        ResourceCandidate(id: '1', url: url, kind: MediaKind.mp4),
+      ),
     );
   }
 

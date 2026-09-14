@@ -15,7 +15,7 @@ fn rename_library_item_persists_after_reopen() {
     let media = engine.media_dir().join("movie.mp4");
     std::fs::write(&media, b"x").unwrap();
     let (item, _) = engine
-        .register_completed_single("旧名", media.to_str().unwrap(), None)
+        .register_completed_single("旧名", media.to_str().unwrap(), None, None)
         .unwrap();
     engine.rename_library_item(&item.id, "新名").unwrap();
     drop(engine);
@@ -32,7 +32,7 @@ fn rename_single_item_syncs_episode_title() {
     let media = engine.media_dir().join("movie.mp4");
     std::fs::write(&media, b"x").unwrap();
     let (item, ep) = engine
-        .register_completed_single("旧名", media.to_str().unwrap(), None)
+        .register_completed_single("旧名", media.to_str().unwrap(), None, None)
         .unwrap();
     engine.rename_library_item(&item.id, "新名").unwrap();
     let eps = engine.list_episodes(&item.id).unwrap();
@@ -50,10 +50,10 @@ fn rename_episode_only_changes_title() {
     std::fs::write(&m1, b"x").unwrap();
     std::fs::write(&m2, b"x").unwrap();
     let (item, ep1) = engine
-        .register_completed_episode("剧", Some(1), 1, "第1集", m1.to_str().unwrap(), None)
+        .register_completed_episode("剧", Some(1), 1, "第1集", m1.to_str().unwrap(), None, None)
         .unwrap();
     engine
-        .register_completed_episode("剧", Some(1), 2, "第2集", m2.to_str().unwrap(), None)
+        .register_completed_episode("剧", Some(1), 2, "第2集", m2.to_str().unwrap(), None, None)
         .unwrap();
     let original_path = ep1.file_path.clone();
     engine.rename_episode(&ep1.id, "新第1集").unwrap();
@@ -72,7 +72,7 @@ fn rename_rejects_invalid_title() {
     let media = engine.media_dir().join("movie.mp4");
     std::fs::write(&media, b"x").unwrap();
     let (item, ep) = engine
-        .register_completed_single("x", media.to_str().unwrap(), None)
+        .register_completed_single("x", media.to_str().unwrap(), None, None)
         .unwrap();
     let err = engine.rename_library_item(&item.id, "   ").unwrap_err();
     assert!(matches!(err, EngineError::InvalidArg(_)));
@@ -92,10 +92,10 @@ fn rename_series_item_title_does_not_change_episode_titles() {
     std::fs::write(&m1, b"x").unwrap();
     std::fs::write(&m2, b"x").unwrap();
     let (item, _) = engine
-        .register_completed_episode("剧", Some(1), 1, "第1集", m1.to_str().unwrap(), None)
+        .register_completed_episode("剧", Some(1), 1, "第1集", m1.to_str().unwrap(), None, None)
         .unwrap();
     engine
-        .register_completed_episode("剧", Some(1), 2, "第2集", m2.to_str().unwrap(), None)
+        .register_completed_episode("剧", Some(1), 2, "第2集", m2.to_str().unwrap(), None, None)
         .unwrap();
     engine.rename_library_item(&item.id, "新剧名").unwrap();
     let eps = engine.list_episodes(&item.id).unwrap();
@@ -189,7 +189,7 @@ fn merge_rejects_mismatched_title_season_or_single() {
     let media = engine.media_dir().join("single.mp4");
     std::fs::write(&media, b"x").unwrap();
     let (single, _) = engine
-        .register_completed_single("片", media.to_str().unwrap(), None)
+        .register_completed_single("片", media.to_str().unwrap(), None, None)
         .unwrap();
     let err = engine
         .merge_library_items(&seed.source_item_id, &single.id, false)
