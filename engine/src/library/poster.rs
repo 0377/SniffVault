@@ -134,5 +134,4 @@ mod tests {
             download_poster(&client, dir.path(), "item-1", "file:///tmp/x.jpg", None).unwrap_err();
         assert!(matches!(err, EngineError::InvalidArg(_)));
     }
-
 }
