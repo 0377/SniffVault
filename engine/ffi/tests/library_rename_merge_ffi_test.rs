@@ -5,7 +5,8 @@ use video_sniffing_engine::test_api::LibraryStore;
 use video_sniffing_engine::{Engine, LibraryEpisode, LibraryItem, LibraryItemKind};
 use video_sniffing_engine_ffi::handle::{engine_destroy, engine_free_string, engine_open};
 use video_sniffing_engine_ffi::sync_dispatch::{
-    engine_list_library, engine_merge_library_items, engine_rename_library_item,
+    engine_list_episodes, engine_list_library, engine_merge_library_items,
+    engine_rename_episode, engine_rename_library_item,
 };
 
 fn seed_dup(engine: &Engine) -> (String, String) {
@@ -83,6 +84,47 @@ fn rename_and_merge_ffi_ok_json() {
         serde_json::from_str(unsafe { CStr::from_ptr(lib_ptr).to_str().unwrap() }).unwrap();
     assert_eq!(lib["data"].as_array().unwrap().len(), 2); // single + merged series
     unsafe { engine_free_string(lib_ptr) };
+    unsafe { engine_destroy(handle) };
+}
+
+#[test]
+fn rename_episode_ffi_ok_json() {
+    let dir = tempdir().unwrap();
+    let mut engine = Engine::open(dir.path()).unwrap();
+    let media = engine.media_dir().join("ep1.mp4");
+    fs::write(&media, b"x").unwrap();
+    let (item, ep) = engine
+        .register_completed_episode(
+            "示意剧",
+            Some(1),
+            1,
+            "第1集",
+            media.to_str().unwrap(),
+            None,
+        )
+        .unwrap();
+    let ep_id_str = ep.id.clone();
+    drop(engine);
+
+    let path = CString::new(dir.path().to_str().unwrap()).unwrap();
+    let handle = unsafe { engine_open(path.as_ptr()) };
+    let ep_id = CString::new(ep_id_str.clone()).unwrap();
+    let new_title = CString::new("新第1集").unwrap();
+    let ptr = unsafe { engine_rename_episode(handle, ep_id.as_ptr(), new_title.as_ptr()) };
+    let v: serde_json::Value =
+        serde_json::from_str(unsafe { CStr::from_ptr(ptr).to_str().unwrap() }).unwrap();
+    assert_eq!(v["ok"], true);
+    unsafe { engine_free_string(ptr) };
+
+    let item_id = CString::new(item.id).unwrap();
+    let eps_ptr = unsafe { engine_list_episodes(handle, item_id.as_ptr()) };
+    let eps: serde_json::Value =
+        serde_json::from_str(unsafe { CStr::from_ptr(eps_ptr).to_str().unwrap() }).unwrap();
+    let episodes = eps["data"].as_array().unwrap();
+    assert_eq!(episodes.len(), 1);
+    assert_eq!(episodes[0]["id"], ep_id_str);
+    assert_eq!(episodes[0]["title"], "新第1集");
+    unsafe { engine_free_string(eps_ptr) };
     unsafe { engine_destroy(handle) };
 }
 
