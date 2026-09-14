@@ -348,7 +348,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
         return;
       }
       ref.read(browseResolveProvider.notifier).state = BrowseResolveArgs(
-        outcome: outcome,
+        outcome: outcome.outcome,
         auth: session.auth,
       );
       context.push('/browse/wizard');

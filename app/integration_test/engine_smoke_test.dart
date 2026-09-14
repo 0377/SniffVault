@@ -46,12 +46,12 @@ void main() {
         '${dataDir.path}/f2_${DateTime.now().millisecondsSinceEpoch}';
     final host = await EngineHost.open(uniqueDir);
     try {
-      final outcome = await pumpUntil(
+      final result = await pumpUntil(
         tester,
         host.resolveUrl('https://cdn.example/clip.mp4'),
       );
-      expect(outcome, isA<ResolveOutcomeSingle>());
-      final single = outcome as ResolveOutcomeSingle;
+      expect(result.outcome, isA<ResolveOutcomeSingle>());
+      final single = result.outcome as ResolveOutcomeSingle;
       expect(single.candidate.kind, MediaKind.mp4);
       expect(single.candidate.url, 'https://cdn.example/clip.mp4');
     } finally {

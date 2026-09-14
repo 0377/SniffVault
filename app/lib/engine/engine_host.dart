@@ -185,8 +185,9 @@ class EngineHost {
     required String url,
     String? qualityLabel,
     DownloadAuth? auth,
+    String? posterUrl,
   }) {
-    final optsJson = auth == null ? null : jsonEncode(auth.toJson());
+    final optsJson = _buildEnqueueOptsJson(auth: auth, posterUrl: posterUrl);
     return _withOptionalUtf8(qualityLabel, (qualityLabelPtr) {
       return _withUtf8(title, (titlePtr) {
         return _withUtf8(url, (urlPtr) {
@@ -213,6 +214,7 @@ class EngineHost {
     required List<(int index, String title, String url)> episodes,
     String? qualityLabel,
     DownloadAuth? auth,
+    String? posterUrl,
   }) {
     final args = <String, dynamic>{
       'list_title': listTitle,
@@ -222,6 +224,7 @@ class EngineHost {
           .toList(),
       'quality_label': ?qualityLabel,
       if (auth != null) ...auth.toJson(),
+      if (posterUrl != null) 'poster_url': posterUrl,
     };
     final argsPtr = jsonEncode(args).toNativeUtf8();
     try {
@@ -377,6 +380,23 @@ class EngineHost {
     });
   }
 
+  LibraryItem refreshLibraryPoster(String itemId, {String? pageUrl}) {
+    return _withUtf8(itemId, (itemIdPtr) {
+      return _withOptionalUtf8(pageUrl, (pageUrlPtr) {
+        return _callSync(
+          (handle) => _bindings.engineRefreshLibraryPoster(
+            handle,
+            itemIdPtr,
+            pageUrlPtr ?? nullptr.cast<Utf8>(),
+          ),
+          (json) => LibraryItem.fromJson(
+            (json as Map<String, dynamic>)['item'] as Map<String, dynamic>,
+          ),
+        );
+      });
+    });
+  }
+
   List<ResourceCandidate> sniffUrls(
     List<SniffEvent> events, {
     String? pageUrl,
@@ -404,7 +424,7 @@ class EngineHost {
     });
   }
 
-  Future<ResolveOutcome> resolveUrl(
+  Future<ResolveUrlResult> resolveUrl(
     String url, {
     ResolveOptions? opts,
   }) {
@@ -419,7 +439,7 @@ class EngineHost {
         );
       }),
       opts,
-      (json) => ResolveOutcome.fromJson(json as Map<String, dynamic>),
+      (json) => ResolveUrlResult.fromJson(json as Map<String, dynamic>),
     );
   }
 
@@ -730,5 +750,16 @@ class EngineHost {
       return action(null);
     }
     return _withUtf8(value, (ptr) => action(ptr));
+  }
+
+  String? _buildEnqueueOptsJson({
+    DownloadAuth? auth,
+    String? posterUrl,
+  }) {
+    final map = <String, dynamic>{
+      ...?auth?.toJson(),
+      if (posterUrl != null) 'poster_url': posterUrl,
+    };
+    return map.isEmpty ? null : jsonEncode(map);
   }
 }

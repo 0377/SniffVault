@@ -17,6 +17,7 @@ abstract class EngineRepository {
   void saveSettings(EngineSettings settings);
   List<LibraryItem> listLibrary();
   List<LibraryEpisode> listEpisodes(String itemId);
+  LibraryItem refreshLibraryPoster(String itemId, {String? pageUrl});
   void removeLibraryItem(String itemId, {bool deleteFiles});
   void removeEpisode(String episodeId, {bool deleteFiles});
   void renameLibraryItem(String itemId, String title);
@@ -33,6 +34,7 @@ abstract class EngineRepository {
     required String url,
     String? qualityLabel,
     DownloadAuth? auth,
+    String? posterUrl,
   });
 
   EnqueueEpisodesResult enqueueEpisodes({
@@ -41,6 +43,7 @@ abstract class EngineRepository {
     required List<(int index, String title, String url)> episodes,
     String? qualityLabel,
     DownloadAuth? auth,
+    String? posterUrl,
   });
 
   void startDownloads();
@@ -52,7 +55,7 @@ abstract class EngineRepository {
   void setTaskMediaUrl(String taskId, String mediaUrl);
   void setEpisodePosition(String episodeId, int positionMs);
 
-  Future<ResolveOutcome> resolveUrl(String url, {ResolveOptions? opts});
+  Future<ResolveUrlResult> resolveUrl(String url, {ResolveOptions? opts});
   Future<List<Quality>> resolveQualities(String mediaUrl, {ResolveOptions? opts});
   List<ResourceCandidate> sniffUrls(List<SniffEvent> events, {String? pageUrl});
 
@@ -92,6 +95,10 @@ class EngineHostRepository implements EngineRepository {
   List<LibraryEpisode> listEpisodes(String itemId) => _host.listEpisodes(itemId);
 
   @override
+  LibraryItem refreshLibraryPoster(String itemId, {String? pageUrl}) =>
+      _host.refreshLibraryPoster(itemId, pageUrl: pageUrl);
+
+  @override
   void removeLibraryItem(String itemId, {bool deleteFiles = true}) =>
       _host.removeLibraryItem(itemId, deleteFiles: deleteFiles);
 
@@ -128,12 +135,14 @@ class EngineHostRepository implements EngineRepository {
     required String url,
     String? qualityLabel,
     DownloadAuth? auth,
+    String? posterUrl,
   }) =>
       _host.enqueueSingle(
         title: title,
         url: url,
         qualityLabel: qualityLabel,
         auth: auth,
+        posterUrl: posterUrl,
       );
 
   @override
@@ -143,6 +152,7 @@ class EngineHostRepository implements EngineRepository {
     required List<(int index, String title, String url)> episodes,
     String? qualityLabel,
     DownloadAuth? auth,
+    String? posterUrl,
   }) =>
       _host.enqueueEpisodes(
         listTitle: listTitle,
@@ -150,6 +160,7 @@ class EngineHostRepository implements EngineRepository {
         episodes: episodes,
         qualityLabel: qualityLabel,
         auth: auth,
+        posterUrl: posterUrl,
       );
 
   @override
@@ -179,7 +190,7 @@ class EngineHostRepository implements EngineRepository {
       _host.setEpisodePosition(episodeId, positionMs);
 
   @override
-  Future<ResolveOutcome> resolveUrl(String url, {ResolveOptions? opts}) =>
+  Future<ResolveUrlResult> resolveUrl(String url, {ResolveOptions? opts}) =>
       _host.resolveUrl(url, opts: opts);
 
   @override

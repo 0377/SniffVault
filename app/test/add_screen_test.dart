@@ -12,9 +12,11 @@ import 'fakes/fake_engine_repository.dart';
 
 class _NeedsBrowserRepo extends FakeEngineRepository {
   @override
-  Future<ResolveOutcome> resolveUrl(String url, {ResolveOptions? opts}) async {
+  Future<ResolveUrlResult> resolveUrl(String url, {ResolveOptions? opts}) async {
     lastResolveOpts = opts;
-    return const ResolveOutcomeNeedsBrowser(reason: 'auth_required');
+    return const ResolveUrlResult(
+      outcome: ResolveOutcomeNeedsBrowser(reason: 'auth_required'),
+    );
   }
 }
 
