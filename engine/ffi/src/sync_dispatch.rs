@@ -357,6 +357,30 @@ pub unsafe extern "C" fn engine_resume_task(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn engine_retry_task(
+    handle: *mut EngineHandle,
+    task_id: *const c_char,
+) -> *mut c_char {
+    let task_id = match parse_c_str(task_id, "task_id") {
+        Ok(id) => id,
+        Err(err) => return rust_to_c_string(err_json(err)),
+    };
+    ffi_call_mut(handle, |engine| engine.retry_task(&task_id))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn engine_restore_task(
+    handle: *mut EngineHandle,
+    task_id: *const c_char,
+) -> *mut c_char {
+    let task_id = match parse_c_str(task_id, "task_id") {
+        Ok(id) => id,
+        Err(err) => return rust_to_c_string(err_json(err)),
+    };
+    ffi_call_mut(handle, |engine| engine.restore_task(&task_id))
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn engine_cancel_task(
     handle: *mut EngineHandle,
     task_id: *const c_char,

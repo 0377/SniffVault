@@ -4,6 +4,7 @@ use std::sync::{mpsc, Arc, OnceLock};
 use std::time::Duration;
 use support::engine_download::interruptible_mp4_fixture_bytes as build_interruptible_mp4;
 use support::fixture_server;
+use support::hls_fixture::{build_multi_segment_hls_fixture, fixtures_hls_dir};
 use tempfile::tempdir;
 use tokio::sync::Mutex;
 use uuid::Uuid;
@@ -23,10 +24,6 @@ fn serve_throttled_fixture(
     fixture_server::serve_dir_throttled(fixture_dir, 8_192, Duration::from_millis(5))
 }
 
-fn fixtures_hls_dir() -> std::path::PathBuf {
-    fixture_server::fixtures_dir().join("hls")
-}
-
 static WORKER_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 async fn lock_worker_tests() -> tokio::sync::MutexGuard<'static, ()> {
@@ -43,7 +40,7 @@ fn spawn_worker(
         max_concurrency: 1,
         user_agent: None,
         default_quality_label: Some("highest".into()),
-        ffmpeg: Arc::new(BundledFfmpegLocator),
+        ffmpeg: Arc::new(BundledFfmpegLocator::default()),
         task_event_tx: None,
     };
     let worker = std::thread::spawn(move || {
@@ -200,7 +197,7 @@ async fn worker_downloads_mp4_and_registers_library() {
         max_concurrency: 1,
         user_agent: None,
         default_quality_label: Some("highest".into()),
-        ffmpeg: Arc::new(BundledFfmpegLocator),
+        ffmpeg: Arc::new(BundledFfmpegLocator::default()),
         task_event_tx: None,
     };
 
@@ -429,4 +426,83 @@ async fn worker_pause_preserves_temp_dir() {
 
     let task = store.get(&task_id).unwrap();
     assert_eq!(task.status, TaskStatus::Paused);
+}
+
+async fn wait_for_task_failed(store: &TaskStore, task_id: &str, timeout: Duration) {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        let task = store.get(task_id).unwrap();
+        if task.status == TaskStatus::Failed {
+            return;
+        }
+        if task.status == TaskStatus::Completed {
+            panic!("task completed unexpectedly");
+        }
+        if tokio::time::Instant::now() > deadline {
+            panic!("timeout waiting for failed, got {:?}", task.status);
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+#[tokio::test]
+async fn worker_hls_failure_preserves_checkpoint_for_retry() {
+    let _guard = lock_worker_tests().await;
+    let dir = tempdir().unwrap();
+    let data_dir = dir.path();
+    std::fs::create_dir_all(data_dir.join("media")).unwrap();
+
+    let hls_fixture = data_dir.join("fixtures/hls");
+    build_multi_segment_hls_fixture(&hls_fixture, 3);
+
+    let store = TaskStore::open(&data_dir.join("tasks.db")).unwrap();
+    let now = 1i64;
+    let task_id = Uuid::new_v4().to_string();
+    let (addr, _guard) =
+        fixture_server::serve_dir_fail_path(hls_fixture.clone(), "segments/seg1.ts").await;
+    let url = format!("http://{addr}/many.m3u8");
+
+    store
+        .upsert(&DownloadTask {
+            id: task_id.clone(),
+            parent_id: None,
+            season: None,
+            title: "hls-retry".into(),
+            source_url: url,
+            quality_label: None,
+            status: TaskStatus::Queued,
+            progress_bytes: 0,
+            total_bytes: None,
+            error_message: None,
+            output_path: None,
+            library_item_id: None,
+            episode_index: None,
+            created_at_ms: now,
+            updated_at_ms: now,
+            cookie_header: None,
+            referer: None,
+            resolved_media_url: None,
+        })
+        .unwrap();
+
+    let (cmd_tx, worker) = spawn_worker(data_dir);
+    wait_for_task_failed(&store, &task_id, Duration::from_secs(30)).await;
+
+    let failed = store.get(&task_id).unwrap();
+    assert!(
+        failed.progress_bytes > 0,
+        "should have partial segment progress"
+    );
+    let checkpoint = store.load_checkpoint(&task_id).unwrap();
+    assert!(
+        checkpoint.is_some(),
+        "failed HLS download should persist checkpoint for retry"
+    );
+    let temp = data_dir.join("media").join(".dl").join(&task_id);
+    assert!(
+        temp.join("seg0000.ts").is_file(),
+        "failed HLS download should keep downloaded segments on disk"
+    );
+
+    stop_worker(&cmd_tx, worker);
 }

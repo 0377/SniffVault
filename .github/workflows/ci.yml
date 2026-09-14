@@ -101,7 +101,7 @@ jobs:
         run: |
           cd app
           flutter pub get
-          pkill -9 -f video_sniffing.app 2>/dev/null || true
+          pkill -9 -f SniffVault.app 2>/dev/null || true
           if [ "${{ matrix.suite }}" = "engine" ]; then
             flutter test integration_test/engine_smoke_test.dart -d macos
           elif [ "${{ matrix.suite }}" = "deeplink" ]; then

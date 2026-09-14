@@ -18,6 +18,31 @@ pub fn interruptible_mp4_fixture_bytes(sample: &[u8]) -> Vec<u8> {
     bytes
 }
 
+pub async fn wait_for_task_failed(engine: &Engine, task_id: &str, timeout: Duration) {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        let task = engine
+            .list_tasks()
+            .unwrap()
+            .into_iter()
+            .find(|t| t.id == task_id)
+            .unwrap_or_else(|| panic!("task {task_id} not found"));
+        if task.status == TaskStatus::Failed {
+            return;
+        }
+        if task.status == TaskStatus::Completed {
+            panic!("task {task_id} completed unexpectedly");
+        }
+        if tokio::time::Instant::now() > deadline {
+            panic!(
+                "timeout waiting for task {task_id} to fail, got {:?}",
+                task.status
+            );
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
 pub async fn wait_for_task(engine: &Engine, task_id: &str, want: TaskStatus, timeout: Duration) {
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
@@ -40,6 +65,38 @@ pub async fn wait_for_task(engine: &Engine, task_id: &str, want: TaskStatus, tim
             );
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+pub async fn wait_for_hls_segment_file(
+    media_dir: &std::path::Path,
+    task_id: &str,
+    segment_index: u32,
+    engine: &Engine,
+    timeout: Duration,
+) {
+    let seg_path = media_dir
+        .join(".dl")
+        .join(task_id)
+        .join(format!("seg{segment_index:04}.ts"));
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        if seg_path.is_file() {
+            return;
+        }
+        let task = engine
+            .list_tasks()
+            .unwrap()
+            .into_iter()
+            .find(|t| t.id == task_id)
+            .unwrap_or_else(|| panic!("task {task_id} not found"));
+        if task.status == TaskStatus::Completed {
+            panic!("download finished before partial progress could be captured");
+        }
+        if tokio::time::Instant::now() > deadline {
+            panic!("timeout waiting for HLS segment {segment_index}");
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
     }
 }
 

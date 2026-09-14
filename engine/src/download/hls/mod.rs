@@ -2,13 +2,15 @@ pub(crate) mod merge;
 pub(crate) mod playlist;
 pub(crate) mod segments;
 
-use crate::download::checkpoint::{Checkpoint, CheckpointBody, HlsEncryption};
+use crate::download::checkpoint::{
+    hls_encryption_from_playlist, persist_hls_snapshot, Checkpoint, CheckpointBody, HlsEncryption,
+};
 use crate::download::ffmpeg::{BundledFfmpegLocator, FfmpegLocator};
 use crate::download::hls::merge::merge_segments_to_mp4;
 use crate::download::hls::playlist::{
     parse_media_playlist, select_media_playlist_url, MediaPlaylist,
 };
-use crate::download::hls::segments::download_segments;
+use crate::download::hls::segments::{download_segments, SegmentDownloadContext};
 use crate::download::http::HttpClient;
 use crate::error::EngineError;
 use std::path::{Path, PathBuf};
@@ -44,24 +46,21 @@ impl HlsDownloadState {
     }
 }
 
-fn encryption_from_playlist(playlist: &MediaPlaylist) -> Option<HlsEncryption> {
-    playlist.encryption.as_ref().map(|key| HlsEncryption {
-        method: key.method.clone(),
-        key_uri: key.uri.clone(),
-        iv_hex: key.iv_hex.clone(),
-    })
-}
-
 fn is_master_playlist(body: &str) -> bool {
     body.lines()
         .map(str::trim)
         .any(|line| line.starts_with("#EXT-X-STREAM-INF:"))
 }
 
+pub(crate) type SegmentProgressCallback = Arc<dyn Fn(u64, u64) + Send + Sync>;
+pub(crate) type HlsStageLogCallback = Arc<dyn Fn(&str) + Send + Sync>;
+
 pub(crate) struct HlsContext<'a> {
     pub(crate) http: &'a HttpClient,
     pub(crate) temp_dir: &'a Path,
     pub(crate) ffmpeg: &'a Path,
+    pub(crate) on_segment_progress: Option<SegmentProgressCallback>,
+    pub(crate) on_stage_log: Option<HlsStageLogCallback>,
 }
 
 async fn resolve_media_playlist(
@@ -121,6 +120,8 @@ pub(crate) async fn download_hls_to_mp4(
             Some((media_url, variant_url, done, paths, encryption)) => {
                 let body = ctx.http.get_text(&media_url).await?;
                 let playlist = parse_media_playlist(&body, &media_url)?;
+                let _ = persist_hls_snapshot(ctx.temp_dir, &media_url, &body);
+                let encryption = encryption.or_else(|| hls_encryption_from_playlist(&playlist));
                 if let Some(state) = &progress {
                     let mut s = state.lock().await;
                     s.temp_dir = temp_dir_str.clone();
@@ -131,18 +132,21 @@ pub(crate) async fn download_hls_to_mp4(
                         .iter()
                         .map(|p| p.to_string_lossy().into_owned())
                         .collect();
-                    s.encryption = encryption;
+                    s.encryption = encryption.clone();
                 }
                 (media_url, playlist, done, paths, variant_url)
             }
             None => {
                 let (media_url, playlist) =
                     resolve_media_playlist(ctx.http, source_url, quality_label).await?;
+                let body = ctx.http.get_text(&media_url).await?;
+                let _ = persist_hls_snapshot(ctx.temp_dir, &media_url, &body);
                 let variant_url = if from_master {
                     Some(source_url.to_string())
                 } else {
                     None
                 };
+                let encryption = hls_encryption_from_playlist(&playlist);
                 if let Some(state) = &progress {
                     let mut s = state.lock().await;
                     s.temp_dir = temp_dir_str.clone();
@@ -150,23 +154,35 @@ pub(crate) async fn download_hls_to_mp4(
                     s.variant_url = variant_url.clone();
                     s.segments_done.clear();
                     s.segment_paths.clear();
-                    s.encryption = encryption_from_playlist(&playlist);
+                    s.encryption = encryption.clone();
                 }
                 (media_url, playlist, Vec::new(), Vec::new(), variant_url)
             }
         };
 
+    let total_segments = playlist.segments.len() as u64;
+    if let Some(on_progress) = &ctx.on_segment_progress {
+        on_progress(skip_indices.len() as u64, total_segments);
+    }
+
     let segment_paths = download_segments(
         ctx.http,
         &playlist,
         &media_playlist_url,
-        ctx.temp_dir,
-        &skip_indices,
-        &existing_paths,
-        progress.clone(),
+        SegmentDownloadContext {
+            temp_dir: ctx.temp_dir,
+            skip_indices: &skip_indices,
+            existing_paths: &existing_paths,
+            progress: progress.clone(),
+            on_segment_progress: ctx.on_segment_progress.clone(),
+            total_segments,
+        },
     )
     .await?;
 
+    if let Some(log) = &ctx.on_stage_log {
+        log("HLS：合并为 MP4…");
+    }
     merge_segments_to_mp4(ctx.ffmpeg, &segment_paths, ctx.temp_dir, output_mp4)?;
 
     Ok(output_mp4.to_path_buf())
@@ -180,11 +196,13 @@ pub(crate) async fn download_hls_to_mp4_with_bundled_ffmpeg(
     quality_label: Option<&str>,
     checkpoint: Option<Checkpoint>,
 ) -> Result<PathBuf, EngineError> {
-    let ffmpeg = BundledFfmpegLocator.resolve()?;
+    let ffmpeg = BundledFfmpegLocator::default().resolve()?;
     let ctx = HlsContext {
         http,
         temp_dir,
         ffmpeg: &ffmpeg,
+        on_segment_progress: None,
+        on_stage_log: None,
     };
     download_hls_to_mp4(
         &ctx,

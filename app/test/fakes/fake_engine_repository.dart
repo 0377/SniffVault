@@ -74,6 +74,10 @@ class FakeEngineRepository implements EngineRepository {
   @override
   Stream<TaskEvent> get taskEvents => _events.stream;
 
+  void emitTaskEvent(TaskEvent event) {
+    _events.add(event);
+  }
+
   @override
   Stream<CastEvent> get castEvents => _castEvents.stream;
 
@@ -158,6 +162,12 @@ class FakeEngineRepository implements EngineRepository {
 
   @override
   void resumeTask(String taskId) {}
+
+  @override
+  void retryTask(String taskId) {}
+
+  @override
+  void restoreTask(String taskId) {}
 
   @override
   void cancelTask(String taskId) {}

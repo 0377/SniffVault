@@ -72,6 +72,43 @@ mod tests {
     }
 
     #[test]
+    fn pick_next_uses_running_download_count_not_parent_rows() {
+        let dir = tempdir().unwrap();
+        let store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();
+        store
+            .upsert(&sample("parent", None, "", TaskStatus::Running))
+            .unwrap();
+        for i in 1..=2 {
+            let id = format!("c{i}");
+            store
+                .upsert(&sample(
+                    &id,
+                    Some("parent"),
+                    &format!("https://ex/{i}.mp4"),
+                    TaskStatus::Running,
+                ))
+                .unwrap();
+        }
+        for i in 3..=4 {
+            let id = format!("c{i}");
+            store
+                .upsert(&sample(
+                    &id,
+                    Some("parent"),
+                    &format!("https://ex/{i}.mp4"),
+                    TaskStatus::Queued,
+                ))
+                .unwrap();
+        }
+
+        let scheduler = Scheduler::new(4);
+        let running = store.count_running_downloads().unwrap();
+        assert_eq!(running, 2);
+        let picked = scheduler.pick_next(&store, running, 10).unwrap();
+        assert_eq!(picked.len(), 2);
+    }
+
+    #[test]
     fn pick_next_respects_concurrency_slots() {
         let dir = tempdir().unwrap();
         let store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();

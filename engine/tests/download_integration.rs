@@ -1,17 +1,17 @@
 mod support;
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use support::engine_download::{
     interruptible_mp4_fixture_bytes, output_contains_ftyp, task_by_title,
-    wait_for_any_running_or_progress, wait_for_task, EngineFixture,
+    wait_for_any_running_or_progress, wait_for_hls_segment_file, wait_for_task,
+    wait_for_task_failed, EngineFixture,
 };
 use support::fixture_server;
-use video_sniffing_engine::test_api::TaskStore;
+use support::hls_fixture::{build_multi_segment_hls_fixture, fixtures_hls_dir};
+use video_sniffing_engine::test_api::{CheckpointBody, TaskStore};
 use video_sniffing_engine::{DownloadAuth, Engine, TaskStatus};
-
-fn fixtures_hls_dir() -> std::path::PathBuf {
-    fixture_server::fixtures_dir().join("hls")
-}
 
 fn requeue_failed_task(data_dir: &std::path::Path, task_id: &str, new_url: &str) {
     let store = TaskStore::open(&data_dir.join("tasks.db")).unwrap();
@@ -313,6 +313,185 @@ fn hls_plain_registers() {
             .as_ref()
             .is_some_and(|p| output_contains_ftyp(std::path::Path::new(p))));
         assert_eq!(fx.engine.list_library().unwrap().len(), 1);
+    });
+}
+
+#[test]
+fn hls_failure_retry_resumes_and_completes() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let mut fx = EngineFixture::open();
+        let hls_fixture = fx.data_dir().join("fixtures/hls");
+        build_multi_segment_hls_fixture(&hls_fixture, 3);
+
+        let seg1_blocked = Arc::new(AtomicBool::new(true));
+        let (addr, _guard) = fixture_server::serve_dir_fail_path_gated(
+            hls_fixture,
+            "segments/seg1.ts",
+            seg1_blocked.clone(),
+        )
+        .await;
+        let url = format!("http://{addr}/many.m3u8");
+
+        let task_id = fx
+            .engine
+            .enqueue_single("hls-retry", &url, None, None)
+            .unwrap();
+        fx.engine.start_downloads().unwrap();
+        wait_for_task_failed(&fx.engine, &task_id, Duration::from_secs(30)).await;
+
+        let store = TaskStore::open(&fx.data_dir().join("tasks.db")).unwrap();
+        let failed = store.get(&task_id).unwrap();
+        assert_eq!(failed.progress_bytes, 1);
+        assert_eq!(failed.total_bytes, Some(3));
+        let checkpoint = store
+            .load_checkpoint(&task_id)
+            .unwrap()
+            .expect("checkpoint");
+        match checkpoint.body {
+            CheckpointBody::Hls { segments_done, .. } => assert_eq!(segments_done, vec![0]),
+            other => panic!("expected HLS checkpoint, got {other:?}"),
+        }
+
+        let seg0_path = fx.media_dir().join(".dl").join(&task_id).join("seg0000.ts");
+        assert!(seg0_path.is_file());
+
+        seg1_blocked.store(false, Ordering::SeqCst);
+        fx.engine.retry_task(&task_id).unwrap();
+        wait_for_task(
+            &fx.engine,
+            &task_id,
+            TaskStatus::Completed,
+            Duration::from_secs(60),
+        )
+        .await;
+        fx.engine.stop_downloads().unwrap();
+
+        let completed = store.get(&task_id).unwrap();
+        assert_eq!(completed.progress_bytes, 3);
+        assert!(completed
+            .output_path
+            .as_ref()
+            .is_some_and(|p| output_contains_ftyp(std::path::Path::new(p))));
+        assert_eq!(fx.engine.list_library().unwrap().len(), 1);
+        assert!(
+            store.load_checkpoint(&task_id).unwrap().is_none(),
+            "completed task should clear checkpoint"
+        );
+    });
+}
+
+#[test]
+fn orphaned_running_hls_resumes_after_reopen() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let mut fx = EngineFixture::open();
+        let hls_fixture = fx.data_dir().join("fixtures/hls");
+        build_multi_segment_hls_fixture(&hls_fixture, 3);
+        let seg1_blocked = Arc::new(AtomicBool::new(true));
+        let (addr, _guard) = fixture_server::serve_dir_fail_path_gated(
+            hls_fixture,
+            "segments/seg1.ts",
+            seg1_blocked.clone(),
+        )
+        .await;
+        let url = format!("http://{addr}/many.m3u8");
+
+        let task_id = fx
+            .engine
+            .enqueue_single("crash-resume", &url, None, None)
+            .unwrap();
+        fx.engine.start_downloads().unwrap();
+        wait_for_hls_segment_file(
+            &fx.media_dir(),
+            &task_id,
+            0,
+            &fx.engine,
+            Duration::from_secs(30),
+        )
+        .await;
+
+        let mut store = TaskStore::open(&fx.data_dir().join("tasks.db")).unwrap();
+        let running = store.get(&task_id).unwrap();
+
+        fx.engine.stop_downloads().unwrap();
+        store.clear_checkpoint(&task_id).unwrap();
+        store
+            .update_progress(
+                &task_id,
+                running.progress_bytes,
+                running.total_bytes,
+                TaskStatus::Running,
+            )
+            .unwrap();
+
+        seg1_blocked.store(false, Ordering::SeqCst);
+        fx.engine.start_downloads().unwrap();
+        wait_for_task(
+            &fx.engine,
+            &task_id,
+            TaskStatus::Completed,
+            Duration::from_secs(60),
+        )
+        .await;
+        fx.engine.stop_downloads().unwrap();
+
+        let completed = store.get(&task_id).unwrap();
+        assert_eq!(completed.progress_bytes, 3);
+        assert!(completed
+            .output_path
+            .as_ref()
+            .is_some_and(|p| output_contains_ftyp(std::path::Path::new(p))));
+    });
+}
+
+#[test]
+fn pause_without_worker_rebuilds_checkpoint_from_temp() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let mut fx = EngineFixture::open();
+        let hls_fixture = fx.data_dir().join("fixtures/hls");
+        build_multi_segment_hls_fixture(&hls_fixture, 3);
+        let seg1_blocked = Arc::new(AtomicBool::new(true));
+        let (addr, _guard) = fixture_server::serve_dir_fail_path_gated(
+            hls_fixture,
+            "segments/seg1.ts",
+            seg1_blocked.clone(),
+        )
+        .await;
+        let url = format!("http://{addr}/many.m3u8");
+
+        let task_id = fx
+            .engine
+            .enqueue_single("pause-offline", &url, None, None)
+            .unwrap();
+        fx.engine.start_downloads().unwrap();
+        wait_for_hls_segment_file(
+            &fx.media_dir(),
+            &task_id,
+            0,
+            &fx.engine,
+            Duration::from_secs(30),
+        )
+        .await;
+
+        fx.engine.stop_downloads().unwrap();
+
+        let mut store = TaskStore::open(&fx.data_dir().join("tasks.db")).unwrap();
+        store.clear_checkpoint(&task_id).unwrap();
+        store
+            .update_progress(&task_id, 1, Some(3), TaskStatus::Running)
+            .unwrap();
+
+        fx.engine.pause_task(&task_id).unwrap();
+
+        let checkpoint = store.load_checkpoint(&task_id).unwrap();
+        assert!(
+            checkpoint.is_some(),
+            "pause without active worker should rebuild checkpoint from temp segments"
+        );
+        let paused = store.get(&task_id).unwrap();
+        assert_eq!(paused.status, TaskStatus::Paused);
     });
 }
 

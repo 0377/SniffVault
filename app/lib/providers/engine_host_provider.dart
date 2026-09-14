@@ -1,11 +1,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:video_sniffing/bootstrap/ffmpeg_bundle.dart';
 import 'package:video_sniffing/engine/engine_host.dart';
 import 'package:video_sniffing/platform/television.dart';
 import 'package:video_sniffing/providers/engine_repository.dart';
 
 final engineHostProvider = FutureProvider<EngineHost>((ref) async {
   final dir = await getApplicationSupportDirectory();
+  await ensureAndroidFfmpegInstalled(dir.path);
   final host = await EngineHost.open(dir.path);
   ref.onDispose(host.dispose);
 

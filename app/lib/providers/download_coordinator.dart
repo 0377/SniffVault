@@ -4,18 +4,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_sniffing/engine/engine_host.dart';
 import 'package:video_sniffing/engine/models/task_event.dart';
 import 'package:video_sniffing/engine/models/task_status.dart';
+import 'package:video_sniffing/engine/models/download_log_entry.dart';
+import 'package:video_sniffing/providers/download_logs_provider.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
 import 'package:video_sniffing/providers/engine_repository.dart';
 import 'package:video_sniffing/providers/library_provider.dart';
 import 'package:video_sniffing/providers/tasks_provider.dart';
 
 typedef InvalidateCallback = void Function();
+typedef AppendDownloadLog = void Function(DownloadLogEntry entry);
 
 class DownloadCoordinator {
   DownloadCoordinator._(
     this._repo, {
     required this._onInvalidateTasks,
     required this._onInvalidateLibrary,
+    required this._onAppendLog,
   }) {
     _subscription = _repo.taskEvents.listen(_onEvent);
     _startQueuedDownloadsIfNeeded();
@@ -26,6 +30,8 @@ class DownloadCoordinator {
       repo,
       onInvalidateTasks: () => ref.invalidate(tasksProvider),
       onInvalidateLibrary: () => ref.invalidate(libraryProvider),
+      onAppendLog: (entry) =>
+          ref.read(downloadLogsProvider.notifier).append(entry),
     );
   }
 
@@ -33,25 +39,30 @@ class DownloadCoordinator {
     EngineRepository repo, {
     required InvalidateCallback onInvalidateTasks,
     required InvalidateCallback onInvalidateLibrary,
+    AppendDownloadLog? onAppendLog,
   }) {
     return DownloadCoordinator._(
       repo,
       onInvalidateTasks: onInvalidateTasks,
       onInvalidateLibrary: onInvalidateLibrary,
+      onAppendLog: onAppendLog ?? (_) {},
     );
   }
 
   final EngineRepository _repo;
   final InvalidateCallback _onInvalidateTasks;
   final InvalidateCallback _onInvalidateLibrary;
+  final AppendDownloadLog _onAppendLog;
   StreamSubscription<TaskEvent>? _subscription;
   var _workerActive = false;
 
   void _startQueuedDownloadsIfNeeded() {
-    final hasQueued = _repo
-        .listTasks()
-        .any((task) => task.status == TaskStatus.queued);
-    if (hasQueued) {
+    final hasRunnable = _repo.listTasks().any(
+      (task) =>
+          task.status == TaskStatus.queued ||
+          task.status == TaskStatus.running,
+    );
+    if (hasRunnable) {
       ensureDownloads();
     }
   }
@@ -77,17 +88,16 @@ class DownloadCoordinator {
       case TaskEventKind.workerStopped:
         _workerActive = false;
         _onInvalidateTasks();
-        final queued = _repo
-            .listTasks()
-            .any((task) => task.status == TaskStatus.queued);
-        if (queued) {
-          ensureDownloads();
-        }
       case TaskEventKind.taskUpdated:
         _onInvalidateTasks();
         final task = event.task;
         if (task != null && task.status == TaskStatus.completed) {
           _onInvalidateLibrary();
+        }
+      case TaskEventKind.log:
+        final log = event.log;
+        if (log != null) {
+          _onAppendLog(log);
         }
     }
   }

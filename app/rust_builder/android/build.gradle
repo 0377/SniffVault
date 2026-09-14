@@ -29,9 +29,8 @@ android {
         namespace 'com.videosniffing.rust_lib_video_sniffing'
     }
 
-    // Bumping the plugin compileSdkVersion requires all clients of this plugin
-    // to bump the version in their app.
-    compileSdkVersion 33
+    // Match the host app's compileSdk (FlutterExtension), required by AndroidX deps.
+    compileSdk flutter.compileSdkVersion
 
     // Use the NDK version
     // declared in /android/app/build.gradle file of the Flutter project.

@@ -45,18 +45,13 @@ typedef BatchSniffProgress = void Function(int current, int total);
 
 class BatchSniffCoordinator {
   BatchSniffCoordinator._({
-    required EngineRepository repo,
-    required BrowseSession session,
-    required BatchSniffEnsureDownloads ensureDownloads,
-    required Duration debounce,
-    required Duration pollInterval,
-    required Duration episodeTimeout,
-  })  : _repo = repo,
-        _session = session,
-        _ensureDownloads = ensureDownloads,
-        _debounce = debounce,
-        _pollInterval = pollInterval,
-        _episodeTimeout = episodeTimeout;
+    required this._repo,
+    required this._session,
+    required this._ensureDownloads,
+    required this._debounce,
+    required this._pollInterval,
+    required this._episodeTimeout,
+  });
 
   factory BatchSniffCoordinator(Ref ref) {
     return BatchSniffCoordinator._(
@@ -148,7 +143,9 @@ class BatchSniffCoordinator {
       onProgress?.call(index + 1, total);
       await _processEpisode(children[index], loadUrl);
     }
-    onComplete?.call();
+    if (!_cancelled) {
+      onComplete?.call();
+    }
   }
 
   List<DownloadTask> _needsSniffChildren(String parentId) {
@@ -169,6 +166,9 @@ class BatchSniffCoordinator {
     DownloadTask task,
     BatchSniffLoadUrl loadUrl,
   ) async {
+    if (_cancelled) {
+      return;
+    }
     final uri = Uri.parse(task.sourceUrl);
     await loadUrl(uri);
     if (_cancelled) {

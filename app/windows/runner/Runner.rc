@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.videosniffing" "\0"
-            VALUE "FileDescription", "video_sniffing" "\0"
+            VALUE "FileDescription", "\xe5\x97\x85\xe5\xbd\xb1\xe5\xba\x93" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "video_sniffing" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.videosniffing. All rights reserved." "\0"
             VALUE "OriginalFilename", "video_sniffing.exe" "\0"
-            VALUE "ProductName", "video_sniffing" "\0"
+            VALUE "ProductName", "\xe5\x97\x85\xe5\xbd\xb1\xe5\xba\x93" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

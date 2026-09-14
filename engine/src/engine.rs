@@ -1,3 +1,4 @@
+use crate::download::checkpoint::CheckpointRebuildStatus;
 use crate::download::runtime::{worker_config, DownloadRuntime};
 use crate::download::worker::DownloadCommand;
 use crate::error::EngineError;
@@ -8,8 +9,9 @@ use crate::library::LibraryStore;
 use crate::settings;
 use crate::tasks::TaskStore;
 use crate::types::{
-    DownloadAuth, DownloadTask, EngineSettings, LibraryEpisode, LibraryItem, Quality,
-    ResolveOptions, ResolveOutcome, ResourceCandidate, SniffEvent, TaskEvent, TaskStatus,
+    DownloadAuth, DownloadLogEntry, DownloadTask, EngineSettings, LibraryEpisode, LibraryItem,
+    Quality, ResolveOptions, ResolveOutcome, ResourceCandidate, SniffEvent, TaskEvent,
+    TaskEventKind, TaskStatus,
 };
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc};
@@ -24,6 +26,7 @@ pub struct Engine {
     tasks: TaskStore,
     lan: Option<LanService>,
     download: Option<DownloadRuntime>,
+    download_stopping: bool,
     task_event_rx: Option<mpsc::Receiver<TaskEvent>>,
     pending_task_event_tx: Option<mpsc::Sender<TaskEvent>>,
 }
@@ -59,6 +62,7 @@ impl Engine {
             tasks,
             lan: None,
             download: None,
+            download_stopping: false,
             task_event_rx: None,
             pending_task_event_tx: None,
         })
@@ -222,17 +226,67 @@ impl Engine {
         Ok(id)
     }
 
-    pub fn prepare_download_events(&mut self) -> Result<(), EngineError> {
-        if self.download.is_some() || self.pending_task_event_tx.is_some() {
-            return Err(EngineError::InvalidArg("downloads already running".into()));
-        }
-        for task in self.tasks.list_all()? {
-            if task.status == TaskStatus::Paused {
-                self.tasks
-                    .set_task_status(&task.id, TaskStatus::Queued, None)?;
+    fn emit_prepare_log(tx: &mpsc::Sender<TaskEvent>, task_id: &str, message: impl Into<String>) {
+        let _ = tx.send(TaskEvent {
+            kind: TaskEventKind::Log,
+            task: None,
+            log: Some(DownloadLogEntry {
+                task_id: task_id.to_string(),
+                message: message.into(),
+                at_ms: Self::now_ms(),
+            }),
+        });
+    }
+
+    fn reconcile_interrupted_task(
+        tasks: &mut TaskStore,
+        media_dir: &Path,
+        task: &DownloadTask,
+        log_tx: Option<&mpsc::Sender<TaskEvent>>,
+    ) -> Result<(), EngineError> {
+        let status =
+            crate::download::checkpoint::ensure_checkpoint_from_temp(tasks, media_dir, task)?;
+        if let Some(tx) = log_tx {
+            match status {
+                CheckpointRebuildStatus::Rebuilt => {
+                    Self::emit_prepare_log(tx, &task.id, "已从临时文件恢复下载断点");
+                }
+                CheckpointRebuildStatus::MissingMediaUrl => {
+                    Self::emit_prepare_log(
+                        tx,
+                        &task.id,
+                        "发现已下载分片但缺少媒体地址，将继续全量下载",
+                    );
+                }
+                CheckpointRebuildStatus::AlreadyPresent
+                | CheckpointRebuildStatus::NoRecoverableData => {}
             }
         }
+        Ok(())
+    }
+
+    pub fn prepare_download_events(&mut self) -> Result<(), EngineError> {
+        if self.download.is_some() || self.pending_task_event_tx.is_some() || self.download_stopping
+        {
+            return Err(EngineError::InvalidArg("downloads already running".into()));
+        }
         let (task_event_tx, task_event_rx) = mpsc::channel();
+        let media_dir = self.media_dir();
+        for task in self.tasks.list_all()? {
+            if matches!(task.status, TaskStatus::Running | TaskStatus::Paused) {
+                Self::reconcile_interrupted_task(
+                    &mut self.tasks,
+                    &media_dir,
+                    &task,
+                    Some(&task_event_tx),
+                )?;
+                self.tasks
+                    .set_task_status(&task.id, TaskStatus::Queued, None)?;
+                if let Some(parent_id) = &task.parent_id {
+                    let _ = self.tasks.sync_parent_status(parent_id);
+                }
+            }
+        }
         self.pending_task_event_tx = Some(task_event_tx);
         self.task_event_rx = Some(task_event_rx);
         Ok(())
@@ -271,7 +325,10 @@ impl Engine {
     pub fn stop_downloads(&mut self) -> Result<(), EngineError> {
         self.pending_task_event_tx = None;
         if let Some(runtime) = self.download.take() {
-            runtime.stop_and_join()?;
+            self.download_stopping = true;
+            let result = runtime.stop_and_join();
+            self.download_stopping = false;
+            result?;
         }
         Ok(())
     }
@@ -282,6 +339,9 @@ impl Engine {
                 task_id: task_id.to_string(),
             })?;
         } else {
+            let task = self.tasks.get(task_id)?;
+            let media_dir = self.media_dir();
+            Self::reconcile_interrupted_task(&mut self.tasks, &media_dir, &task, None)?;
             self.tasks
                 .set_task_status(task_id, TaskStatus::Paused, None)?;
         }
@@ -336,6 +396,60 @@ impl Engine {
             self.tasks
                 .set_task_status(task_id, TaskStatus::Queued, None)?;
         }
+        Ok(())
+    }
+
+    pub fn retry_task(&mut self, task_id: &str) -> Result<(), EngineError> {
+        let task = self.tasks.get(task_id)?;
+        if task.status != TaskStatus::Failed {
+            return Err(EngineError::InvalidArg(
+                "task must be in failed status".into(),
+            ));
+        }
+        if task.error_message.as_deref() == Some("needs_sniff") {
+            return Err(EngineError::InvalidArg(
+                "failed task needs sniff before retry".into(),
+            ));
+        }
+        self.tasks
+            .set_task_status(task_id, TaskStatus::Queued, None)?;
+        if let Some(parent_id) = &task.parent_id {
+            let _ = self.tasks.sync_parent_status(parent_id);
+        }
+        Ok(())
+    }
+
+    pub fn restore_task(&mut self, task_id: &str) -> Result<(), EngineError> {
+        let task = self.tasks.get(task_id)?;
+        if task.status != TaskStatus::Cancelled {
+            return Err(EngineError::InvalidArg(
+                "task must be in cancelled status".into(),
+            ));
+        }
+
+        let (new_status, error_message) = if task.resolved_media_url.is_some() {
+            (TaskStatus::Queued, None)
+        } else if crate::resolve::source_is_web_page(&task.source_url) {
+            (TaskStatus::NeedsSniff, Some("needs_sniff"))
+        } else {
+            (TaskStatus::Queued, None)
+        };
+
+        self.tasks
+            .set_task_status(task_id, new_status, error_message)?;
+
+        if let Some(parent_id) = &task.parent_id {
+            let _ = self.tasks.sync_parent_status(parent_id);
+        }
+
+        if new_status == TaskStatus::Queued {
+            if let Some(runtime) = &self.download {
+                runtime.send_command(DownloadCommand::Resume {
+                    task_id: task_id.to_string(),
+                })?;
+            }
+        }
+
         Ok(())
     }
 

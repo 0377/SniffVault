@@ -12,6 +12,7 @@ DownloadTask _child({
   required TaskStatus status,
   required int episodeIndex,
   String parentId = 'parent-1',
+  String? errorMessage,
 }) {
   return DownloadTask(
     id: id,
@@ -20,6 +21,7 @@ DownloadTask _child({
     title: '第 $episodeIndex 集',
     sourceUrl: 'https://example/ep$episodeIndex',
     status: status,
+    errorMessage: errorMessage,
     progressBytes: 0,
     createdAtMs: 1,
     updatedAtMs: 1,
@@ -58,6 +60,9 @@ void main() {
               onPause: (_) {},
               onResume: (_) {},
               onCancel: (_) {},
+              onRetry: (_) {},
+              onRestore: (_) {},
+              onBatchRetry: () {},
             ),
           ),
         ),
@@ -88,6 +93,129 @@ void main() {
     expect(container.read(batchSniffParentIdProvider), 'parent-1');
     expect(find.byKey(const Key('browse_screen')), findsOneWidget);
     container.dispose();
+  });
+
+  testWidgets('parent task shows batch retry button for failed children', (
+    tester,
+  ) async {
+    const parent = DownloadTask(
+      id: 'parent-3',
+      title: '失败剧集',
+      sourceUrl: 'https://example/list',
+      status: TaskStatus.failed,
+      progressBytes: 0,
+      createdAtMs: 1,
+      updatedAtMs: 1,
+    );
+    final children = [
+      _child(
+        id: 'c1',
+        status: TaskStatus.failed,
+        episodeIndex: 1,
+        parentId: 'parent-3',
+        errorMessage: 'http error',
+      ),
+      _child(
+        id: 'c2',
+        status: TaskStatus.completed,
+        episodeIndex: 2,
+        parentId: 'parent-3',
+      ),
+      _child(
+        id: 'c3',
+        status: TaskStatus.failed,
+        episodeIndex: 3,
+        parentId: 'parent-3',
+        errorMessage: 'http error',
+      ),
+    ];
+    final retried = <String>[];
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: ParentTaskGroup(
+              parent: parent,
+              children: children,
+              onPause: (_) {},
+              onResume: (_) {},
+              onCancel: (_) {},
+              onRetry: (id) => retried.add(id),
+              onRestore: (_) {},
+              onBatchRetry: () => retried.addAll(['c1', 'c3']),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('3 个子任务，2 失败'), findsOneWidget);
+    expect(find.text('重试失败'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('batch_retry_button')));
+    await tester.pumpAndSettle();
+    expect(retried, ['c1', 'c3']);
+  });
+
+  testWidgets('parent task shows sniff and failed counts when both present', (
+    tester,
+  ) async {
+    const parent = DownloadTask(
+      id: 'parent-4',
+      title: '混合状态剧集',
+      sourceUrl: 'https://example/list',
+      status: TaskStatus.running,
+      progressBytes: 0,
+      createdAtMs: 1,
+      updatedAtMs: 1,
+    );
+    final children = [
+      _child(
+        id: 'c1',
+        status: TaskStatus.needsSniff,
+        episodeIndex: 1,
+        parentId: 'parent-4',
+      ),
+      _child(
+        id: 'c2',
+        status: TaskStatus.failed,
+        episodeIndex: 2,
+        parentId: 'parent-4',
+        errorMessage: 'http error',
+      ),
+      _child(
+        id: 'c3',
+        status: TaskStatus.completed,
+        episodeIndex: 3,
+        parentId: 'parent-4',
+      ),
+    ];
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: ParentTaskGroup(
+              parent: parent,
+              children: children,
+              onPause: (_) {},
+              onResume: (_) {},
+              onCancel: (_) {},
+              onRetry: (_) {},
+              onRestore: (_) {},
+              onBatchRetry: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('3 个子任务，1 待嗅探，1 失败'), findsOneWidget);
+    expect(find.text('嗅探补全'), findsOneWidget);
+    expect(find.text('重试失败'), findsOneWidget);
   });
 
   testWidgets('parent task hides batch sniff button when no needs sniff children', (
@@ -121,6 +249,9 @@ void main() {
               onPause: (_) {},
               onResume: (_) {},
               onCancel: (_) {},
+              onRetry: (_) {},
+              onRestore: (_) {},
+              onBatchRetry: () {},
             ),
           ),
         ),

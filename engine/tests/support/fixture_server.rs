@@ -9,6 +9,8 @@ use axum::{
 use bytes::Bytes;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::ReceiverStream;
@@ -65,6 +67,53 @@ pub async fn serve_dir_with_options(
         axum::serve(listener, router).await.unwrap();
     });
     (addr, ServerGuard(handle))
+}
+
+#[derive(Clone)]
+struct FailPathState {
+    root: PathBuf,
+    options: ServeOptions,
+    fail_suffix: String,
+    blocked: Arc<AtomicBool>,
+}
+
+/// 当 `blocked` 为 true 时，路径包含 `fail_suffix` 的请求返回 500。
+#[allow(dead_code)]
+pub async fn serve_dir_fail_path_gated(
+    root: PathBuf,
+    fail_suffix: impl Into<String>,
+    blocked: Arc<AtomicBool>,
+) -> (SocketAddr, ServerGuard) {
+    let router = Router::new()
+        .fallback(any(serve_file_fail_path))
+        .with_state(FailPathState {
+            root,
+            options: ServeOptions::default(),
+            fail_suffix: fail_suffix.into(),
+            blocked,
+        });
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let handle = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    (addr, ServerGuard(handle))
+}
+
+#[allow(dead_code)]
+pub async fn serve_dir_fail_path(
+    root: PathBuf,
+    fail_suffix: impl Into<String>,
+) -> (SocketAddr, ServerGuard) {
+    serve_dir_fail_path_gated(root, fail_suffix, Arc::new(AtomicBool::new(true))).await
+}
+
+async fn serve_file_fail_path(State(state): State<FailPathState>, request: Request) -> Response {
+    let path = request.uri().path();
+    if state.blocked.load(Ordering::SeqCst) && path.contains(&state.fail_suffix) {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    serve_file(State((state.root.clone(), state.options.clone())), request).await
 }
 
 #[allow(dead_code)]

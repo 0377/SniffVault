@@ -6,6 +6,7 @@ import 'deep_link/deep_link_host.dart';
 import 'providers/download_coordinator.dart';
 import 'providers/engine_host_provider.dart';
 import 'router.dart';
+import 'ui/app_theme.dart';
 
 class VideoSniffingApp extends ConsumerWidget {
   const VideoSniffingApp({super.key});
@@ -15,33 +16,43 @@ class VideoSniffingApp extends ConsumerWidget {
     final hostAsync = ref.watch(engineHostProvider);
 
     return hostAsync.when(
-      loading: () => const MaterialApp(
+      loading: () => MaterialApp(
+        theme: AppTheme.light,
+        darkTheme: AppTheme.dark,
+        themeMode: ThemeMode.system,
         home: Scaffold(
-          body: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text('正在初始化引擎…'),
-              ],
+          body: SafeArea(
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('正在初始化引擎…'),
+                ],
+              ),
             ),
           ),
         ),
       ),
       error: (error, _) => MaterialApp(
+        theme: AppTheme.light,
+        darkTheme: AppTheme.dark,
+        themeMode: ThemeMode.system,
         home: Scaffold(
-          body: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('引擎初始化失败：$error'),
-                const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: () => ref.invalidate(engineHostProvider),
-                  child: const Text('重试'),
-                ),
-              ],
+          body: SafeArea(
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('引擎初始化失败：$error'),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: () => ref.invalidate(engineHostProvider),
+                    child: const Text('重试'),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -51,11 +62,10 @@ class VideoSniffingApp extends ConsumerWidget {
         ref.watch(downloadCoordinatorProvider);
         final router = ref.watch(appRouterProvider);
         return MaterialApp.router(
-          title: 'Video Sniffing',
-          theme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-            useMaterial3: true,
-          ),
+          title: '嗅影库',
+          theme: AppTheme.light,
+          darkTheme: AppTheme.dark,
+          themeMode: ThemeMode.system,
           routerConfig: router,
           builder: (context, child) => DeepLinkHost(
             child: CastReceiverHost(

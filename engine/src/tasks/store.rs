@@ -192,8 +192,8 @@ impl TaskStore {
                  id, parent_id, season, title, source_url, quality_label, status,
                  progress_bytes, total_bytes, error_message, output_path,
                  library_item_id, episode_index, created_at_ms, updated_at_ms,
-                 cookie_header, referer
-               ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)
+                 cookie_header, referer, resolved_media_url
+               ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)
                ON CONFLICT(id) DO UPDATE SET
                  parent_id=excluded.parent_id,
                  season=excluded.season,
@@ -209,7 +209,8 @@ impl TaskStore {
                  episode_index=excluded.episode_index,
                  updated_at_ms=excluded.updated_at_ms,
                  cookie_header=excluded.cookie_header,
-                 referer=excluded.referer"#,
+                 referer=excluded.referer,
+                 resolved_media_url=excluded.resolved_media_url"#,
             params![
                 task.id,
                 task.parent_id,
@@ -228,6 +229,7 @@ impl TaskStore {
                 task.updated_at_ms,
                 task.cookie_header,
                 task.referer,
+                task.resolved_media_url,
             ],
         )?;
         Ok(())
@@ -468,6 +470,20 @@ impl TaskStore {
             out.push(r?);
         }
         Ok(out)
+    }
+
+    /// 统计实际下载中的任务数（排除父容器行，与 `list_runnable_tasks` 口径一致）。
+    pub fn count_running_downloads(&self) -> Result<usize, EngineError> {
+        let count: i64 = self.conn.query_row(
+            r#"SELECT COUNT(*)
+               FROM download_tasks
+               WHERE status='running'
+                 AND source_url != ''
+                 AND (parent_id IS NOT NULL OR episode_index IS NULL)"#,
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(count as usize)
     }
 
     pub fn set_task_status(

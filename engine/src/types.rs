@@ -87,12 +87,22 @@ pub enum TaskStatus {
 pub enum TaskEventKind {
     TaskUpdated,
     WorkerStopped,
+    Log,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DownloadLogEntry {
+    pub task_id: String,
+    pub message: String,
+    pub at_ms: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TaskEvent {
     pub kind: TaskEventKind,
     pub task: Option<DownloadTask>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log: Option<DownloadLogEntry>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
