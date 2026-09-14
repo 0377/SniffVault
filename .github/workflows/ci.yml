@@ -77,7 +77,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [engine, ui, deeplink, cast, browse, library, library_rename_merge, library_poster]
+        suite: [engine, ui, deeplink, cast, browse, library, library_rename_merge, library_poster, library_settings_retry]
     steps:
       - uses: actions/checkout@v5
 
@@ -116,6 +116,8 @@ jobs:
             flutter test integration_test/library_rename_merge_test.dart -d macos
           elif [ "${{ matrix.suite }}" = "library_poster" ]; then
             flutter test integration_test/library_poster_test.dart -d macos
+          elif [ "${{ matrix.suite }}" = "library_settings_retry" ]; then
+            flutter test integration_test/library_settings_retry_test.dart -d macos
           else
             flutter test integration_test/ui_test.dart -d macos \
               --dart-define=INTEGRATION_SKIP_PLAYER=true
