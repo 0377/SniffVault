@@ -2,8 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 use video_sniffing_engine::test_api::{
-    data_dir_ffmpeg_path, macos_bundle_ffmpeg_path_from_exe, vendor_ffmpeg_path,
-    BundledFfmpegLocator, FfmpegLocator,
+    data_dir_ffmpeg_path, ffmpeg_binary_name, vendor_ffmpeg_path, BundledFfmpegLocator,
+    FfmpegLocator,
 };
 
 fn touch(path: &Path) {
@@ -13,6 +13,10 @@ fn touch(path: &Path) {
     fs::write(path, b"fake").unwrap();
 }
 
+#[cfg(target_os = "macos")]
+use video_sniffing_engine::test_api::macos_bundle_ffmpeg_path_from_exe;
+
+#[cfg(target_os = "macos")]
 fn fake_macos_app_exe(dir: &Path) -> PathBuf {
     dir.join("video_sniffing.app/Contents/MacOS/video_sniffing")
 }
@@ -55,7 +59,7 @@ fn macos_bundle_ffmpeg_path_from_exe_returns_none_without_resources_binary() {
 fn data_dir_ffmpeg_path_is_under_bin() {
     let dir = tempdir().unwrap();
     let path = data_dir_ffmpeg_path(dir.path());
-    assert_eq!(path, dir.path().join("bin").join("ffmpeg"));
+    assert_eq!(path, dir.path().join("bin").join(ffmpeg_binary_name()));
 }
 
 #[test]
