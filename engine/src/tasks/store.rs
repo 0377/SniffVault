@@ -566,7 +566,8 @@ impl TaskStore {
                    error_message=NULL,
                    status=?2,
                    updated_at_ms=?3
-               WHERE id=?4 AND status=?5"#,
+               WHERE id=?4 AND status=?5
+                 AND COALESCE(error_message, '') != 'needs_sniff'"#,
             params![
                 source_url,
                 Self::status_to_str(TaskStatus::Queued),

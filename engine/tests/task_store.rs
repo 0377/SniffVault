@@ -410,3 +410,37 @@ fn requeue_failed_with_url_resets_progress_and_media_cache() {
     assert_eq!(task.cookie_header.as_deref(), Some("sid=1"));
     assert_eq!(task.referer.as_deref(), Some("https://page.example/"));
 }
+
+#[test]
+fn requeue_failed_with_url_rejects_needs_sniff() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();
+    store
+        .upsert(&DownloadTask {
+            id: "sniff".into(),
+            parent_id: None,
+            season: None,
+            title: "sniff".into(),
+            source_url: "https://page.example/".into(),
+            quality_label: None,
+            status: TaskStatus::Failed,
+            progress_bytes: 0,
+            total_bytes: None,
+            error_message: Some("needs_sniff".into()),
+            output_path: None,
+            library_item_id: None,
+            episode_index: None,
+            created_at_ms: 1,
+            updated_at_ms: 1,
+            cookie_header: None,
+            referer: None,
+            resolved_media_url: None,
+            poster_url: None,
+        })
+        .unwrap();
+
+    let err = store
+        .requeue_failed_with_url("sniff", "https://new.example/video.mp4")
+        .unwrap_err();
+    assert!(matches!(err, EngineError::NotFound(_)));
+}
