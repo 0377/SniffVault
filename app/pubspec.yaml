@@ -49,6 +49,8 @@ dependencies:
   webview_flutter_platform_interface: ^2.15.0
   app_links: ^6.3.2
   webview_win_floating: ^3.0.3
+  file_picker: ^13.0.0
+  path: ^1.9.1
 dev_dependencies:
   flutter_test:
     sdk: flutter
