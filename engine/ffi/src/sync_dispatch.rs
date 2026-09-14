@@ -172,6 +172,63 @@ pub unsafe extern "C" fn engine_set_episode_position(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn engine_rename_library_item(
+    handle: *mut EngineHandle,
+    item_id: *const c_char,
+    title: *const c_char,
+) -> *mut c_char {
+    let item_id = match parse_c_str(item_id, "item_id") {
+        Ok(id) => id,
+        Err(err) => return rust_to_c_string(err_json(err)),
+    };
+    let title = match parse_c_str(title, "title") {
+        Ok(s) => s,
+        Err(err) => return rust_to_c_string(err_json(err)),
+    };
+    ffi_call(handle, |engine| engine.rename_library_item(&item_id, &title).map(|_| ()))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn engine_rename_episode(
+    handle: *mut EngineHandle,
+    episode_id: *const c_char,
+    title: *const c_char,
+) -> *mut c_char {
+    let episode_id = match parse_c_str(episode_id, "episode_id") {
+        Ok(id) => id,
+        Err(err) => return rust_to_c_string(err_json(err)),
+    };
+    let title = match parse_c_str(title, "title") {
+        Ok(s) => s,
+        Err(err) => return rust_to_c_string(err_json(err)),
+    };
+    ffi_call(handle, |engine| engine.rename_episode(&episode_id, &title).map(|_| ()))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn engine_merge_library_items(
+    handle: *mut EngineHandle,
+    source_item_id: *const c_char,
+    target_item_id: *const c_char,
+    delete_orphan_files: u8,
+) -> *mut c_char {
+    let source_item_id = match parse_c_str(source_item_id, "source_item_id") {
+        Ok(id) => id,
+        Err(err) => return rust_to_c_string(err_json(err)),
+    };
+    let target_item_id = match parse_c_str(target_item_id, "target_item_id") {
+        Ok(id) => id,
+        Err(err) => return rust_to_c_string(err_json(err)),
+    };
+    let delete_orphan_files = delete_orphan_files != 0;
+    ffi_call_mut(handle, |engine| {
+        engine
+            .merge_library_items(&source_item_id, &target_item_id, delete_orphan_files)
+            .map(|_| ())
+    })
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn engine_remove_library_item(
     handle: *mut EngineHandle,
     item_id: *const c_char,
