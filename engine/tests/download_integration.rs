@@ -601,9 +601,7 @@ fn series_partial_failure_resume() {
         fx.engine.stop_downloads().unwrap();
 
         let failed_id = children[1].clone();
-        fx.engine
-            .retry_task(&failed_id, Some(&good_mp4))
-            .unwrap();
+        fx.engine.retry_task(&failed_id, Some(&good_mp4)).unwrap();
 
         fx.engine.start_downloads().unwrap();
         wait_for_task(

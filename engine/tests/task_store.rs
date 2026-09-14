@@ -1,6 +1,6 @@
 use tempfile::tempdir;
-use video_sniffing_engine::test_api::{Checkpoint, CheckpointBody};
 use video_sniffing_engine::tasks::TaskStore;
+use video_sniffing_engine::test_api::{Checkpoint, CheckpointBody};
 use video_sniffing_engine::{DownloadTask, Engine, EngineError, TaskStatus};
 
 fn sample(id: &str, parent: Option<&str>, status: TaskStatus) -> DownloadTask {

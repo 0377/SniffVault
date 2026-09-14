@@ -38,12 +38,7 @@ fn retry_task_failed_to_queued_clears_error() {
     let original_url = "https://example.com/failed.m3u8";
     {
         let store = TaskStore::open(&path).unwrap();
-        let mut task = sample(
-            "failed",
-            None,
-            TaskStatus::Failed,
-            Some("network error"),
-        );
+        let mut task = sample("failed", None, TaskStatus::Failed, Some("network error"));
         task.source_url = original_url.into();
         store.upsert(&task).unwrap();
     }

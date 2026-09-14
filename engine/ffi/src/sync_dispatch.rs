@@ -481,7 +481,9 @@ pub unsafe extern "C" fn engine_retry_task(
             Err(err) => return rust_to_c_string(err_json(err)),
         }
     };
-    ffi_call_mut(handle, |engine| engine.retry_task(&task_id, new_url.as_deref()))
+    ffi_call_mut(handle, |engine| {
+        engine.retry_task(&task_id, new_url.as_deref())
+    })
 }
 
 #[no_mangle]

@@ -405,11 +405,7 @@ impl Engine {
         Ok(())
     }
 
-    pub fn retry_task(
-        &mut self,
-        task_id: &str,
-        new_url: Option<&str>,
-    ) -> Result<(), EngineError> {
+    pub fn retry_task(&mut self, task_id: &str, new_url: Option<&str>) -> Result<(), EngineError> {
         let task = self.tasks.get(task_id)?;
         if task.status != TaskStatus::Failed {
             return Err(EngineError::InvalidArg(
@@ -430,9 +426,7 @@ impl Engine {
             Some(url) => {
                 let trimmed = url.trim();
                 if trimmed.is_empty() {
-                    return Err(EngineError::InvalidArg(
-                        "new_url must not be empty".into(),
-                    ));
+                    return Err(EngineError::InvalidArg("new_url must not be empty".into()));
                 }
                 if trimmed == task.source_url {
                     self.tasks

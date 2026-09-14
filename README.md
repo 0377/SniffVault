@@ -16,7 +16,7 @@
 
 ## 持续集成
 
-合并到 `main` 前须通过 GitHub Actions：**fmt**（ubuntu）、**test + clippy**（Linux / macOS / Windows 三平台）、**flutter-test**（macOS 单元测试）、**flutter-integration**（macOS 引擎 FFI、UI、深链 U8、投送 U10、浏览 U6、片库删除 U11、片库合并 U11b 与片库海报 U11c 集成冒烟，并行 job）。
+合并到 `main` 前须通过 GitHub Actions：**fmt**（ubuntu）、**test + clippy**（Linux / macOS / Windows 三平台）、**flutter-test**（macOS 单元测试）、**flutter-integration**（macOS 引擎 FFI、UI、深链 U8、投送 U10、浏览 U6、片库删除 U11、片库合并 U11b、片库海报 U11c 与设置/失败重试 U11d 集成冒烟，并行 job）。
 
 本地可运行与 CI 相同检查：
 
@@ -193,7 +193,7 @@ cd app && flutter test integration_test/library_rename_merge_test.dart -d macos
 
 新完成任务入库时自动下载 `og:image` 封面至 `media_dir/.posters/` 并展示；历史条目可在片库详情 → ⋮ → **抓取封面** / **刷新封面** 手动补抓。封面仅存本机，LAN 投送元数据不含海报路径。
 
-U11c 为 **Engine 级** 冒烟（经 `EngineHost` / FFI）：`seedCachedEpisode` 入库 → 写入 `poster_path` → `listLibrary` 回读 → `removeLibraryItem(deleteFiles: true)` 删除 `.posters` 文件。`enqueueSingle` 自动挂封面与 `refreshLibraryPoster` 由 Rust `library_poster` / `library_poster_ffi_test` 覆盖。
+U11c 为 **Engine 级** 冒烟（经 `EngineHost` / FFI）：SQLite 种子写入 `poster_path` → `listLibrary` 回读 → `removeLibraryItem(deleteFiles: true)` 删除 `.posters` 文件。`enqueueSingle` 自动挂封面与 `refreshLibraryPoster` 由 Rust `library_poster` / `library_poster_ffi_test` 覆盖。
 
 ```bash
 # Engine
@@ -207,6 +207,18 @@ cd app && flutter test integration_test/library_poster_test.dart -d macos
 ```
 
 规格见 `docs/superpowers/specs/2026-09-14-library-poster-design.md`。
+
+## 设置与失败任务重试（Plan 9d）
+
+设置页 **媒体目录** 旁可 **选择文件夹**（仅采用文件夹名写入 `media_dir`；保存后在应用数据目录下创建，不搬移已有缓存）。失败任务可点刷新立即重试，或通过 **修改 URL 重试** 更正 `source_url` 后重新下载。
+
+```bash
+cd app && flutter test integration_test/library_settings_retry_test.dart -d macos
+```
+
+规格见 `docs/superpowers/specs/2026-09-14-library-settings-retry-design.md`。
+
+**v0.2.0**：Plan 9a–9d 全部验收后打 tag。
 
 ## 可交付 v0.1（Plan 8）
 
