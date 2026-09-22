@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:video_sniffing/engine/engine_host.dart';
+import 'package:video_sniffing/engine/models/download_task.dart';
 import 'package:video_sniffing/features/tasks/widgets/download_log_panel.dart';
 import 'package:video_sniffing/features/tasks/widgets/parent_task_group.dart';
+import 'package:video_sniffing/features/tasks/widgets/retry_url_dialog.dart';
 import 'package:video_sniffing/features/tasks/widgets/task_tile.dart';
 import 'package:video_sniffing/providers/download_coordinator.dart';
 import 'package:video_sniffing/providers/download_logs_provider.dart';
 import 'package:video_sniffing/providers/engine_host_provider.dart';
 import 'package:video_sniffing/providers/tasks_provider.dart';
+import 'package:video_sniffing/ui/error_presenter.dart';
 
 class TasksScreen extends ConsumerWidget {
   const TasksScreen({super.key});
@@ -69,6 +73,8 @@ class TasksScreen extends ConsumerWidget {
                     ref.invalidate(tasksProvider);
                     coordinator.ensureDownloads();
                   },
+                  onEditUrlRetry: (task) =>
+                      editUrlRetry(context, ref, task),
                 );
               },
             ),
@@ -82,5 +88,29 @@ class TasksScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+}
+
+Future<void> editUrlRetry(
+  BuildContext context,
+  WidgetRef ref,
+  DownloadTask task,
+) async {
+  final url = await showRetryUrlDialog(context, initialUrl: task.sourceUrl);
+  if (url == null || !context.mounted) {
+    return;
+  }
+  final repo = ref.read(engineRepositoryProvider);
+  try {
+    repo.retryTask(task.id, newUrl: url);
+    ref.invalidate(tasksProvider);
+    ref.read(downloadCoordinatorProvider).ensureDownloads();
+  } on EngineException catch (e) {
+    final message = presentEngineError(e);
+    if (message != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    }
   }
 }

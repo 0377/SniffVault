@@ -175,10 +175,12 @@ typedef EngineResumeTask = Pointer<Char> Function(
 typedef EngineRetryTaskNative = Pointer<Char> Function(
   Pointer<Void> handle,
   Pointer<Utf8> taskId,
+  Pointer<Utf8> newUrl,
 );
 typedef EngineRetryTask = Pointer<Char> Function(
   Pointer<Void> handle,
   Pointer<Utf8> taskId,
+  Pointer<Utf8> newUrl,
 );
 
 typedef EngineRestoreTaskNative = Pointer<Char> Function(

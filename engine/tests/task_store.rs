@@ -1,5 +1,6 @@
 use tempfile::tempdir;
 use video_sniffing_engine::tasks::TaskStore;
+use video_sniffing_engine::test_api::{Checkpoint, CheckpointBody};
 use video_sniffing_engine::{DownloadTask, Engine, EngineError, TaskStatus};
 
 fn sample(id: &str, parent: Option<&str>, status: TaskStatus) -> DownloadTask {
@@ -350,4 +351,96 @@ fn upsert_preserves_resolved_media_url() {
     assert_eq!(got.title, "updated");
     assert_eq!(got.status, TaskStatus::Running);
     assert_eq!(got.progress_bytes, 512);
+}
+
+#[test]
+fn requeue_failed_with_url_resets_progress_and_media_cache() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();
+    store
+        .upsert(&DownloadTask {
+            id: "f1".into(),
+            parent_id: None,
+            season: None,
+            title: "fail".into(),
+            source_url: "https://old.example/bad.mp4".into(),
+            quality_label: None,
+            status: TaskStatus::Failed,
+            progress_bytes: 999,
+            total_bytes: Some(1000),
+            error_message: Some("http error".into()),
+            output_path: Some("/tmp/out.mp4".into()),
+            library_item_id: None,
+            episode_index: None,
+            created_at_ms: 1,
+            updated_at_ms: 1,
+            cookie_header: Some("sid=1".into()),
+            referer: Some("https://page.example/".into()),
+            resolved_media_url: Some("https://cdn.example/old.m3u8".into()),
+            poster_url: None,
+        })
+        .unwrap();
+
+    store
+        .save_checkpoint(
+            "f1",
+            &Checkpoint {
+                version: 1,
+                body: CheckpointBody::Mp4 {
+                    temp_dir: "/tmp/.dl/f1".into(),
+                    part_path: "/tmp/.dl/f1/part".into(),
+                    bytes_done: 100,
+                },
+            },
+        )
+        .unwrap();
+    store
+        .requeue_failed_with_url("f1", "https://new.example/good.mp4")
+        .unwrap();
+
+    let task = store.get("f1").unwrap();
+    assert_eq!(task.source_url, "https://new.example/good.mp4");
+    assert_eq!(task.status, TaskStatus::Queued);
+    assert_eq!(task.progress_bytes, 0);
+    assert!(task.total_bytes.is_none());
+    assert!(task.output_path.is_none());
+    assert!(task.error_message.is_none());
+    assert!(task.resolved_media_url.is_none());
+    assert!(store.load_checkpoint("f1").unwrap().is_none());
+    assert_eq!(task.cookie_header.as_deref(), Some("sid=1"));
+    assert_eq!(task.referer.as_deref(), Some("https://page.example/"));
+}
+
+#[test]
+fn requeue_failed_with_url_rejects_needs_sniff() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = TaskStore::open(&dir.path().join("tasks.db")).unwrap();
+    store
+        .upsert(&DownloadTask {
+            id: "sniff".into(),
+            parent_id: None,
+            season: None,
+            title: "sniff".into(),
+            source_url: "https://page.example/".into(),
+            quality_label: None,
+            status: TaskStatus::Failed,
+            progress_bytes: 0,
+            total_bytes: None,
+            error_message: Some("needs_sniff".into()),
+            output_path: None,
+            library_item_id: None,
+            episode_index: None,
+            created_at_ms: 1,
+            updated_at_ms: 1,
+            cookie_header: None,
+            referer: None,
+            resolved_media_url: None,
+            poster_url: None,
+        })
+        .unwrap();
+
+    let err = store
+        .requeue_failed_with_url("sniff", "https://new.example/video.mp4")
+        .unwrap_err();
+    assert!(matches!(err, EngineError::NotFound(_)));
 }

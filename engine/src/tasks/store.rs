@@ -554,6 +554,34 @@ impl TaskStore {
         Ok(())
     }
 
+    pub fn requeue_failed_with_url(&self, id: &str, source_url: &str) -> Result<(), EngineError> {
+        let n = self.conn.execute(
+            r#"UPDATE download_tasks
+               SET source_url=?1,
+                   resolved_media_url=NULL,
+                   progress_bytes=0,
+                   total_bytes=NULL,
+                   output_path=NULL,
+                   checkpoint_json=NULL,
+                   error_message=NULL,
+                   status=?2,
+                   updated_at_ms=?3
+               WHERE id=?4 AND status=?5
+                 AND COALESCE(error_message, '') != 'needs_sniff'"#,
+            params![
+                source_url,
+                Self::status_to_str(TaskStatus::Queued),
+                Self::now_ms(),
+                id,
+                Self::status_to_str(TaskStatus::Failed),
+            ],
+        )?;
+        if n == 0 {
+            return Err(EngineError::NotFound(format!("task {id}")));
+        }
+        Ok(())
+    }
+
     pub fn sync_parent_status(&self, parent_id: &str) -> Result<(), EngineError> {
         let children = self.list_children(parent_id)?;
         if children.is_empty() {
